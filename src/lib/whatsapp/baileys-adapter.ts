@@ -70,7 +70,7 @@ export class BaileysAdapter implements IWhatsAppProvider {
     const jid = this.formatJid(to);
     const prompt =
       text ||
-      "📍 *Tropigo Delivery:* Por favor comparte tu ubicación exacta para calcular tu tarifa y enviar tu pedido.";
+      "📍 *Atiende:* Por favor comparte tu ubicación para indicarte la ruta más rápida a la clínica.";
     const message = `${prompt}\n\n👉 *Pulsa el clip 📎 o botón (+) > Ubicación > Enviar mi ubicación actual*`;
 
     const sent = await this.sock.sendMessage(jid, { text: message });

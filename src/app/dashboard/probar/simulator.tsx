@@ -3,8 +3,6 @@
 import { useState } from "react";
 import {
   Send,
-  MapPin,
-  Mic,
   RotateCcw,
   Shield,
   ShieldAlert,
@@ -13,7 +11,10 @@ import {
   CheckCircle2,
   Cpu,
   Sparkles,
-  ShoppingBag,
+  Calendar,
+  Clock,
+  ArrowRight,
+  Database,
 } from "lucide-react";
 
 interface Message {
@@ -27,20 +28,20 @@ export function Simulator() {
     {
       role: "assistant",
       content:
-        "¡Hola! 👋 Te habla TropiBot, el asistente de pedidos de Tropigo Delivery en Ivirgarzama. 🛵💨\n\n¿Qué se te antoja pedir hoy? Tenemos pollos broaster, hamburguesas, comida del trópico, farmacia o servicio de mandados.",
+        "¡Hola! 👋 Soy el asistente virtual de Clínica Dental Lumen en Madrid. ¿En qué puedo ayudarte hoy? Puedo informarte sobre nuestros tratamientos, tarifas o agendar tu cita en Google Calendar.",
     },
   ]);
   const [input, setInput] = useState("");
   const [safeMode, setSafeMode] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [allToolCalls, setAllToolCalls] = useState<any[]>([]);
+  const [timelineSteps, setTimelineSteps] = useState<any[]>([]);
 
-  const handleSend = async (customText?: string) => {
-    const textToSend = customText || input;
-    if (!textToSend.trim() || loading) return;
+  const handleSend = async (textToSend?: string) => {
+    const text = textToSend || input;
+    if (!text.trim() || loading) return;
 
-    const newMessages: Message[] = [...messages, { role: "user", content: textToSend }];
-    setMessages(newMessages);
+    const newMsgs: Message[] = [...messages, { role: "user", content: text }];
+    setMessages(newMsgs);
     setInput("");
     setLoading(true);
 
@@ -49,14 +50,14 @@ export function Simulator() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+          messages: newMsgs.map((m) => ({ role: m.role, content: m.content })),
           safeMode,
         }),
       });
 
       const data = await res.json();
       setMessages([
-        ...newMessages,
+        ...newMsgs,
         {
           role: "assistant",
           content: data.content,
@@ -65,21 +66,19 @@ export function Simulator() {
       ]);
 
       if (data.toolCalls?.length > 0) {
-        setAllToolCalls((prev) => [...prev, ...data.toolCalls]);
+        setTimelineSteps((prev) => [
+          ...prev,
+          ...data.toolCalls.map((tc: any) => ({
+            ...tc,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+          })),
+        ]);
       }
     } catch (e) {
-      console.error("Error al enviar mensaje:", e);
+      console.error(e);
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleSendMockLocation = () => {
-    handleSend("📍 [Ubicación GPS compartida: Mercado Central de Ivirgarzama, lat: -17.0321, lng: -64.8564]");
-  };
-
-  const handleSendMockAudio = () => {
-    handleSend("🎤 [Nota de voz transcrita: 'Hola buenas noches, por favor mándame 2 cuartos de pollo broaster con chaufa a la Av. Mortensen frente a Banco Unión']");
   };
 
   const handleReset = () => {
@@ -87,58 +86,59 @@ export function Simulator() {
       {
         role: "assistant",
         content:
-          "¡Hola! 👋 Te habla TropiBot de Tropigo Delivery en Ivirgarzama. 🛵💨 ¿Qué se te antoja pedir hoy?",
+          "¡Hola! 👋 Soy el asistente virtual de Clínica Dental Lumen en Madrid. ¿En qué puedo ayudarte hoy?",
       },
     ]);
-    setAllToolCalls([]);
+    setTimelineSteps([]);
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[720px]">
-      {/* Columna Izquierda: Chat Interactivo */}
-      <div className="lg:col-span-7 bg-white rounded-2xl border border-[#EAECF0] shadow-xs flex flex-col overflow-hidden">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[740px]">
+      {/* Columna Izquierda: Chat como si fuera un cliente */}
+      <div className="lg:col-span-6 bg-white rounded-2xl border border-[#EAECF0] shadow-2xs flex flex-col overflow-hidden">
         {/* Cabecera del Chat */}
         <div className="px-5 py-3.5 border-b border-[#EAECF0] flex items-center justify-between bg-[#FAFAFA]">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-sm">
-              TB
+            <div className="w-9 h-9 rounded-full bg-teal-700 flex items-center justify-center text-white font-bold text-sm">
+              L
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-sm text-[#101828]">TropiBot</span>
+                <span className="font-semibold text-sm text-[#101828]">LumenBot</span>
                 <span className="text-[10px] bg-emerald-100 text-emerald-800 font-medium px-2 py-0.5 rounded-full">
                   En línea
                 </span>
               </div>
-              <p className="text-xs text-[#667085]">WhatsApp Simulator (+591 74389012)</p>
+              <p className="text-xs text-[#667085]">Clínica Dental Lumen • Gran Vía, Madrid</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Modo Seguro Switch */}
+            {/* Interruptor Modo Seguro */}
             <button
               onClick={() => setSafeMode(!safeMode)}
-              className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors font-medium ${
                 safeMode
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  ? "bg-purple-50 text-purple-700 border-purple-200"
                   : "bg-amber-50 text-amber-700 border-amber-200"
               }`}
             >
               {safeMode ? <Shield className="w-3.5 h-3.5" /> : <ShieldAlert className="w-3.5 h-3.5" />}
-              <span>Modo Seguro: {safeMode ? "Activo" : "Desactivado"}</span>
+              <span>Modo seguro: {safeMode ? "Activo" : "Apagado"}</span>
             </button>
 
+            {/* Botón Nueva Conversación */}
             <button
               onClick={handleReset}
-              title="Nueva Conversación"
-              className="p-1.5 text-[#667085] hover:text-[#101828] hover:bg-[#F2F4F7] rounded-lg transition-colors"
+              title="Empezar una conversación nueva"
+              className="p-1.5 text-[#667085] hover:text-[#101828] hover:bg-[#F2F4F7] rounded-xl transition-colors border border-[#EAECF0]"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Lista de Mensajes */}
+        {/* Mensajes del Chat */}
         <div className="flex-1 p-5 overflow-y-auto space-y-4 bg-[#F9FAFB]">
           {messages.map((m, idx) => (
             <div
@@ -149,9 +149,7 @@ export function Simulator() {
             >
               <div
                 className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs ${
-                  m.role === "user"
-                    ? "bg-[#101828] text-white"
-                    : "bg-emerald-600 text-white"
+                  m.role === "user" ? "bg-[#101828] text-white" : "bg-teal-700 text-white"
                 }`}
               >
                 {m.role === "user" ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
@@ -159,9 +157,9 @@ export function Simulator() {
 
               <div className="space-y-1">
                 <div
-                  className={`p-3.5 rounded-2xl text-xs whitespace-pre-wrap leading-relaxed shadow-xs ${
+                  className={`p-3.5 rounded-2xl text-xs whitespace-pre-wrap leading-relaxed shadow-2xs ${
                     m.role === "user"
-                      ? "bg-emerald-700 text-white rounded-tr-none"
+                      ? "bg-teal-700 text-white rounded-tr-none"
                       : "bg-white text-[#101828] border border-[#EAECF0] rounded-tl-none"
                   }`}
                 >
@@ -171,7 +169,7 @@ export function Simulator() {
                 {m.toolCalls && m.toolCalls.length > 0 && (
                   <div className="flex items-center gap-1 text-[11px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200 w-fit">
                     <Sparkles className="w-3 h-3 text-purple-600" />
-                    <span>Usó {m.toolCalls.length} herramienta(s)</span>
+                    <span>Llamó a {m.toolCalls.length} herramienta(s)</span>
                   </div>
                 )}
               </div>
@@ -180,32 +178,32 @@ export function Simulator() {
 
           {loading && (
             <div className="flex items-center gap-2 text-xs text-[#667085] bg-white border border-[#EAECF0] p-2.5 rounded-xl w-fit">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-              <span>TropiBot está escribiendo y calculando...</span>
+              <span className="w-2 h-2 rounded-full bg-teal-600 animate-ping" />
+              <span>Consultando Google Calendar y respondiendo...</span>
             </div>
           )}
         </div>
 
-        {/* Barra de Acciones Rápidas (GPS / Audio simulado) */}
-        <div className="px-4 py-2 border-t border-[#EAECF0] bg-white flex items-center gap-2 text-xs">
-          <span className="text-[#667085] text-[11px] font-medium">Simular entrada:</span>
-          <button
-            onClick={handleSendMockLocation}
-            className="flex items-center gap-1 bg-red-50 text-red-700 hover:bg-red-100 px-2.5 py-1 rounded-md border border-red-200 transition-colors"
-          >
-            <MapPin className="w-3 h-3" />
-            <span>Pin GPS Ivirgarzama</span>
-          </button>
-          <button
-            onClick={handleSendMockAudio}
-            className="flex items-center gap-1 bg-blue-50 text-blue-700 hover:bg-blue-100 px-2.5 py-1 rounded-md border border-blue-200 transition-colors"
-          >
-            <Mic className="w-3 h-3" />
-            <span>Nota de voz pidiendo comida</span>
-          </button>
+        {/* Chips de Preguntas Rápidas para Demostración */}
+        <div className="px-4 py-2 border-t border-[#EAECF0] bg-white flex items-center gap-2 overflow-x-auto text-[11px]">
+          <span className="text-[#667085] shrink-0 font-medium">Ejemplos:</span>
+          {[
+            "¿Cuánto cuesta el Invisalign?",
+            "¿Tenéis hueco el jueves por la tarde?",
+            "Confírmame a las 17:30 con la Dra. Gómez",
+            "Tengo un dolor muy fuerte de muela",
+          ].map((chip) => (
+            <button
+              key={chip}
+              onClick={() => handleSend(chip)}
+              className="bg-[#F2F4F7] hover:bg-[#E4E7EC] text-[#344054] px-2.5 py-1 rounded-lg shrink-0 transition-colors"
+            >
+              {chip}
+            </button>
+          ))}
         </div>
 
-        {/* Input de Texto */}
+        {/* Input */}
         <div className="p-3 border-t border-[#EAECF0] bg-white">
           <form
             onSubmit={(e) => {
@@ -218,13 +216,13 @@ export function Simulator() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Escribe como cliente (ej: 'Quiero 1 pollo broaster y una coca cola')..."
-              className="flex-1 bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-4 py-2.5 text-xs text-[#101828] focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
+              placeholder="Escribe como cliente (ej: 'Hola, ¿qué horario tenéis y cuánto cuesta la limpieza?')..."
+              className="flex-1 bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-4 py-2.5 text-xs text-[#101828] focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-[#D0D5DD] text-white p-2.5 rounded-xl transition-colors shrink-0"
+              className="bg-teal-700 hover:bg-teal-800 disabled:bg-[#D0D5DD] text-white p-2.5 rounded-xl transition-colors shrink-0 shadow-xs"
             >
               <Send className="w-4 h-4" />
             </button>
@@ -232,59 +230,65 @@ export function Simulator() {
         </div>
       </div>
 
-      {/* Columna Derecha: Línea de Tiempo de Herramientas & Carrito JSON */}
-      <div className="lg:col-span-5 bg-white rounded-2xl border border-[#EAECF0] shadow-xs flex flex-col overflow-hidden">
+      {/* Columna Derecha: Línea de Tiempo con Cada Paso (Para vídeo) */}
+      <div className="lg:col-span-6 bg-white rounded-2xl border border-[#EAECF0] shadow-2xs flex flex-col overflow-hidden">
         <div className="p-4 border-b border-[#EAECF0] bg-[#FAFAFA] flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-emerald-600" />
-            <h3 className="font-semibold text-xs text-[#101828]">
-              Línea de Tiempo de Herramientas (AI Execution)
+            <Cpu className="w-4 h-4 text-purple-600" />
+            <h3 className="font-bold text-xs text-[#101828]">
+              Línea de Tiempo de Herramientas (AI Tool Calling)
             </h3>
           </div>
-          <span className="text-[11px] bg-[#F2F4F7] text-[#475467] px-2 py-0.5 rounded-full border border-[#EAECF0]">
-            {allToolCalls.length} ejecuciones
+          <span className="text-[11px] bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-semibold">
+            {timelineSteps.length} paso(s) ejecutado(s)
           </span>
         </div>
 
-        <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#F9FAFB]">
-          {allToolCalls.length === 0 ? (
+        <div className="flex-1 p-5 overflow-y-auto space-y-4 bg-[#F9FAFB]">
+          {timelineSteps.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-xs text-[#667085] space-y-2">
-              <ShoppingBag className="w-8 h-8 text-[#D0D5DD]" />
-              <p className="font-medium text-[#344054]">Sin herramientas invocadas aún</p>
+              <Calendar className="w-10 h-10 text-[#D0D5DD]" />
+              <p className="font-semibold text-[#344054]">Esperando llamadas a herramientas...</p>
               <p className="text-[11px] max-w-xs text-[#98A2B3]">
-                Cuando el cliente pida el menú, envíe su ubicación o confirme un pedido, aquí verás cada función ejecutada con sus parámetros y respuesta JSON.
+                Cuando preguntes por citas, Google Calendar, servicios o urgencias, aquí se mostrará cada paso con sus parámetros y respuesta en tiempo real.
               </p>
             </div>
           ) : (
-            allToolCalls.map((tc, i) => (
+            timelineSteps.map((step, idx) => (
               <div
-                key={i}
-                className="bg-white rounded-xl border border-[#EAECF0] p-3.5 space-y-2 shadow-xs"
+                key={idx}
+                className="bg-white rounded-2xl border border-[#EAECF0] p-4 space-y-3 shadow-2xs hover:border-[#D0D5DD] transition-all"
               >
+                {/* Cabecera del Paso */}
                 <div className="flex items-center justify-between">
-                  <span className="font-mono font-bold text-xs text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
-                    {tc.tool}()
-                  </span>
-                  <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                    <CheckCircle2 className="w-2.5 h-2.5" /> OK
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="font-mono font-bold text-xs text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-md border border-purple-200">
+                      {step.tool}()
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-[#98A2B3] font-mono">
+                    {step.timestamp}
                   </span>
                 </div>
 
+                {/* Parámetros enviados */}
                 <div>
-                  <p className="text-[10px] font-semibold text-[#667085] uppercase tracking-wider mb-1">
-                    Parámetros de entrada:
+                  <p className="text-[10px] font-bold text-[#667085] uppercase tracking-wider mb-1">
+                    Parámetros enviados por la IA:
                   </p>
-                  <pre className="bg-[#F8F9FA] p-2 rounded-lg text-[10px] text-[#344054] font-mono overflow-x-auto border border-[#EAECF0]">
-                    {JSON.stringify(tc.args, null, 2)}
+                  <pre className="bg-[#F8F9FA] p-2.5 rounded-xl text-[11px] text-[#344054] font-mono overflow-x-auto border border-[#EAECF0]">
+                    {JSON.stringify(step.args, null, 2)}
                   </pre>
                 </div>
 
+                {/* Resultado retornado */}
                 <div>
-                  <p className="text-[10px] font-semibold text-[#667085] uppercase tracking-wider mb-1">
-                    Resultado retornado al LLM:
+                  <p className="text-[10px] font-bold text-[#667085] uppercase tracking-wider mb-1">
+                    Respuesta de la integración:
                   </p>
-                  <pre className="bg-[#101828] text-[#E4E7EC] p-2 rounded-lg text-[10px] font-mono overflow-x-auto">
-                    {JSON.stringify(tc.result, null, 2)}
+                  <pre className="bg-[#101828] text-[#E4E7EC] p-2.5 rounded-xl text-[11px] font-mono overflow-x-auto">
+                    {JSON.stringify(step.result, null, 2)}
                   </pre>
                 </div>
               </div>

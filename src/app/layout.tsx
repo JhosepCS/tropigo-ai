@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Tropigo Delivery | Panel de Despacho & Asistente IA",
-  description: "Sistema de Pedidos con IA y WhatsApp Dual-Engine para Ivirgarzama, Bolivia",
+  title: "Atiende | Asistente de IA para Negocios Locales",
+  description: "Asistente de IA para WhatsApp y Web que atiende clientes, agenda citas en Google Calendar y avisa al equipo.",
 };
 
 export default function RootLayout({

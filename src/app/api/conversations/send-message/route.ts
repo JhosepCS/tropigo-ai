@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     const saved = await prisma.message.create({
       data: {
         conversationId,
-        sender: "HUMAN",
+        sender: "human",
         content,
       },
     });

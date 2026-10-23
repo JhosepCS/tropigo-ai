@@ -6,20 +6,20 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-atiende_tropigo}
+      POSTGRES_DB: ${POSTGRES_DB:-atiende_lumen}
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-atiende_tropigo}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-atiende_lumen}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # 2. Proceso Web (Panel, API, Webhooks Meta, SSE)
+  # 2. Proceso Web (Panel, API, OAuth Google, Chat Web)
   web:
-    image: ${DOCKER_IMAGE:-ghcr.io/usuario/atiende-tropigo:latest}
+    image: ${DOCKER_IMAGE:-ghcr.io/usuario/atiende:latest}
     restart: always
     depends_on:
       db:
@@ -28,19 +28,18 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - APP_URL=${APP_URL}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-atiende_tropigo}?schema=public
-      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-atiende_lumen}?schema=public
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@atiende.es}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - OPENROUTER_DEFAULT_MODEL=${OPENROUTER_DEFAULT_MODEL:-anthropic/claude-3.5-haiku}
-      - WHATSAPP_ACTIVE_PROVIDER=${WHATSAPP_ACTIVE_PROVIDER:-META_CLOUD_API}
-      - META_PHONE_NUMBER_ID=${META_PHONE_NUMBER_ID}
-      - META_WABA_ID=${META_WABA_ID}
-      - META_SYSTEM_TOKEN=${META_SYSTEM_TOKEN}
-      - META_WEBHOOK_VERIFY_TOKEN=${META_WEBHOOK_VERIFY_TOKEN}
-      - META_APP_SECRET=${META_APP_SECRET}
-      - GROQ_API_KEY=${GROQ_API_KEY}
+      - OPENROUTER_DEFAULT_MODEL=${OPENROUTER_DEFAULT_MODEL:-anthropic/claude-haiku-5.5}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
       - SEED_DEMO=${SEED_DEMO:-true}
     volumes:
       - whatsapp_session:/app/data/whatsapp_session
@@ -49,14 +48,14 @@ services:
       - traefik-proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.${PROJECT_NAME:-tropigo}.rule=Host(`${SUBDOMAIN}`)"
-      - "traefik.http.routers.${PROJECT_NAME:-tropigo}.entrypoints=websecure"
-      - "traefik.http.routers.${PROJECT_NAME:-tropigo}.tls.certresolver=letsencrypt"
-      - "traefik.http.services.${PROJECT_NAME:-tropigo}.loadbalancer.server.port=3000"
+      - "traefik.http.routers.${PROJECT_NAME:-atiende-clinica-lumen}.rule=Host(`${SUBDOMAIN}`)"
+      - "traefik.http.routers.${PROJECT_NAME:-atiende-clinica-lumen}.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME:-atiende-clinica-lumen}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.${PROJECT_NAME:-atiende-clinica-lumen}.loadbalancer.server.port=3000"
 
-  # 3. Proceso Worker (Socket Baileys, Whisper Audio Transcriber, Tareas)
+  # 3. Proceso Worker (Socket Baileys, Recordatorios, Resumen Diario)
   worker:
-    image: ${DOCKER_IMAGE:-ghcr.io/usuario/atiende-tropigo:latest}
+    image: ${DOCKER_IMAGE:-ghcr.io/usuario/atiende:latest}
     restart: always
     command: ["node", "src/worker/index.js"]
     depends_on:
@@ -64,12 +63,11 @@ services:
         condition: service_healthy
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-atiende_tropigo}?schema=public
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-atiende_lumen}?schema=public
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - WHATSAPP_SESSION_DIR=/app/data/whatsapp_session
-      - WHATSAPP_ACTIVE_PROVIDER=${WHATSAPP_ACTIVE_PROVIDER:-META_CLOUD_API}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - GROQ_API_KEY=${GROQ_API_KEY}
+      - OPENROUTER_DEFAULT_MODEL=${OPENROUTER_DEFAULT_MODEL:-anthropic/claude-haiku-5.5}
     volumes:
       - whatsapp_session:/app/data/whatsapp_session
     networks:

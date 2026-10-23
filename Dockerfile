@@ -44,10 +44,15 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/src/worker ./src/worker
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib ./src/lib
+COPY --from=builder --chown=nextjs:nodejs /app/docker-entrypoint.sh ./docker-entrypoint.sh
+
+RUN chmod +x ./docker-entrypoint.sh
 
 USER nextjs
 
 EXPOSE 3000
+
+ENTRYPOINT ["./docker-entrypoint.sh"]
 
 # Por defecto arranca el servidor web.
 # Para el worker, docker-compose sobreescribe CMD ["node", "src/worker/index.js"]

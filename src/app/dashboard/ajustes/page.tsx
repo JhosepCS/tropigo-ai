@@ -5,22 +5,24 @@ export const dynamic = "force-dynamic";
 
 export default async function AjustesPage() {
   const business = await prisma.businessProfile.findFirst();
-  const assistant = await prisma.assistantConfig.findFirst();
-  const admin = await prisma.user.findFirst();
+  const agency = await prisma.agencyProfile.findFirst();
+  const users = await prisma.user.findMany({
+    orderBy: { createdAt: "asc" },
+  });
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-[#101828]">Ajustes del Sistema & Configuración</h2>
+        <h2 className="text-2xl font-bold text-[#101828]">Ajustes del Sistema</h2>
         <p className="text-sm text-[#475467]">
-          Personaliza la empresa de delivery, los modelos de Inteligencia Artificial (OpenRouter), transcripción de notas de voz de WhatsApp y seguridad.
+          Configuración general, modelo de IA con catálogo de OpenRouter, marca blanca de la agencia y gestión de usuarios.
         </p>
       </div>
 
       <AjustesClient
         initialBusiness={business as any}
-        initialAssistant={assistant as any}
-        adminEmail={admin?.email || "admin@tropigo.bo"}
+        initialAgency={agency as any}
+        users={users as any}
       />
     </div>
   );
