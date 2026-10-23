@@ -1,0 +1,85 @@
+services:
+  # 1. Base de datos PostgreSQL para producción
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-atiende_tropigo}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-atiende_tropigo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Proceso Web (Panel, API, Webhooks Meta, SSE)
+  web:
+    image: ${DOCKER_IMAGE:-ghcr.io/usuario/atiende-tropigo:latest}
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - APP_URL=${APP_URL}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-atiende_tropigo}?schema=public
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_DEFAULT_MODEL=${OPENROUTER_DEFAULT_MODEL:-anthropic/claude-3.5-haiku}
+      - WHATSAPP_ACTIVE_PROVIDER=${WHATSAPP_ACTIVE_PROVIDER:-META_CLOUD_API}
+      - META_PHONE_NUMBER_ID=${META_PHONE_NUMBER_ID}
+      - META_WABA_ID=${META_WABA_ID}
+      - META_SYSTEM_TOKEN=${META_SYSTEM_TOKEN}
+      - META_WEBHOOK_VERIFY_TOKEN=${META_WEBHOOK_VERIFY_TOKEN}
+      - META_APP_SECRET=${META_APP_SECRET}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - SEED_DEMO=${SEED_DEMO:-true}
+    volumes:
+      - whatsapp_session:/app/data/whatsapp_session
+    networks:
+      - internal
+      - traefik-proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${PROJECT_NAME:-tropigo}.rule=Host(`${SUBDOMAIN}`)"
+      - "traefik.http.routers.${PROJECT_NAME:-tropigo}.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME:-tropigo}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.${PROJECT_NAME:-tropigo}.loadbalancer.server.port=3000"
+
+  # 3. Proceso Worker (Socket Baileys, Whisper Audio Transcriber, Tareas)
+  worker:
+    image: ${DOCKER_IMAGE:-ghcr.io/usuario/atiende-tropigo:latest}
+    restart: always
+    command: ["node", "src/worker/index.js"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-atiende_tropigo}?schema=public
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - WHATSAPP_SESSION_DIR=/app/data/whatsapp_session
+      - WHATSAPP_ACTIVE_PROVIDER=${WHATSAPP_ACTIVE_PROVIDER:-META_CLOUD_API}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    volumes:
+      - whatsapp_session:/app/data/whatsapp_session
+    networks:
+      - internal
+
+volumes:
+  pgdata:
+  whatsapp_session:
+
+networks:
+  internal:
+  traefik-proxy:
+    external: true

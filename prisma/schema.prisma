@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("ADMIN")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BusinessProfile {
+  id              String   @id @default(cuid())
+  name            String   @default("Tropigo Delivery")
+  cityZone        String   @default("Ivirgarzama, Trópico de Cochabamba, Bolivia")
+  currency        String   @default("BOB")
+  currencySymbol  String   @default("Bs.")
+  phone           String   @default("+59174389012")
+  address         String   @default("Av. Mortensen esq. Mercado Central, Ivirgarzama")
+  paymentModes    String   @default("[\"EFECTIVO\", \"QR_BANCO\", \"TIGO_MONEY\"]")
+  bankQrImage     String?
+  assistantStatus String   @default("ACTIVE") // ACTIVE, PAUSED, ORDERS_ONLY
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model AssistantConfig {
+  id                String   @id @default(cuid())
+  name              String   @default("TropiBot")
+  avatarUrl         String   @default("/avatar-tropigo.png")
+  tone              String   @default("cercano")
+  welcomeMessage    String   @default("¡Hola! 👋 Te habla TropiBot de Tropigo Delivery en Ivirgarzama. ¿Qué se te antoja pedir hoy?")
+  instructions      String   @default("Eres el asistente oficial de pedidos de Tropigo Delivery en Ivirgarzama. Ayuda a los clientes a pedir comida, farmacia o solicitar un mandado. Sé amable, rápido y pide la ubicación.")
+  prohibitedActions String   @default("Nunca inventes precios que no estén en el menú. Nunca confirmes un pedido sin dirección o ubicación y método de pago.")
+  operatingHours    String   @default("{\"lunes\":{\"open\":\"07:30\",\"close\":\"23:00\"},\"martes\":{\"open\":\"07:30\",\"close\":\"23:00\"},\"miercoles\":{\"open\":\"07:30\",\"close\":\"23:00\"},\"jueves\":{\"open\":\"07:30\",\"close\":\"23:00\"},\"viernes\":{\"open\":\"07:30\",\"close\":\"23:59\"},\"sabado\":{\"open\":\"07:30\",\"close\":\"23:59\"},\"domingo\":{\"open\":\"07:30\",\"close\":\"23:00\"}}")
+  offHoursPolicy    String   @default("RECORD_MESSAGE")
+  handoffRules      String   @default("[\"queja\",\"urgencia\",\"pide hablar con alguien\",\"no sabe la respuesta\"]")
+  safeMode          Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model DeliveryZone {
+  id               String   @id @default(cuid())
+  name             String
+  baseCost         Float    @default(5.0)
+  estimatedMinutes Int      @default(25)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Merchant {
+  id             String    @id @default(cuid())
+  name           String
+  category       String    // Restaurante, Pollería, Farmacia, Tienda, Mandados
+  phone          String?
+  address        String?
+  commissionRate Float     @default(0.10)
+  isActive       Boolean   @default(true)
+  imageUrl       String?
+  products       Product[]
+  orders         Order[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  merchantId  String
+  merchant    Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  price       Float
+  category    String?
+  isAvailable Boolean  @default(true)
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Customer {
+  id             String         @id @default(cuid())
+  phone          String         @unique
+  whatsappLid    String?
+  name           String?
+  defaultAddress String?
+  savedLatitude  Float?
+  savedLongitude Float?
+  totalOrders    Int            @default(0)
+  orders         Order[]
+  conversations  Conversation[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model Rider {
+  id          String   @id @default(cuid())
+  name        String
+  phone       String
+  plateNumber String
+  isActive    Boolean  @default(true)
+  isAvailable Boolean  @default(true)
+  orders      Order[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Order {
+  id                  String       @id @default(cuid())
+  orderNumber         String       @unique // Ej: TRP-1042
+  customerId          String
+  customer            Customer     @relation(fields: [customerId], references: [id])
+  merchantId          String?
+  merchant            Merchant?    @relation(fields: [merchantId], references: [id])
+  assignedRiderId     String?
+  assignedRider       Rider?       @relation(fields: [assignedRiderId], references: [id])
+  itemsJson           String       // JSON: [{ productId, name, quantity, unitPrice, notes }]
+  subtotal            Float        @default(0.0)
+  deliveryFee         Float        @default(5.0)
+  totalAmount         Float        @default(5.0)
+  paymentMethod       String       @default("EFECTIVO") // EFECTIVO, QR_BANCO, TIGO_MONEY
+  paymentStatus       String       @default("PENDIENTE") // PENDIENTE, PAGADO_VERIFICADO
+  status              String       @default("RECIBIDO") // RECIBIDO, EN_PREPARACION, EN_CAMINO, ENTREGADO, CANCELADO
+  deliveryAddressText String
+  latitude            Float?
+  longitude           Float?
+  notes               String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+}
+
+model WhatsAppConfig {
+  id                       String   @id @default(cuid())
+  activeProvider           String   @default("BAILEYS_QR") // BAILEYS_QR, META_CLOUD_API
+  metaPhoneNumberId        String?
+  metaWabaId               String?
+  metaSystemTokenEncrypted String?
+  metaWebhookVerifyToken   String   @default("tropigo_verify_token_2025")
+  metaAppSecretEncrypted   String?
+  baileysSessionData       String?
+  baileysStatus            String   @default("DISCONNECTED") // DISCONNECTED, SCAN_QR, CONNECTED
+  baileysQr                String?
+  connectedPhone           String?
+  updatedAt                DateTime @updatedAt
+}
+
+model Conversation {
+  id            String    @id @default(cuid())
+  customerId    String
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  channel       String    @default("WHATSAPP") // WHATSAPP, WEB
+  status        String    @default("AI_ACTIVE") // AI_ACTIVE, HUMAN_TAKEOVER, CLOSED
+  lastMessageAt DateTime  @default(now())
+  messages      Message[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         String       // CUSTOMER, ASSISTANT, HUMAN
+  content        String
+  mediaType      String?      // text, audio, location, image
+  mediaUrl       String?
+  latitude       Float?
+  longitude      Float?
+  transcription  String?
+  toolCallsJson  String?
+  rawPayload     String?
+  createdAt      DateTime     @default(now())
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  action      String
+  provider    String
+  channel     String
+  status      String
+  detailsJson String?
+  errorText   String?
+  createdAt   DateTime @default(now())
+}
+
+model WorkerCommand {
+  id          String   @id @default(cuid())
+  command     String
+  payloadJson String?
+  status      String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  createdAt   DateTime @default(now())
+}
