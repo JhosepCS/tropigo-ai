@@ -7,92 +7,286 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ----------------------------------------------------
+// 1. USUARIOS Y ADMINISTRACIÓN
+// ----------------------------------------------------
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
   password  String
   name      String
-  role      String   @default("ADMIN")
+  role      String   @default("ADMIN") // ADMIN, DISPATCHER, OPERATOR
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model AgencyProfile {
   id        String   @id @default(cuid())
-  name      String   @default("Agencia Digital")
+  name      String   @default("TropiGO Admin")
   logoUrl   String?
   updatedAt DateTime @updatedAt
 }
 
+// ----------------------------------------------------
+// 2. PERFIL DE NEGOCIO TROPIGO (IVIRGARZAMA)
+// ----------------------------------------------------
 model BusinessProfile {
   id               String   @id @default(cuid())
-  name             String   @default("Clínica Dental Lumen")
-  activity         String   @default("Clínica odontológica integral y estética dental")
-  address          String   @default("Calle Gran Vía 42, 2º Izquierda, 28013 Madrid")
-  phone            String   @default("+34 912 345 678")
-  website          String   @default("https://clinicalumen.es")
-  timezone         String   @default("Europe/Madrid")
+  name             String   @default("TropiGO Ivirgarzama")
+  activity         String   @default("Plataforma de delivery, mandados y movilidad en mototaxi")
+  cityZone         String   @default("Ivirgarzama, Trópico de Cochabamba, Bolivia")
+  address          String   @default("Av. Mortensen esq. Mercado Central, Ivirgarzama")
+  phone            String   @default("+59174389012")
+  website          String   @default("https://tropigo.bo")
+  currency         String   @default("BOB")
+  currencySymbol   String   @default("Bs.")
+  timezone         String   @default("America/La_Paz")
+  paymentModes     String   @default("[\"EFECTIVO\", \"QR_BANCO\", \"TIGO_MONEY\"]")
+  bankQrImage      String?  // Imagen Base64 o URL del QR Simple de la cuenta bancaria de Tropigo
+  baseDeliveryFee  Float    @default(5.0)  // 5 Bs tarifa base urbana
+  baseRideFee      Float    @default(4.0)  // 4 Bs tarifa base mototaxi urbano
   assistantEnabled Boolean  @default(true)
   updatedAt        DateTime @updatedAt
 }
 
+// ----------------------------------------------------
+// 3. AGENTE DE IA (TROPIGO BOT / GROQ)
+// ----------------------------------------------------
 model AssistantConfig {
   id                String   @id @default(cuid())
-  name              String   @default("LumenBot")
-  avatarUrl         String   @default("/avatar.png")
-  tone              String   @default("cercano") // cercano, profesional, directo
-  welcomeMessage    String   @default("¡Hola! 👋 Soy el asistente virtual de Clínica Dental Lumen. ¿En qué puedo ayudarte hoy? Puedo informarte sobre nuestros tratamientos, resolver tus dudas o agendar tu cita.")
-  instructions      String   @default("Eres el asistente de atención al cliente de Clínica Dental Lumen en Madrid. Atiende con calidez, cercanía y profesionalidad. Responde basándote en la información de la clínica. Si el cliente quiere pedir cita, confirma primero el servicio deseado, día y hora antes de reservarla.")
-  prohibitedActions String   @default("Nunca inventes precios que no estén en la lista oficial. Nunca des diagnósticos médicos ni recomendaciones farmacológicas. Ante una urgencia o dolor severo, ofrece llamar inmediatamente al teléfono de la clínica o acudir de urgencia.")
-  operatingHours    String   @default("{\"lunes\":{\"open\":\"09:00\",\"close\":\"20:00\",\"split\":[{\"open\":\"09:00\",\"close\":\"14:00\"},{\"open\":\"16:00\",\"close\":\"20:00\"}]},\"martes\":{\"open\":\"09:00\",\"close\":\"20:00\",\"split\":[{\"open\":\"09:00\",\"close\":\"14:00\"},{\"open\":\"16:00\",\"close\":\"20:00\"}]},\"miercoles\":{\"open\":\"09:00\",\"close\":\"20:00\",\"split\":[{\"open\":\"09:00\",\"close\":\"14:00\"},{\"open\":\"16:00\",\"close\":\"20:00\"}]},\"jueves\":{\"open\":\"09:00\",\"close\":\"20:00\",\"split\":[{\"open\":\"09:00\",\"close\":\"14:00\"},{\"open\":\"16:00\",\"close\":\"20:00\"}]},\"viernes\":{\"open\":\"09:00\",\"close\":\"20:00\",\"split\":[{\"open\":\"09:00\",\"close\":\"14:00\"},{\"open\":\"16:00\",\"close\":\"20:00\"}]},\"sabado\":{\"closed\":true},\"domingo\":{\"closed\":true}}")
-  offHoursPolicy    String   @default("TAKE_MESSAGE") // TAKE_MESSAGE, CONTINUE_AND_BOOK
-  handoffRules      String   @default("[\"queja\",\"urgencia\",\"pide hablar con alguien\",\"no sabe la respuesta\"]")
-  customHandoffRule String?
-  safeMode          Boolean  @default(true)
+  name              String   @default("TropiBot")
+  avatarUrl         String   @default("/avatar-tropigo.png")
+  tone              String   @default("cercano") // cercano, rapido, profesional
+  welcomeMessage    String   @default("¡Hola! 👋 Te habla TropiBot, tu asistente de TropiGO en Ivirgarzama. ¿Qué se te antoja pedir hoy? Tenemos delivery de comida, compras de farmacia, mandados y mototaxis.")
+  instructions      String   @default("Eres TropiBot, el asistente inteligente oficial de TropiGO en Ivirgarzama (Trópico de Cochabamba, Bolivia). Atiendes a los clientes por WhatsApp y Web con calidez, rapidez y amabilidad. Responde consultas sobre restaurantes, menús en Bs., tarifas de delivery y mototaxis. Si el cliente pide un servicio, confirma siempre los detalles (productos o destino, dirección/ubicación exacta y método de pago en Bs.) antes de registrarlo.")
+  prohibitedActions String   @default("1. Nunca inventes precios o comercios que no existan en el catálogo.\n2. Nunca confirmes un pedido sin ubicación/dirección clara y confirmación de pago.\n3. Ante reclamos airados o quejas, deriva a un operador humano inmediatamente.\n4. No proporciones diagnósticos médicos en pedidos de farmacia.")
+  operatingHours    String   @default("{\"lunes\":{\"open\":\"07:00\",\"close\":\"23:00\"},\"martes\":{\"open\":\"07:00\",\"close\":\"23:00\"},\"miercoles\":{\"open\":\"07:00\",\"close\":\"23:00\"},\"jueves\":{\"open\":\"07:00\",\"close\":\"23:00\"},\"viernes\":{\"open\":\"07:00\",\"close\":\"23:59\"},\"sabado\":{\"open\":\"07:00\",\"close\":\"23:59\"},\"domingo\":{\"open\":\"07:00\",\"close\":\"23:00\"}}")
+  offHoursPolicy    String   @default("TAKE_MESSAGE") // TAKE_MESSAGE, SCHEDULE_FOR_TOMORROW
+  handoffRules      String   @default("[\"queja\",\"reclamo\",\"pide hablar con alguien\",\"no sabe la respuesta\",\"urgencia\"]")
+  customHandoffRule String?  @default("Solicitudes de compras especiales de más de 200 Bs.")
+  safeMode          Boolean  @default(false)
   updatedAt         DateTime @updatedAt
 }
 
-model Service {
-  id                 String   @id @default(cuid())
-  name               String
-  description        String
-  durationMinutes    Int      @default(30)
-  price              Float    @default(0.0)
-  priceType          String   @default("from") // fixed, from, free
-  requiresAssessment Boolean  @default(false)
-  isActive           Boolean  @default(true)
-  order              Int      @default(0)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+// ----------------------------------------------------
+// 4. COMERCIOS Y CATÁLOGO DE PRODUCTOS (DELIVERY)
+// ----------------------------------------------------
+model Merchant {
+  id             String    @id @default(cuid())
+  name           String
+  category       String    // Restaurante, Pollería, Farmacia, Tienda de Abarrotes, Mandados
+  description    String?
+  phone          String?
+  address        String?
+  commissionRate Float     @default(0.10) // 10% estándar
+  rating         Float     @default(4.8)
+  isOpen         Boolean   @default(true)
+  imageUrl       String?
+  products       Product[]
+  orders         Order[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }
 
-model Faq {
-  id        String   @id @default(cuid())
-  question  String
-  answer    String
-  category  String   @default("General")
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Product {
+  id          String   @id @default(cuid())
+  merchantId  String
+  merchant    Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  price       Float    // Precio en Bolivianos (Bs.)
+  category    String?  // Platos, Bebidas, Combos, etc.
+  isAvailable Boolean  @default(true)
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
-model KnowledgeBase {
-  id        String   @id @default(cuid())
-  freeText  String   @default("Clínica Dental Lumen cuenta con más de 15 años de experiencia en odontología integral, implantología avanzada, ortodoncia invisible Invisalign y estética dental. Disponemos de tecnología 3D TAC de baja radiación y escáner intraoral iTero.")
-  updatedAt DateTime @updatedAt
+// ----------------------------------------------------
+// 5. ZONAS DE COBERTURA Y TARIFARIO
+// ----------------------------------------------------
+model DeliveryZone {
+  id               String   @id @default(cuid())
+  name             String   // Ej: Casco Central, Av. Mortensen, Villa 14, Senda III
+  description      String?
+  baseDeliveryCost Float    @default(5.0) // Bs.
+  baseRideCost     Float    @default(4.0) // Bs.
+  estimatedMinutes Int      @default(20)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
-model Integration {
-  id                   String   @id @default(cuid())
-  provider             String   @unique // google_calendar, gmail, google_sheets, slack, stripe, webhooks
-  name                 String
-  status               String   @default("disconnected") // disconnected, connected, error
-  accountIdentifier    String?
-  encryptedCredentials String?  // AES-256-GCM
-  settingsJson         String   @default("{}")
-  capabilitiesJson     String   @default("{}") // Casillas activas
-  lastError            String?
-  updatedAt            DateTime @updatedAt
+// ----------------------------------------------------
+// 6. REPARTIDORES Y CONDUCTORES (MOTOTAXIS / TORITOS)
+// ----------------------------------------------------
+model Rider {
+  id              String     @id @default(cuid())
+  name            String
+  phone           String     @unique
+  vehicleType     String     @default("MOTO") // MOTO, TORITO, BICICLETA
+  plateNumber     String     // Placa o número de móvil
+  rating          Float      @default(5.0)
+  isActive        Boolean    @default(true)  // Habilitado en la plataforma
+  isAvailable     Boolean    @default(true)  // Libre para nuevo viaje/pedido
+  currentLocation String?    // Coordenadas o zona actual
+  totalDeliveries Int        @default(0)
+  totalRides      Int        @default(0)
+  earnedBalance   Float      @default(0.0)   // Saldo acumulado en Bs.
+  orders          Order[]
+  rideTrips       RideTrip[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+// ----------------------------------------------------
+// 7. CLIENTES Y USUARIOS FINALES
+// ----------------------------------------------------
+model Customer {
+  id             String         @id @default(cuid())
+  phone          String         @unique
+  whatsappLid    String?
+  name           String?
+  defaultAddress String?
+  referencePoint String?
+  savedLatitude  Float?
+  savedLongitude Float?
+  totalOrders    Int            @default(0)
+  totalRides     Int            @default(0)
+  notes          String?
+  orders         Order[]
+  rideTrips      RideTrip[]
+  conversations  Conversation[]
+  appointments   Appointment[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+// ----------------------------------------------------
+// 8. PEDIDOS DE DELIVERY Y MANDADOS
+// ----------------------------------------------------
+model Order {
+  id                  String          @id @default(cuid())
+  orderNumber         String          @unique // Ej: TRP-1042
+  customerId          String
+  customer            Customer        @relation(fields: [customerId], references: [id])
+  merchantId          String?
+  merchant            Merchant?       @relation(fields: [merchantId], references: [id])
+  assignedRiderId     String?
+  assignedRider       Rider?          @relation(fields: [assignedRiderId], references: [id])
+  orderType           String          @default("DELIVERY") // DELIVERY, MANDADO_EXPRESS
+  itemsJson           String          // JSON: [{ productId, name, quantity, unitPrice, notes }]
+  subtotal            Float           @default(0.0)
+  deliveryFee         Float           @default(5.0)
+  totalAmount         Float           @default(5.0)
+  paymentMethod       String          @default("EFECTIVO") // EFECTIVO, QR_BANCO, TIGO_MONEY
+  paymentStatus       String          @default("PENDIENTE") // PENDIENTE, PAGADO_VERIFICADO
+  status              String          @default("RECIBIDO") // RECIBIDO, EN_PREPARACION, ASIGNADO, EN_CAMINO, ENTREGADO, CANCELADO
+  deliveryAddressText String
+  referencePoint      String?
+  latitude            Float?
+  longitude           Float?
+  notes               String?
+  paymentRecords      PaymentRecord[]
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+}
+
+// ----------------------------------------------------
+// 9. SERVICIOS DE MOVILIDAD Y MOTOTAXI
+// ----------------------------------------------------
+model RideTrip {
+  id                String          @id @default(cuid())
+  tripNumber        String          @unique // Ej: VIAJE-2031
+  customerId        String
+  customer          Customer        @relation(fields: [customerId], references: [id])
+  assignedRiderId   String?
+  assignedRider     Rider?          @relation(fields: [assignedRiderId], references: [id])
+  vehicleType       String          @default("MOTO") // MOTO, TORITO
+  originAddress     String          // Ej: Mercado Central
+  destinationAddress String         // Ej: Sindicato San Salvador, Villa 14
+  originLat         Float?
+  originLng         Float?
+  destLat           Float?
+  destLng           Float?
+  distanceKm        Float?
+  fareAmount        Float           @default(4.0) // Monto de la carrera en Bs.
+  paymentMethod     String          @default("EFECTIVO") // EFECTIVO, QR_BANCO
+  paymentStatus     String          @default("PENDIENTE")
+  status            String          @default("SOLICITADO") // SOLICITADO, CONDUCTOR_ASIGNADO, EN_CURSO, FINALIZADO, CANCELADO
+  passengerNotes    String?
+  paymentRecords    PaymentRecord[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+// ----------------------------------------------------
+// 10. PAGOS QR INTEROPERABLES DE BOLIVIA (QR SIMPLE)
+// ----------------------------------------------------
+model PaymentRecord {
+  id                String    @id @default(cuid())
+  orderId           String?
+  order             Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  rideTripId        String?
+  rideTrip          RideTrip? @relation(fields: [rideTripId], references: [id], onDelete: SetNull)
+  amount            Float     // Monto en Bs.
+  currency          String    @default("BOB")
+  provider          String    @default("QR_SIMPLE") // QR_SIMPLE, TIGO_MONEY, MANUAL
+  qrStringData      String?   // Payload interoperable EMVCo
+  receiptImageUrl   String?   // Captura de pantalla enviada por el cliente por WhatsApp
+  verificationStatus String   @default("PENDIENTE") // PENDIENTE, VERIFICADO, RECHAZADO
+  verifiedBy        String?   // Nombre del operador que verificó
+  verifiedAt        DateTime?
+  createdAt         DateTime  @default(now())
+}
+
+// ----------------------------------------------------
+// 11. CONVERSACIONES Y MENSAJERÍA MULTICANAL
+// ----------------------------------------------------
+model Conversation {
+  id            String    @id @default(cuid())
+  customerId    String
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  channel       String    @default("WHATSAPP") // WHATSAPP, WEB
+  status        String    @default("AI_ACTIVE") // AI_ACTIVE, HUMAN_TAKEOVER, CLOSED
+  lastMessageAt DateTime  @default(now())
+  messages      Message[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         String       // CUSTOMER, ASSISTANT, HUMAN
+  content        String
+  mediaType      String?      // text, audio, location, image
+  mediaUrl       String?
+  latitude       Float?
+  longitude      Float?
+  transcription  String?      // Texto generado por Whisper (Groq) si fue nota de voz
+  toolCallsJson  String?      // Registro de herramientas ejecutadas
+  rawPayload     String?
+  createdAt      DateTime     @default(now())
+}
+
+// ----------------------------------------------------
+// 12. CONFIGURACIÓN DE CANALES WHATSAPP
+// ----------------------------------------------------
+model WhatsAppConfig {
+  id                       String   @id @default(cuid())
+  activeProvider           String   @default("BAILEYS_QR") // BAILEYS_QR, META_CLOUD_API
+  metaPhoneNumberId        String?
+  metaWabaId               String?
+  metaSystemTokenEncrypted String?  // AES-256-GCM
+  metaWebhookVerifyToken   String   @default("tropigo_verify_token_2025")
+  metaAppSecretEncrypted   String?
+  baileysSessionData       String?
+  baileysStatus            String   @default("DISCONNECTED") // DISCONNECTED, SCAN_QR, CONNECTED
+  baileysQr                String?
+  connectedPhone           String?
+  updatedAt                DateTime @updatedAt
 }
 
 model Channel {
@@ -106,65 +300,78 @@ model Channel {
   updatedAt    DateTime @updatedAt
 }
 
-model Contact {
-  id               String         @id @default(cuid())
-  name             String?
-  phone            String?
-  whatsappLid      String?
-  email            String?
-  channel          String         @default("whatsapp")
-  interest         String?
-  bookedAppointment Boolean       @default(false)
-  notes            String?
-  conversations    Conversation[]
-  appointments     Appointment[]
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+// ----------------------------------------------------
+// 13. BASE DE CONOCIMIENTO, FAQS Y SERVICIOS
+// ----------------------------------------------------
+model KnowledgeBase {
+  id        String   @id @default(cuid())
+  freeText  String   @default("TropiGO es la plataforma de delivery y movilidad líder en Ivirgarzama (Trópico de Cochabamba, Bolivia). Conectamos a los mejores restaurantes, farmacias y comercios con clientes mediante repartidores en moto y mototaxistas.")
+  updatedAt DateTime @updatedAt
 }
 
-model Conversation {
-  id            String    @id @default(cuid())
-  contactId     String
-  contact       Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  channel       String    @default("whatsapp") // whatsapp, webchat
-  status        String    @default("ai_active") // ai_active, human_takeover, closed
-  lastMessageAt DateTime  @default(now())
-  messages      Message[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+model Faq {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  category  String   @default("General")
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-model Message {
-  id             String       @id @default(cuid())
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         String       // customer, assistant, human
-  content        String
-  mediaType      String?      // text, audio, image
-  toolCallsJson  String?      // Registro de herramientas invocadas
-  createdAt      DateTime     @default(now())
+model Service {
+  id                 String   @id @default(cuid())
+  name               String
+  description        String
+  durationMinutes    Int      @default(30)
+  price              Float    @default(0.0)
+  priceType          String   @default("from")
+  requiresAssessment Boolean  @default(false)
+  isActive           Boolean  @default(true)
+  order              Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// ----------------------------------------------------
+// 14. INTEGRACIONES (GOOGLE CALENDAR, WEBHOOKS)
+// ----------------------------------------------------
+model Integration {
+  id                   String   @id @default(cuid())
+  provider             String   @unique // google_calendar, gmail, google_sheets, slack, stripe, webhooks
+  name                 String
+  status               String   @default("disconnected") // disconnected, connected, error
+  accountIdentifier    String?
+  encryptedCredentials String?  // AES-256-GCM
+  settingsJson         String   @default("{}")
+  capabilitiesJson     String   @default("{}")
+  lastError            String?
+  updatedAt            DateTime @updatedAt
 }
 
 model Appointment {
-  id               String   @id @default(cuid())
-  contactId        String
-  contact          Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  serviceName      String
-  startTime        DateTime
-  endTime          DateTime
-  calendarEventId  String?
-  status           String   @default("confirmed") // confirmed, cancelled, rescheduled
-  reminderSent     Boolean  @default(false)
-  notes            String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id              String   @id @default(cuid())
+  customerId      String
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  serviceName     String   // Ej: Pedido Programado / Catering Evento / Traslado Aeropuerto
+  startTime       DateTime
+  endTime         DateTime
+  calendarEventId String?
+  status          String   @default("confirmed")
+  reminderSent    Boolean  @default(false)
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
+// ----------------------------------------------------
+// 15. AUDITORÍA Y COMUNICACIÓN WEB-WORKER
+// ----------------------------------------------------
 model ActivityLog {
   id          String   @id @default(cuid())
   action      String
-  provider    String   // assistant, google_calendar, gmail, google_sheets, slack, stripe, webhooks, whatsapp
-  channel     String   @default("whatsapp") // whatsapp, webchat, system
+  provider    String   // assistant_groq, whatsapp, google_calendar, payment_qr
+  channel     String   @default("whatsapp")
   status      String   // success, error, simulated
   detailsJson String?
   errorText   String?
