@@ -1,64 +1,109 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { runAssistantChat } from "@/lib/ai/assistant";
+import { ModelRouter } from "@/lib/ai/model-router";
+import { ChatMessage } from "@/lib/ai/types";
+import { getAssistantConfig, buildSystemPrompt } from "@/lib/ai/config-manager";
+import { getRealDataContextPrompt, getToolDefinitions, executeTool } from "@/lib/ai/tools";
+import { requireAuth, UnauthorizedError } from "@/lib/auth/rbac";
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, safeMode } = await req.json();
+    // El simulador del CRM solo puede usarlo personal autenticado.
+    const session = await requireAuth();
+    const body = await req.json();
+    const { messages, options, draftConfig } = body;
 
-    const business = await prisma.businessProfile.findFirst();
-    const assistant = await prisma.assistantConfig.findFirst();
-    const services = await prisma.service.findMany({ where: { isActive: true } });
-    const faqs = await prisma.faq.findMany();
-    const kb = await prisma.knowledgeBase.findFirst();
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return NextResponse.json(
+        { error: "Se requiere un array de 'messages' para el asistente." },
+        { status: 400 }
+      );
+    }
 
-    const systemPromptText = `Eres ${assistant?.name || "LumenBot"}, el asistente virtual de inteligencia artificial de «${business?.name || "Clínica Dental Lumen"}».
-Dirección: ${business?.address || "Calle Gran Vía 42, 2º Izquierda, 28013 Madrid"}.
-Teléfono: ${business?.phone || "+34 912 345 678"}.
-Sitio web: ${business?.website || "https://clinicalumen.es"}.
-Zona horaria: ${business?.timezone || "Europe/Madrid"}.
-Fecha y hora actual: ${new Date().toLocaleString("es-ES", { timeZone: "Europe/Madrid" })}.
+    // 1. Obtener configuración activa de Supabase (o combinar con borrador para simulación previa)
+    const activeConfig = await getAssistantConfig();
+    const effectiveConfig = draftConfig ? { ...activeConfig, ...draftConfig } : activeConfig;
 
-TONO Y PERSONALIDAD:
-- Tono: ${assistant?.tone || "cercano"} en español de España.
-- ${assistant?.instructions}
+    // 2. Construir el prompt de sistema oficial personalizado desde la base de datos con datos reales
+    const realDataContext = await getRealDataContextPrompt();
+    const dynamicSystemPrompt = buildSystemPrompt(effectiveConfig, realDataContext);
 
-COSAS PROHIBIDAS:
-- ${assistant?.prohibitedActions}
+    const formattedMessages: ChatMessage[] = [];
 
-HORARIO COMERCIAL:
-- Lunes a Viernes de 09:00 a 14:00 y de 16:00 a 20:00.
-- Sábados y Domingos: Cerrado.
+    // Siempre inyectar el System Prompt actualizado al inicio
+    formattedMessages.push({
+      role: "system",
+      content: dynamicSystemPrompt,
+    });
 
-SERVICIOS DISPONIBLES:
-${services.map((s) => `- ${s.name} (${s.durationMinutes} min, ${s.price === 0 ? "Gratuito" : `${s.price} €`}): ${s.description}`).join("\n")}
+    for (const m of messages) {
+      if (m.role !== "system") {
+        formattedMessages.push({
+          role: m.role === "assistant" ? "assistant" : "user",
+          content: String(m.content || ""),
+        });
+      }
+    }
 
-PREGUNTAS FRECUENTES:
-${faqs.map((f) => `P: ${f.question}\nR: ${f.answer}`).join("\n\n")}
+    // Opciones con herramientas conectadas a la base de datos.
+    // No se aceptan tools ni toolContext enviados por el cliente: el contexto
+    // de pedidos debe ser construido por el servidor.
+    const callOptions = {
+      model: options?.model,
+      temperature: options?.temperature,
+      maxTokens: options?.maxTokens,
+      tools: getToolDefinitions(),
+      toolContext: {
+        source: "CRM" as const,
+        actorUserId: session.userId,
+        actorRole: session.role,
+        confirmationVerified: false,
+      },
+    };
 
-CONOCIMIENTO ADICIONAL:
-${kb?.freeText || ""}
+    // Ejecutar chat respetando el proveedor y modelo seleccionados en la configuración
+    const result = await ModelRouter.executeChat(formattedMessages, callOptions, effectiveConfig);
 
-REGLAS DE ACTUACIÓN:
-1. En el primer mensaje preséntate amablemente como asistente virtual del negocio.
-2. Antes de crear o cambiar una cita, confirma explícitamente el día, la hora y el servicio.
-3. Si el paciente tiene dolor severo o urgencia, pasa a una persona y ofrece el teléfono de la clínica.`;
+    // Resolver tool calls si no tienen resultado
+    if (result.toolCalls && result.toolCalls.length > 0) {
+      for (const call of result.toolCalls) {
+        if (!call.result) {
+          call.result = await executeTool(call.tool, call.args, callOptions.toolContext);
+        }
+      }
 
-    const fullMessages = [
-      { role: "system" as const, content: systemPromptText },
-      ...(messages || []),
-    ];
+      // Si el modelo ejecutó herramientas y dejó content vacío, usar el texto formulado por la herramienta
+      if (!result.content) {
+        const primaryResult = result.toolCalls[0].result;
+        if (primaryResult) {
+          result.content =
+            primaryResult.resumenTexto ||
+            primaryResult.mensajeConfirmacion ||
+            primaryResult.mensajeOficial ||
+            primaryResult.mensaje ||
+            primaryResult.error ||
+            "";
+        }
+      }
+    }
 
-    const response = await runAssistantChat(
-      fullMessages,
-      safeMode !== undefined ? Boolean(safeMode) : Boolean(assistant?.safeMode)
-    );
-
-    return NextResponse.json(response);
+    return NextResponse.json({
+      success: true,
+      result,
+      assistantInfo: {
+        name: effectiveConfig.name,
+        avatarUrl: effectiveConfig.avatarUrl,
+        tone: effectiveConfig.tone,
+        activeProvider: effectiveConfig.activeProvider,
+        activeModel: effectiveConfig.activeModel,
+      },
+    });
   } catch (error: any) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
     console.error("Error en /api/assistant/chat:", error);
     return NextResponse.json(
-      { content: "Error al procesar el mensaje", toolCalls: [] },
+      { error: error.message || "Error al procesar mensaje con el asistente." },
       { status: 500 }
     );
   }

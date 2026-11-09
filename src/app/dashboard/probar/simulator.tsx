@@ -11,7 +11,9 @@ import {
   CheckCircle2,
   Cpu,
   Sparkles,
-  Calendar,
+  ShoppingBag,
+  Bike,
+  Navigation,
   Clock,
   ArrowRight,
   Database,
@@ -28,13 +30,21 @@ export function Simulator() {
     {
       role: "assistant",
       content:
-        "¡Hola! 👋 Soy el asistente virtual de Clínica Dental Lumen en Madrid. ¿En qué puedo ayudarte hoy? Puedo informarte sobre nuestros tratamientos, tarifas o agendar tu cita en Google Calendar.",
+        "¡Hola! 👋 Te habla TropiBot, tu asistente de TropiGO en Ivirgarzama. ¿Qué se te antoja pedir hoy? Tenemos delivery de los mejores restaurantes, farmacia, mandados express y mototaxis.",
     },
   ]);
   const [input, setInput] = useState("");
-  const [safeMode, setSafeMode] = useState(true);
+  const [safeMode, setSafeMode] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [timelineSteps, setTimelineSteps] = useState<any[]>([]);
+  const [timelineSteps, setTimelineSteps] = useState<any[]>([
+    {
+      title: "Asistente Inicializado",
+      tool: "identidad",
+      status: "ready",
+      details: "TropiBot (Groq / llama-3.3-70b) listo para Ivirgarzama (Trópico de Cochabamba).",
+      time: "Ahora",
+    },
+  ]);
 
   const handleSend = async (textToSend?: string) => {
     const text = textToSend || input;
@@ -60,22 +70,43 @@ export function Simulator() {
         ...newMsgs,
         {
           role: "assistant",
-          content: data.content,
+          content: data.content || "Mensaje procesado.",
           toolCalls: data.toolCalls,
         },
       ]);
 
-      if (data.toolCalls?.length > 0) {
+      // Agregar a la línea de tiempo de ejecución
+      if (data.toolCalls && data.toolCalls.length > 0) {
+        const newSteps = data.toolCalls.map((tc: any) => ({
+          title: `Herramienta: ${tc.tool}`,
+          tool: tc.tool,
+          status: "success",
+          details: JSON.stringify(tc.args, null, 2),
+          result: JSON.stringify(tc.result, null, 2),
+          time: new Date().toLocaleTimeString("es-BO"),
+        }));
+        setTimelineSteps((prev) => [...newSteps, ...prev]);
+      } else {
         setTimelineSteps((prev) => [
+          {
+            title: "Respuesta Generada Directa",
+            tool: "groq_chat",
+            status: "direct",
+            details: "Respuesta de conversación general de TropiGO.",
+            time: new Date().toLocaleTimeString("es-BO"),
+          },
           ...prev,
-          ...data.toolCalls.map((tc: any) => ({
-            ...tc,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-          })),
         ]);
       }
     } catch (e) {
       console.error(e);
+      setMessages([
+        ...newMsgs,
+        {
+          role: "assistant",
+          content: "Hubo un error al conectar con TropiBot.",
+        },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -86,117 +117,143 @@ export function Simulator() {
       {
         role: "assistant",
         content:
-          "¡Hola! 👋 Soy el asistente virtual de Clínica Dental Lumen en Madrid. ¿En qué puedo ayudarte hoy?",
+          "¡Hola! 👋 Te habla TropiBot, tu asistente de TropiGO en Ivirgarzama. ¿Qué se te antoja pedir hoy? Tenemos delivery de comida de los mejores restaurantes, farmacia, mandados y mototaxis.",
       },
     ]);
-    setTimelineSteps([]);
+    setTimelineSteps([
+      {
+        title: "Conversación Reiniciada",
+        tool: "reset",
+        status: "ready",
+        details: "Memoria del chat reseteada a estado inicial.",
+        time: new Date().toLocaleTimeString("es-BO"),
+      },
+    ]);
   };
 
+  const quickChips = [
+    "¿Qué platos tienen en Pollería El Pahuichi?",
+    "¿Cuánto cuesta el envío urbano en Ivirgarzama?",
+    "Quiero 2 cuartos de pollo broaster a Av. Mortensen",
+    "Necesito una mototaxi del Mercado Central a la Terminal",
+    "Tengo una queja con mi pedido, pásame con alguien",
+  ];
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[740px]">
-      {/* Columna Izquierda: Chat como si fuera un cliente */}
-      <div className="lg:col-span-6 bg-white rounded-2xl border border-[#EAECF0] shadow-2xs flex flex-col overflow-hidden">
-        {/* Cabecera del Chat */}
-        <div className="px-5 py-3.5 border-b border-[#EAECF0] flex items-center justify-between bg-[#FAFAFA]">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      {/* Columna Izquierda: Chat Interactivo */}
+      <div className="lg:col-span-7 bg-white rounded-2xl border border-[#EAECF0] shadow-xs flex flex-col h-[650px] overflow-hidden">
+        {/* Cabecera Chat */}
+        <div className="p-4 border-b border-[#EAECF0] flex items-center justify-between bg-[#FAFAFA]">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-teal-700 flex items-center justify-center text-white font-bold text-sm">
-              L
+            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-2xs">
+              <Bot className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-sm text-[#101828]">LumenBot</span>
-                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-medium px-2 py-0.5 rounded-full">
-                  En línea
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-sm text-[#101828]">
+                  TropiBot Simulator
+                </span>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full">
+                  Groq llama-3.3
                 </span>
               </div>
-              <p className="text-xs text-[#667085]">Clínica Dental Lumen • Gran Vía, Madrid</p>
+              <p className="text-[11px] text-[#667085]">
+                Simula clientes de Ivirgarzama por WhatsApp y Web
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Interruptor Modo Seguro */}
-            <button
-              onClick={() => setSafeMode(!safeMode)}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors font-medium ${
-                safeMode
-                  ? "bg-purple-50 text-purple-700 border-purple-200"
-                  : "bg-amber-50 text-amber-700 border-amber-200"
-              }`}
-            >
-              {safeMode ? <Shield className="w-3.5 h-3.5" /> : <ShieldAlert className="w-3.5 h-3.5" />}
-              <span>Modo seguro: {safeMode ? "Activo" : "Apagado"}</span>
-            </button>
+          <div className="flex items-center gap-3">
+            {/* Switch Modo Seguro */}
+            <div className="flex items-center gap-2 bg-white px-2.5 py-1 rounded-xl border border-[#EAECF0] shadow-2xs">
+              <span className="text-[11px] font-semibold text-[#344054]">
+                Modo Seguro
+              </span>
+              <button
+                type="button"
+                onClick={() => setSafeMode(!safeMode)}
+                className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors ${
+                  safeMode ? "bg-emerald-600" : "bg-gray-300"
+                }`}
+              >
+                <div
+                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                    safeMode ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
 
-            {/* Botón Nueva Conversación */}
             <button
               onClick={handleReset}
-              title="Empezar una conversación nueva"
-              className="p-1.5 text-[#667085] hover:text-[#101828] hover:bg-[#F2F4F7] rounded-xl transition-colors border border-[#EAECF0]"
+              title="Reiniciar chat"
+              className="p-1.5 text-[#667085] hover:text-[#101828] hover:bg-[#F2F4F7] rounded-lg transition-colors"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Mensajes del Chat */}
-        <div className="flex-1 p-5 overflow-y-auto space-y-4 bg-[#F9FAFB]">
-          {messages.map((m, idx) => (
-            <div
-              key={idx}
-              className={`flex gap-3 max-w-[85%] ${
-                m.role === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
-              }`}
-            >
+        {/* Mensajes */}
+        <div className="flex-1 p-4 overflow-y-auto space-y-4">
+          {messages.map((m, idx) => {
+            const isBot = m.role === "assistant";
+
+            return (
               <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs ${
-                  m.role === "user" ? "bg-[#101828] text-white" : "bg-teal-700 text-white"
-                }`}
+                key={idx}
+                className={`flex gap-2.5 ${isBot ? "justify-start" : "justify-end"}`}
               >
-                {m.role === "user" ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
-              </div>
-
-              <div className="space-y-1">
-                <div
-                  className={`p-3.5 rounded-2xl text-xs whitespace-pre-wrap leading-relaxed shadow-2xs ${
-                    m.role === "user"
-                      ? "bg-teal-700 text-white rounded-tr-none"
-                      : "bg-white text-[#101828] border border-[#EAECF0] rounded-tl-none"
-                  }`}
-                >
-                  {m.content}
-                </div>
-
-                {m.toolCalls && m.toolCalls.length > 0 && (
-                  <div className="flex items-center gap-1 text-[11px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200 w-fit">
-                    <Sparkles className="w-3 h-3 text-purple-600" />
-                    <span>Llamó a {m.toolCalls.length} herramienta(s)</span>
+                {isBot && (
+                  <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                    TG
                   </div>
                 )}
+
+                <div
+                  className={`max-w-[80%] rounded-2xl px-4 py-3 text-xs leading-relaxed shadow-2xs ${
+                    isBot
+                      ? "bg-[#F9FAFB] border border-[#EAECF0] text-[#101828]"
+                      : "bg-emerald-600 text-white font-medium"
+                  }`}
+                >
+                  <p className="whitespace-pre-line">{m.content}</p>
+
+                  {m.toolCalls && m.toolCalls.length > 0 && (
+                    <div className="mt-2.5 pt-2 border-t border-[#EAECF0] flex flex-wrap gap-1">
+                      {m.toolCalls.map((tc: any, i: number) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 text-[10px] font-mono bg-white text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md"
+                        >
+                          <Cpu className="w-3 h-3 text-emerald-600" />
+                          <span>{tc.tool}()</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {loading && (
-            <div className="flex items-center gap-2 text-xs text-[#667085] bg-white border border-[#EAECF0] p-2.5 rounded-xl w-fit">
-              <span className="w-2 h-2 rounded-full bg-teal-600 animate-ping" />
-              <span>Consultando Google Calendar y respondiendo...</span>
+            <div className="flex gap-2 items-center text-xs text-[#667085] p-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping"></span>
+              <span>TropiBot está procesando con Groq...</span>
             </div>
           )}
         </div>
 
-        {/* Chips de Preguntas Rápidas para Demostración */}
-        <div className="px-4 py-2 border-t border-[#EAECF0] bg-white flex items-center gap-2 overflow-x-auto text-[11px]">
-          <span className="text-[#667085] shrink-0 font-medium">Ejemplos:</span>
-          {[
-            "¿Cuánto cuesta el Invisalign?",
-            "¿Tenéis hueco el jueves por la tarde?",
-            "Confírmame a las 17:30 con la Dra. Gómez",
-            "Tengo un dolor muy fuerte de muela",
-          ].map((chip) => (
+        {/* Chips de Pregunta Rápida */}
+        <div className="p-2 border-t border-[#EAECF0] bg-[#FAFAFA] flex items-center gap-1.5 overflow-x-auto text-[11px]">
+          <span className="text-[#98A2B3] shrink-0 px-1 font-bold">Pruebas:</span>
+          {quickChips.map((chip, i) => (
             <button
-              key={chip}
+              key={i}
               onClick={() => handleSend(chip)}
-              className="bg-[#F2F4F7] hover:bg-[#E4E7EC] text-[#344054] px-2.5 py-1 rounded-lg shrink-0 transition-colors"
+              className="shrink-0 bg-white border border-[#D0D5DD] hover:border-emerald-500 hover:text-emerald-700 text-[#475467] font-medium px-2.5 py-1 rounded-full transition-colors truncate max-w-[240px]"
             >
               {chip}
             </button>
@@ -204,96 +261,79 @@ export function Simulator() {
         </div>
 
         {/* Input */}
-        <div className="p-3 border-t border-[#EAECF0] bg-white">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSend();
-            }}
-            className="flex items-center gap-2"
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSend();
+          }}
+          className="p-3 border-t border-[#EAECF0] flex gap-2 bg-white"
+        >
+          <input
+            type="text"
+            placeholder="Escribe como cliente de Ivirgarzama (ej: ¿tienen majadito hoy?)..."
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            className="flex-1 px-3.5 py-2 text-xs bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+          />
+          <button
+            type="submit"
+            disabled={loading || !input.trim()}
+            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-xs"
           >
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Escribe como cliente (ej: 'Hola, ¿qué horario tenéis y cuánto cuesta la limpieza?')..."
-              className="flex-1 bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-4 py-2.5 text-xs text-[#101828] focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
-            />
-            <button
-              type="submit"
-              disabled={loading || !input.trim()}
-              className="bg-teal-700 hover:bg-teal-800 disabled:bg-[#D0D5DD] text-white p-2.5 rounded-xl transition-colors shrink-0 shadow-xs"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
-        </div>
+            <span>Enviar</span>
+            <Send className="w-3.5 h-3.5" />
+          </button>
+        </form>
       </div>
 
-      {/* Columna Derecha: Línea de Tiempo con Cada Paso (Para vídeo) */}
-      <div className="lg:col-span-6 bg-white rounded-2xl border border-[#EAECF0] shadow-2xs flex flex-col overflow-hidden">
-        <div className="p-4 border-b border-[#EAECF0] bg-[#FAFAFA] flex items-center justify-between">
+      {/* Columna Derecha: Línea de Tiempo de Herramientas */}
+      <div className="lg:col-span-5 bg-white rounded-2xl border border-[#EAECF0] p-5 shadow-xs h-[650px] flex flex-col">
+        <div className="pb-3 border-b border-[#EAECF0] flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-purple-600" />
-            <h3 className="font-bold text-xs text-[#101828]">
-              Línea de Tiempo de Herramientas (AI Tool Calling)
+            <Cpu className="w-4 h-4 text-emerald-600" />
+            <h3 className="font-black text-sm text-[#101828]">
+              Ejecución de Herramientas (Tools)
             </h3>
           </div>
-          <span className="text-[11px] bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-semibold">
-            {timelineSteps.length} paso(s) ejecutado(s)
+          <span className="text-[10px] text-[#667085] bg-[#F2F4F7] px-2 py-0.5 rounded-full font-semibold">
+            Timeline en Vivo
           </span>
         </div>
 
-        <div className="flex-1 p-5 overflow-y-auto space-y-4 bg-[#F9FAFB]">
-          {timelineSteps.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center p-6 text-xs text-[#667085] space-y-2">
-              <Calendar className="w-10 h-10 text-[#D0D5DD]" />
-              <p className="font-semibold text-[#344054]">Esperando llamadas a herramientas...</p>
-              <p className="text-[11px] max-w-xs text-[#98A2B3]">
-                Cuando preguntes por citas, Google Calendar, servicios o urgencias, aquí se mostrará cada paso con sus parámetros y respuesta en tiempo real.
-              </p>
-            </div>
-          ) : (
-            timelineSteps.map((step, idx) => (
-              <div
-                key={idx}
-                className="bg-white rounded-2xl border border-[#EAECF0] p-4 space-y-3 shadow-2xs hover:border-[#D0D5DD] transition-all"
-              >
-                {/* Cabecera del Paso */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span className="font-mono font-bold text-xs text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-md border border-purple-200">
-                      {step.tool}()
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-[#98A2B3] font-mono">
-                    {step.timestamp}
-                  </span>
-                </div>
+        <p className="text-[11px] text-[#667085] py-2">
+          Inspecciona cada llamada a función que el modelo ejecuta contra la base de datos de TropiGO.
+        </p>
 
-                {/* Parámetros enviados */}
-                <div>
-                  <p className="text-[10px] font-bold text-[#667085] uppercase tracking-wider mb-1">
-                    Parámetros enviados por la IA:
-                  </p>
-                  <pre className="bg-[#F8F9FA] p-2.5 rounded-xl text-[11px] text-[#344054] font-mono overflow-x-auto border border-[#EAECF0]">
-                    {JSON.stringify(step.args, null, 2)}
-                  </pre>
-                </div>
-
-                {/* Resultado retornado */}
-                <div>
-                  <p className="text-[10px] font-bold text-[#667085] uppercase tracking-wider mb-1">
-                    Respuesta de la integración:
-                  </p>
-                  <pre className="bg-[#101828] text-[#E4E7EC] p-2.5 rounded-xl text-[11px] font-mono overflow-x-auto">
-                    {JSON.stringify(step.result, null, 2)}
-                  </pre>
-                </div>
+        <div className="flex-1 overflow-y-auto space-y-3 pr-1 mt-2">
+          {timelineSteps.map((step, idx) => (
+            <div
+              key={idx}
+              className="p-3 rounded-xl border border-[#EAECF0] bg-[#F8F9FA] text-xs space-y-1.5"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-[#101828] flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  {step.title}
+                </span>
+                <span className="text-[10px] text-[#98A2B3] font-mono">{step.time}</span>
               </div>
-            ))
-          )}
+
+              {step.details && (
+                <div className="bg-white p-2 rounded-lg border border-[#EAECF0] font-mono text-[10px] text-[#344054] overflow-x-auto">
+                  <pre>{step.details}</pre>
+                </div>
+              )}
+
+              {step.result && (
+                <div className="bg-emerald-50/50 p-2 rounded-lg border border-emerald-200/50 font-mono text-[10px] text-emerald-900 overflow-x-auto">
+                  <span className="text-[9px] font-bold uppercase tracking-wider block text-emerald-700 mb-0.5">
+                    Resultado:
+                  </span>
+                  <pre>{step.result}</pre>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </div>

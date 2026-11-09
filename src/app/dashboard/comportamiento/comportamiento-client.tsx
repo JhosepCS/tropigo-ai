@@ -16,7 +16,9 @@ import {
 interface ComportamientoClientProps {
   initialAssistant: any;
   business: any;
-  services: any[];
+  merchants?: any[];
+  zones?: any[];
+  services?: any[];
   faqs: any[];
   knowledgeBaseText: string;
 }
@@ -24,12 +26,13 @@ interface ComportamientoClientProps {
 export function ComportamientoClient({
   initialAssistant,
   business,
-  services,
+  merchants = [],
+  zones = [],
   faqs,
   knowledgeBaseText,
 }: ComportamientoClientProps) {
-  const [name, setName] = useState(initialAssistant?.name || "LumenBot");
-  const [avatarUrl, setAvatarUrl] = useState(initialAssistant?.avatarUrl || "/avatar.png");
+  const [name, setName] = useState(initialAssistant?.name || "TropiBot");
+  const [avatarUrl, setAvatarUrl] = useState(initialAssistant?.avatarUrl || "/avatar-tropigo.png");
   const [tone, setTone] = useState(initialAssistant?.tone || "cercano");
   const [welcomeMessage, setWelcomeMessage] = useState(
     initialAssistant?.welcomeMessage || ""
@@ -47,7 +50,7 @@ export function ComportamientoClient({
     try {
       return JSON.parse(initialAssistant?.handoffRules || "[]");
     } catch (e) {
-      return ["queja", "urgencia", "pide hablar con alguien", "no sabe la respuesta"];
+      return ["queja", "reclamo", "pide hablar con alguien", "no sabe la respuesta", "urgencia"];
     }
   });
   const [customHandoffRule, setCustomHandoffRule] = useState(
@@ -59,54 +62,59 @@ export function ComportamientoClient({
   const [showPromptModal, setShowPromptModal] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
 
-  // Compilar el prompt del sistema real que recibe el modelo
-  const fullSystemPrompt = `Eres ${name}, el asistente virtual de inteligencia artificial de «${business?.name || "Clínica Dental Lumen"}».
-Ubicación: ${business?.address || "Calle Gran Vía 42, 2º Izquierda, 28013 Madrid"}.
-Teléfono de contacto: ${business?.phone || "+34 912 345 678"}.
-Sitio web: ${business?.website || "https://clinicalumen.es"}.
-Zona horaria: ${business?.timezone || "Europe/Madrid"}.
-Fecha y hora actual: ${new Date().toLocaleString("es-ES", { timeZone: "Europe/Madrid" })}.
+  // Compilar el prompt del sistema real que recibe el modelo Groq
+  const fullSystemPrompt = `Eres ${name}, el asistente virtual oficial de «${business?.name || "TropiGO Ivirgarzama"}».
+Slogan: "TropiGO — Movemos el Trópico 🌴".
+Ubicación base: ${business?.address || "Av. Mortensen esq. Mercado Central, Ivirgarzama, Cochabamba, Bolivia"}.
+Teléfono de soporte: ${business?.phone || "+591 74389012"}.
+Moneda oficial: Bolivianos (Bs.).
+Zona horaria: America/La_Paz.
 
 TONO Y PERSONALIDAD:
-- Tono: ${tone.toUpperCase()}. Responde siempre en español de España de forma natural, educada, concisa y empática (estilo WhatsApp).
+- Tono: ${tone.toUpperCase()}. Responde en español boliviano amable, ágil, con respeto y calidez del Trópico de Cochabamba.
 - ${instructions}
 
 LO QUE NUNCA DEBES HACER (REGLAS ESTRICTAS):
 - ${prohibitedActions.split("\n").join("\n- ")}
 
-HORARIO DE ATENCIÓN:
-- Lunes a Viernes: 09:00 a 14:00 y 16:00 a 20:00.
-- Sábados y Domingos: Cerrado.
+HORARIO DE ATENCIÓN DE PEDIDOS:
+- Lunes a Domingo de 07:00 a 23:00 (Viernes y Sábados hasta las 23:59).
 - Política fuera de horario: ${
     offHoursPolicy === "CONTINUE_AND_BOOK"
-      ? "Seguir atendiendo dudas y dar cita en los huecos disponibles."
-      : "Tomar el recado con nombre y teléfono indicando que el equipo le contactará a primera hora de apertura."
+      ? "Seguir tomando pedidos para entregar a primera hora de apertura mañana."
+      : "Tomar el recado indicando que el equipo abrirá a las 07:00."
   }
 
-CUÁNDO DERIVAR A UNA PERSONA DEL EQUIPO (PASAR A HUMANO):
+CUÁNDO DERIVAR A UN OPERADOR HUMANO DE DESPACHO:
 ${handoffRules.map((r) => `- Cuando el cliente manifieste: ${r}`).join("\n")}
 ${customHandoffRule ? `- Regla adicional: ${customHandoffRule}` : ""}
 
-CATÁLOGO DE SERVICIOS Y PRECIOS:
-${services
+COMERCIOS Y MENÚS OFICIALES DISPONIBLES:
+${merchants
   .map(
-    (s) =>
-      `- ${s.name}: ${s.durationMinutes} min, ${
-        s.price === 0 ? "Gratuito" : `${s.priceType === "from" ? "Desde " : ""}${s.price} €`
-      } ${s.requiresAssessment ? "(Requiere valoración previa)" : ""} — ${s.description}`
+    (m) =>
+      `• COMERCIO: ${m.name} (${m.category}) — ${m.description || ""}\n` +
+      m.products
+        .map((p: any) => `    - ${p.name}: ${p.price.toFixed(2)} Bs. (${p.description || ""})`)
+        .join("\n")
+  )
+  .join("\n\n")}
+
+TARIFAS Y ZONAS DE COBERTURA:
+${zones
+  .map(
+    (z) =>
+      `- ${z.name}: Delivery ${z.baseDeliveryCost.toFixed(2)} Bs. | Mototaxi ${z.baseRideCost.toFixed(2)} Bs. (Tiempo estimado: ${z.estimatedMinutes} min)`
   )
   .join("\n")}
 
-PREGUNTAS FRECUENTES DEL NEGOCIO:
+PREGUNTAS FRECUENTES (PAGOS Y CONDICIONES):
 ${faqs.map((f) => `P: ${f.question}\nR: ${f.answer}`).join("\n\n")}
 
-CONOCIMIENTO ADICIONAL DE LA CLÍNICA:
-${knowledgeBaseText}
-
-REGLAS DE ACTUACIÓN CON CITAS:
-1. En el primer mensaje preséntate amablemente como asistente virtual del negocio.
-2. Antes de crear, modificar o cancelar una cita en Google Calendar, confirma explícitamente con el paciente el día, la hora y el tratamiento seleccionado.
-3. Si el paciente no puede acudir, recuérdale con amabilidad la política de avisar con 24h de antelación.`;
+REGLAS DE OPERACIÓN:
+1. En el primer mensaje preséntate con entusiasmo como TropiBot de TropiGO.
+2. Pide siempre la ubicación exacta o referencia clara ("frente al surtidor", "a media cuadra de la plaza").
+3. Antes de confirmar, resume el pedido, total en Bs. y pregunta si paga en Efectivo o con QR Simple.`;
 
   const toggleHandoffRule = (rule: string) => {
     if (handoffRules.includes(rule)) {

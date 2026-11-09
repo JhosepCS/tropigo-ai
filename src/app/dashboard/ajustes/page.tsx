@@ -1,21 +1,25 @@
 import { prisma } from "@/lib/prisma";
+import { getMaskedWhatsAppStatus } from "@/lib/whatsapp/meta-manager";
 import { AjustesClient } from "./ajustes-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function AjustesPage() {
-  const business = await prisma.businessProfile.findFirst();
-  const agency = await prisma.agencyProfile.findFirst();
-  const users = await prisma.user.findMany({
-    orderBy: { createdAt: "asc" },
-  });
+  const [business, agency, users, whatsappStatus] = await Promise.all([
+    prisma.businessProfile.findFirst(),
+    prisma.agencyProfile.findFirst(),
+    prisma.user.findMany({ orderBy: { createdAt: "asc" } }),
+    getMaskedWhatsAppStatus(),
+  ]);
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-[#101828]">Ajustes del Sistema</h2>
-        <p className="text-sm text-[#475467]">
-          Configuración general, modelo de IA con catálogo de OpenRouter, marca blanca de la agencia y gestión de usuarios.
+        <h2 className="text-xl font-black text-[#101828]">
+          Ajustes de TropiGO & Conexiones
+        </h2>
+        <p className="text-xs text-[#667085] mt-0.5">
+          Conexión oficial de WhatsApp Business Cloud API de Meta, datos de la empresa en Ivirgarzama y gestión del sistema.
         </p>
       </div>
 
@@ -23,6 +27,7 @@ export default async function AjustesPage() {
         initialBusiness={business as any}
         initialAgency={agency as any}
         users={users as any}
+        initialWhatsAppStatus={whatsappStatus}
       />
     </div>
   );

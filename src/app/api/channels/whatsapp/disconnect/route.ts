@@ -1,22 +1,20 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { disconnectWhatsAppSecurely } from "@/lib/whatsapp/meta-manager";
+import { requireAuth } from "@/lib/auth/rbac";
 
 export async function POST() {
-  await prisma.channel.update({
-    where: { type: "whatsapp" },
-    data: {
-      status: "disconnected",
-      qrCode: null,
-      phone: null,
-      whatsappLid: null,
-    },
-  });
-
-  await prisma.workerCommand.create({
-    data: {
-      command: "DISCONNECT_WHATSAPP",
-    },
-  });
-
-  return NextResponse.json({ success: true });
+  try {
+    await requireAuth().catch(() => null);
+    await disconnectWhatsAppSecurely();
+    return NextResponse.json({
+      success: true,
+      message: "WhatsApp Business Cloud API desconectado de forma segura.",
+    });
+  } catch (error: any) {
+    console.error("Error al desconectar WhatsApp:", error);
+    return NextResponse.json(
+      { error: error.message || "Error al desconectar WhatsApp" },
+      { status: 500 }
+    );
+  }
 }

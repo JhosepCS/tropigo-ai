@@ -1,16 +1,21 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { NextRequest, NextResponse } from "next/server";
+import { getMaskedWhatsAppStatus } from "@/lib/whatsapp/meta-manager";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const wp = await prisma.channel.findUnique({
-    where: { type: "whatsapp" },
-  });
-
-  return NextResponse.json({
-    status: wp?.status || "disconnected",
-    phone: wp?.phone || null,
-    qrCode: wp?.qrCode || null,
-  });
+export async function GET(req: NextRequest) {
+  try {
+    const origin = req.headers.get("origin") || req.nextUrl.origin || undefined;
+    const status = await getMaskedWhatsAppStatus(origin);
+    return NextResponse.json({
+      success: true,
+      ...status,
+    });
+  } catch (error: any) {
+    console.error("Error al obtener estado de WhatsApp Meta Cloud API:", error);
+    return NextResponse.json(
+      { error: error.message || "Error al obtener estado de WhatsApp" },
+      { status: 500 }
+    );
+  }
 }

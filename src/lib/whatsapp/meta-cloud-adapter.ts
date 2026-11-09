@@ -4,6 +4,7 @@ import {
   InteractiveButton,
   ListSection,
   IncomingWhatsAppMessage,
+  IncomingWhatsAppStatus,
 } from "./types";
 
 export interface MetaConfig {
@@ -199,7 +200,14 @@ export class MetaCloudApiAdapter implements IWhatsAppProvider {
 
     const hmac = crypto.createHmac("sha256", appSecret);
     const expected = hmac.update(rawBody).digest("hex");
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+
+    const sigBuf = Buffer.from(signature);
+    const expBuf = Buffer.from(expected);
+    if (sigBuf.length !== expBuf.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(sigBuf, expBuf);
   }
 
   /**
@@ -214,10 +222,23 @@ export class MetaCloudApiAdapter implements IWhatsAppProvider {
         const value = change.value;
         if (!value?.messages) continue;
 
+        // Extraer nombre de perfil de contactos si Meta lo suministra
+        const contactMap = new Map<string, string>();
+        if (Array.isArray(value.contacts)) {
+          for (const c of value.contacts) {
+            if (c.wa_id && c.profile?.name) {
+              contactMap.set(c.wa_id, c.profile.name);
+            }
+          }
+        }
+
         for (const msg of value.messages) {
+          const profileName = contactMap.get(msg.from) || value.contacts?.[0]?.profile?.name;
+
           const base: IncomingWhatsAppMessage = {
             id: msg.id,
             from: msg.from,
+            senderProfileName: profileName,
             timestamp: parseInt(msg.timestamp, 10) * 1000,
             type: "other",
             raw: msg,
@@ -229,6 +250,16 @@ export class MetaCloudApiAdapter implements IWhatsAppProvider {
           } else if (msg.type === "audio" || msg.type === "voice") {
             base.type = "audio";
             base.audioMediaId = msg.audio?.id || msg.voice?.id;
+          } else if (msg.type === "image") {
+            base.type = "image";
+            base.imageMediaId = msg.image?.id;
+            base.mediaCaption = msg.image?.caption;
+            base.text = msg.image?.caption || "[Foto recibida por WhatsApp]";
+          } else if (msg.type === "document") {
+            base.type = "document";
+            base.documentMediaId = msg.document?.id;
+            base.mediaCaption = msg.document?.filename || msg.document?.caption;
+            base.text = msg.document?.filename ? `[Documento: ${msg.document.filename}]` : "[Documento adjunto]";
           } else if (msg.type === "location") {
             base.type = "location";
             base.location = {
@@ -254,6 +285,37 @@ export class MetaCloudApiAdapter implements IWhatsAppProvider {
     }
 
     return results;
+  }
+
+  /**
+   * Extrae y normaliza las confirmaciones de estado (sent, delivered, read, failed)
+   * que envía Meta Cloud API.
+   */
+  static parseWebhookStatuses(body: any): IncomingWhatsAppStatus[] {
+    const statuses: IncomingWhatsAppStatus[] = [];
+    if (!body?.entry) return statuses;
+
+    for (const entry of body.entry) {
+      for (const change of entry.changes || []) {
+        const value = change.value;
+        if (!value?.statuses || !Array.isArray(value.statuses)) continue;
+
+        for (const st of value.statuses) {
+          if (!st.id || !st.status) continue;
+          statuses.push({
+            id: st.id,
+            status: st.status as "sent" | "delivered" | "read" | "failed",
+            recipientId: st.recipient_id || "",
+            timestamp: parseInt(st.timestamp, 10) * 1000 || Date.now(),
+            errors: st.errors,
+            conversation: st.conversation,
+            pricing: st.pricing,
+          });
+        }
+      }
+    }
+
+    return statuses;
   }
 
   /**

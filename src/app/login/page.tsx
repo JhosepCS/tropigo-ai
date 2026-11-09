@@ -1,34 +1,33 @@
 import { prisma } from "@/lib/prisma";
 import { LoginForm } from "./login-form";
+import { Logo } from "@/components/ui/logo";
+import { MapPin } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
-  const agency = await prisma.agencyProfile.findFirst();
+  const business = await prisma.businessProfile.findFirst();
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-600 to-emerald-500 flex items-center justify-center text-white font-black text-xl shadow-md">
-            A
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-[#101828]">Atiende</h1>
-            <p className="text-xs text-[#667085]">{agency?.name || "Lumina Digital Agency"}</p>
-          </div>
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center space-y-3">
+        <div className="flex justify-center">
+          <Logo size="lg" href="/" />
         </div>
 
-        <h2 className="mt-6 text-center text-xl font-bold tracking-tight text-[#101828]">
-          Acceso al Panel de Control
-        </h2>
-        <p className="mt-1 text-center text-xs text-[#667085]">
-          Gestiona el asistente de IA para WhatsApp y Web
-        </p>
+        <div>
+          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
+            Acceso a la Plataforma
+          </h2>
+          <p className="text-xs text-slate-500 mt-1 flex items-center justify-center gap-1">
+            <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Ivirgarzama • Centro Operativo del Trópico</span>
+          </p>
+        </div>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-6 shadow-xs border border-[#EAECF0] rounded-3xl sm:px-10">
+      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">
+        <div className="bg-white py-8 px-6 shadow-sm border border-slate-200/80 rounded-3xl sm:px-8">
           <LoginForm />
         </div>
       </div>

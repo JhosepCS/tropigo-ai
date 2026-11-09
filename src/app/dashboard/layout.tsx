@@ -9,13 +9,15 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const business = await prisma.businessProfile.findFirst();
-  const agency = await prisma.agencyProfile.findFirst();
-  const wpChannel = await prisma.channel.findUnique({ where: { type: "whatsapp" } });
-  const webChannel = await prisma.channel.findUnique({ where: { type: "webchat" } });
-  const pendingHuman = await prisma.conversation.count({
-    where: { status: "human_takeover" },
-  });
+  const [business, agency, wpChannel, webChannel, pendingOrders, pendingHuman] =
+    await Promise.all([
+      prisma.businessProfile.findFirst(),
+      prisma.agencyProfile.findFirst(),
+      prisma.channel.findUnique({ where: { type: "whatsapp" } }),
+      prisma.channel.findUnique({ where: { type: "webchat" } }),
+      prisma.order.count({ where: { status: "RECIBIDO" } }),
+      prisma.conversation.count({ where: { status: "HUMAN_TAKEOVER" } }),
+    ]);
 
   const isWpConnected = wpChannel?.status === "connected";
   const isWebConnected = webChannel?.status === "connected";
@@ -23,19 +25,20 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-screen bg-[#F9FAFB]">
       <Sidebar
-        agencyName={agency?.name || "Agencia Lumina"}
-        pendingHumanCount={pendingHuman}
+        businessName={business?.name || "TropiGO Ivirgarzama"}
+        pendingOrdersCount={pendingOrders}
+        unreadCount={pendingHuman}
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
         {/* Top Navbar */}
-        <header className="h-16 bg-white border-b border-[#EAECF0] px-8 flex items-center justify-between sticky top-0 z-20">
+        <header className="h-16 bg-white border-b border-[#EAECF0] px-6 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-3">
-            <h1 className="text-base font-bold text-[#101828]">
-              {business?.name || "Clínica Dental Lumen"}
+            <h1 className="text-sm sm:text-base font-black text-[#101828]">
+              {business?.name || "TropiGO Ivirgarzama"}
             </h1>
-            <span className="text-xs text-[#667085] bg-[#F2F4F7] px-2 py-0.5 rounded-md border border-[#EAECF0] hidden sm:inline-block">
-              Gran Vía 42, Madrid (Europe/Madrid)
+            <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 hidden sm:inline-block">
+              Ivirgarzama (America/La_Paz • Bs.)
             </span>
           </div>
 
@@ -45,29 +48,31 @@ export default async function DashboardLayout({
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#EAECF0] bg-[#FAFAFA] text-[#344054]">
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    isWpConnected ? "bg-emerald-500" : "bg-gray-400"
+                    isWpConnected ? "bg-emerald-500 animate-pulse" : "bg-gray-400"
                   }`}
                 />
-                <span>WhatsApp: {isWpConnected ? wpChannel?.phone || "Conectado" : "Sin conectar"}</span>
+                <span className="font-bold text-[11px]">
+                  WhatsApp: {isWpConnected ? "Conectado" : "Esperando QR"}
+                </span>
               </div>
 
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#EAECF0] bg-[#FAFAFA] text-[#344054]">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    isWebConnected ? "bg-emerald-500" : "bg-gray-400"
-                  }`}
-                />
-                <span>Chat Web: {isWebConnected ? "Activo" : "Pausado"}</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span className="font-bold text-[11px]">Web: Activo</span>
               </div>
             </div>
 
-            {/* Interruptor General Asistente encendido / en pausa */}
-            <MasterAssistantSwitch initialEnabled={business?.assistantEnabled ?? true} />
+            {/* Interruptor Maestro Asistente TropiBot */}
+            <MasterAssistantSwitch
+              initialEnabled={business?.assistantEnabled ?? true}
+            />
           </div>
         </header>
 
         {/* Contenido Principal */}
-        <main className="flex-1 p-8">{children}</main>
+        <main className="flex-1 p-6 sm:p-8 max-w-7xl w-full mx-auto">
+          {children}
+        </main>
       </div>
     </div>
   );

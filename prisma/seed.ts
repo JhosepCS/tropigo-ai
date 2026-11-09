@@ -4,47 +4,696 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("🌱 Sembrando datos oficiales de TropiGO en Ivirgarzama (Trópico de Cochabamba)...");
+  console.log("🌱 Iniciando sembrado integral de datos para TropiGO (Trópico de Cochabamba)...");
 
-  // Limpieza inicial para idempotencia
+  // Limpieza inicial para garantizar idempotencia sin violar restricciones de clave foránea
+  console.log("🧹 Limpiando datos previos de forma ordenada...");
+  await prisma.orderDiscount.deleteMany();
+  await prisma.orderStatusHistory.deleteMany();
+  await prisma.orderItem.deleteMany();
   await prisma.paymentRecord.deleteMany();
+  await prisma.riderSettlement.deleteMany();
   await prisma.order.deleteMany();
+  await prisma.rideStatusHistory.deleteMany();
   await prisma.rideTrip.deleteMany();
+  await prisma.handoffHistory.deleteMany();
   await prisma.message.deleteMany();
   await prisma.conversation.deleteMany();
   await prisma.appointment.deleteMany();
-  await prisma.customer.deleteMany();
+  await prisma.userAddress.deleteMany();
+  await prisma.session.deleteMany();
+  await prisma.profile.deleteMany();
   await prisma.rider.deleteMany();
+  await prisma.customer.deleteMany();
+  await prisma.productImage.deleteMany();
+  await prisma.productOptionItem.deleteMany();
+  await prisma.productOptionGroup.deleteMany();
+  await prisma.productVariant.deleteMany();
   await prisma.product.deleteMany();
+  await prisma.productCategory.deleteMany();
+  await prisma.merchantSchedule.deleteMany();
+  await prisma.merchantBranch.deleteMany();
+  await prisma.promotion.deleteMany();
   await prisma.merchant.deleteMany();
+  await prisma.commercialCategory.deleteMany();
   await prisma.deliveryZone.deleteMany();
-  await prisma.faq.deleteMany();
   await prisma.service.deleteMany();
+  await prisma.faq.deleteMany();
+  await prisma.knowledgeDocument.deleteMany();
+  await prisma.knowledgeBase.deleteMany();
+  await prisma.activityLog.deleteMany();
+  await prisma.workerCommand.deleteMany();
   await prisma.integration.deleteMany();
   await prisma.channel.deleteMany();
   await prisma.whatsAppConfig.deleteMany();
   await prisma.assistantConfig.deleteMany();
   await prisma.businessProfile.deleteMany();
   await prisma.agencyProfile.deleteMany();
+  await prisma.user.deleteMany();
+  await prisma.city.deleteMany();
 
-  // 1. Usuario Administrador
-  const adminEmail = process.env.ADMIN_EMAIL || "admin@tropigo.bo";
-  const adminPassword = process.env.ADMIN_PASSWORD || "AdminTropigo2025!";
-  const hashedPassword = await bcrypt.hash(adminPassword, 10);
+  // =================================================================
+  // 1. LOCALIDADES (5 LOCALIDADES SOLICITADAS)
+  // =================================================================
+  console.log("📍 Registrando localidades del Trópico de Cochabamba...");
 
-  const admin = await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: { password: hashedPassword },
-    create: {
-      email: adminEmail,
-      name: "Administrador TropiGO",
-      password: hashedPassword,
-      role: "ADMIN",
+  const ivirgarzama = await prisma.city.create({
+    data: {
+      id: "city_ivirgarzama",
+      name: "Ivirgarzama",
+      department: "Cochabamba",
+      country: "BO",
+      isActive: true, // Localidad inicial activa
     },
   });
-  console.log(`✅ Administrador creado: ${admin.email}`);
 
-  // 2. Perfil de Marca / Agencia
+  await prisma.city.createMany({
+    data: [
+      {
+        id: "city_shinahota",
+        name: "Shinahota",
+        department: "Cochabamba",
+        country: "BO",
+        isActive: false, // Inactiva hasta próxima fase
+      },
+      {
+        id: "city_puerto_villarroel",
+        name: "Puerto Villarroel",
+        department: "Cochabamba",
+        country: "BO",
+        isActive: false,
+      },
+      {
+        id: "city_chimore",
+        name: "Chimoré",
+        department: "Cochabamba",
+        country: "BO",
+        isActive: false,
+      },
+      {
+        id: "city_villa_tunari",
+        name: "Villa Tunari",
+        department: "Cochabamba",
+        country: "BO",
+        isActive: false,
+      },
+    ],
+  });
+  console.log("✅ 5 Localidades registradas (Ivirgarzama activa, 4 inactivas)");
+
+  // =================================================================
+  // 2. ZONAS DE COBERTURA Y TARIFARIO (IVIRGARZAMA)
+  // =================================================================
+  console.log("🗺️ Registrando zonas de cobertura y tarifario para Ivirgarzama...");
+  const zonesData = [
+    {
+      id: "zone_casco_central",
+      cityId: ivirgarzama.id,
+      name: "Casco Central",
+      description: "Plaza Principal, entorno de Alcaldía y zona comercial central",
+      baseDeliveryCost: 5.0,
+      baseRideCost: 4.0,
+      estimatedMinutes: 15,
+      isActive: true,
+    },
+    {
+      id: "zone_av_mortensen",
+      cityId: ivirgarzama.id,
+      name: "Av. Mortensen",
+      description: "Avenida comercial principal, entidades financieras y farmacias",
+      baseDeliveryCost: 5.0,
+      baseRideCost: 4.0,
+      estimatedMinutes: 15,
+      isActive: true,
+    },
+    {
+      id: "zone_mercado_central",
+      cityId: ivirgarzama.id,
+      name: "Mercado Central",
+      description: "Paradas de transporte, puestos de abarrotes y comida criolla",
+      baseDeliveryCost: 5.0,
+      baseRideCost: 4.0,
+      estimatedMinutes: 15,
+      isActive: true,
+    },
+    {
+      id: "zone_villa_14",
+      cityId: ivirgarzama.id,
+      name: "Villa 14",
+      description: "Zona periurbana de expansión residencial y sindicato",
+      baseDeliveryCost: 8.0,
+      baseRideCost: 7.0,
+      estimatedMinutes: 25,
+      isActive: true,
+    },
+    {
+      id: "zone_senda_3",
+      cityId: ivirgarzama.id,
+      name: "Senda III",
+      description: "Área comunitaria e interprovincial sobre carretera troncal",
+      baseDeliveryCost: 10.0,
+      baseRideCost: 9.0,
+      estimatedMinutes: 30,
+      isActive: true,
+    },
+  ];
+
+  for (const z of zonesData) {
+    await prisma.deliveryZone.create({ data: z });
+  }
+  console.log("✅ 5 Zonas de cobertura y tarifas configuradas");
+
+  // =================================================================
+  // 3. CATEGORÍAS COMERCIALES
+  // =================================================================
+  console.log("🏷️ Creando categorías comerciales oficiales...");
+  const catRestaurantes = await prisma.commercialCategory.create({
+    data: {
+      name: "Restaurantes y Comida Criolla",
+      slug: "restaurantes",
+      icon: "UtensilsCrossed",
+      order: 1,
+    },
+  });
+
+  const catPollerias = await prisma.commercialCategory.create({
+    data: {
+      name: "Pollerías y Broasterías",
+      slug: "pollerias",
+      icon: "Drumstick",
+      order: 2,
+    },
+  });
+
+  const catFarmacias = await prisma.commercialCategory.create({
+    data: {
+      name: "Farmacias y Salud",
+      slug: "farmacias",
+      icon: "Pill",
+      order: 3,
+    },
+  });
+
+  const catAbarrotes = await prisma.commercialCategory.create({
+    data: {
+      name: "Abarrotes y Tiendas",
+      slug: "abarrotes",
+      icon: "Store",
+      order: 4,
+    },
+  });
+
+  const catMandados = await prisma.commercialCategory.create({
+    data: {
+      name: "Mandados y Envíos Express",
+      slug: "mandados",
+      icon: "Bike",
+      order: 5,
+    },
+  });
+
+  // =================================================================
+  // 4. USUARIOS ADMINISTRATIVOS Y OPERATIVOS (HASH BCRYPT SEGURO)
+  // =================================================================
+  console.log("👤 Creando usuarios del sistema (sin contraseñas en texto plano)...");
+  const adminPasswordHash = await bcrypt.hash("AdminTropigo2025!", 10);
+  const operatorPasswordHash = await bcrypt.hash("OperadorDemo2025!", 10);
+
+  const adminUser = await prisma.user.create({
+    data: {
+      email: "admin@tropigo.bo",
+      phone: "+59174389001",
+      password: adminPasswordHash,
+      name: "Administrador General TropiGO",
+      role: "ADMIN",
+      status: "ACTIVE",
+      profile: {
+        create: {
+          documentNumber: "7891234-CBBA",
+          internalNotes: "Responsable de operaciones en Ivirgarzama",
+        },
+      },
+    },
+  });
+
+  const operatorUser = await prisma.user.create({
+    data: {
+      email: "operador@tropigo.bo",
+      phone: "+59174389002",
+      password: operatorPasswordHash,
+      name: "Operador de Despacho Turno Mañana",
+      role: "OPERATOR",
+      status: "ACTIVE",
+      profile: {
+        create: {
+          documentNumber: "6543210-CBBA",
+          internalNotes: "Operador encargado del tablero KDS y validación de QR",
+        },
+      },
+    },
+  });
+
+  const comercioPasswordHash = await bcrypt.hash("ComercioDemo2025!", 10);
+  const comercioUser = await prisma.user.create({
+    data: {
+      email: "comercio@tropigo.bo",
+      phone: "+59172901234",
+      password: comercioPasswordHash,
+      name: "Dueño de Pollería El Pahuichi",
+      role: "MERCHANT_OWNER",
+      status: "ACTIVE",
+      profile: {
+        create: {
+          documentNumber: "5432109-CBBA",
+          internalNotes: "Propietario de comercio afiliado [DEMO]",
+        },
+      },
+    },
+  });
+  console.log("✅ Usuarios Admin, Operador y Comercio creados con credenciales seguras");
+
+  // =================================================================
+  // 5. COMERCIOS DE DEMOSTRACIÓN ([DEMO]) Y CATÁLOGO DE PLATOS
+  // =================================================================
+  console.log("🍽️ Creando comercios y productos de demostración [DEMO]...");
+
+  // Comercio 1: Pollería El Pahuichi
+  const pahuichi = await prisma.merchant.create({
+    data: {
+      cityId: ivirgarzama.id,
+      categoryId: catPollerias.id,
+      category: "Pollería",
+      name: "[DEMO] Pollería El Pahuichi",
+      slug: "demo-polleria-el-pahuichi",
+      description: "El mejor pollo a la broaster y a la brasa con papas fritas y arroz con queso.",
+      phone: "+59172901234",
+      address: "Av. Mortensen esq. Cochabamba, Ivirgarzama",
+      commissionRate: 0.10,
+      rating: 4.9,
+      isOpen: true,
+      imageUrl: "/merchants/el-pahuichi.jpg",
+      branches: {
+        create: {
+          name: "Sucursal Central Av. Mortensen",
+          address: "Av. Mortensen #240",
+          phone: "+59172901234",
+        },
+      },
+      schedules: {
+        createMany: {
+          data: [0, 1, 2, 3, 4, 5, 6].map((day) => ({
+            dayOfWeek: day,
+            openTime: "11:00",
+            closeTime: "23:00",
+            isClosed: false,
+          })),
+        },
+      },
+      productCategories: {
+        create: [
+          { name: "Platos Broaster", order: 1 },
+          { name: "Bebidas y Refrescos", order: 2 },
+        ],
+      },
+    },
+  });
+
+  const prodCatBroaster = await prisma.productCategory.findFirst({
+    where: { merchantId: pahuichi.id, name: "Platos Broaster" },
+  });
+
+  const pCuartoBroaster = await prisma.product.create({
+    data: {
+      merchantId: pahuichi.id,
+      productCategoryId: prodCatBroaster?.id,
+      category: "Platos Broaster",
+      name: "[DEMO] Cuarto de Pollo a la Broaster",
+      description: "Una presa grande (pecho o pierna), papas fritas crocantes, arroz con queso y llajwa.",
+      price: 18.0,
+      isAvailable: true,
+      preparationMinutes: 12,
+      variants: {
+        create: [
+          { name: "Pierna con Cuadril", finalPrice: 18.0 },
+          { name: "Pecho con Ala", finalPrice: 19.0 },
+        ],
+      },
+      optionGroups: {
+        create: {
+          name: "Guarnición adicional",
+          isRequired: false,
+          items: {
+            create: [
+              { name: "Porción extra de papas fritas", additionalPrice: 5.0 },
+              { name: "Porción extra de arroz con queso", additionalPrice: 4.0 },
+            ],
+          },
+        },
+      },
+    },
+  });
+
+  await prisma.product.create({
+    data: {
+      merchantId: pahuichi.id,
+      productCategoryId: prodCatBroaster?.id,
+      category: "Platos Broaster",
+      name: "[DEMO] Medio Pollo a la Broaster",
+      description: "Dos presas grandes con doble porción de papas fritas, arroz con queso y salsas.",
+      price: 35.0,
+      isAvailable: true,
+      preparationMinutes: 15,
+    },
+  });
+
+  // Comercio 2: Comidas Doña Julia
+  const donaJulia = await prisma.merchant.create({
+    data: {
+      cityId: ivirgarzama.id,
+      categoryId: catRestaurantes.id,
+      category: "Restaurante",
+      name: "[DEMO] Comidas Doña Julia",
+      slug: "demo-comidas-dona-julia",
+      description: "Tradición y sabor cochabambino: pique macho, majadito tostado, milanesas y sopa del día.",
+      phone: "+59171987654",
+      address: "Calle Bolívar frente al Mercado Central, Ivirgarzama",
+      commissionRate: 0.10,
+      rating: 4.8,
+      isOpen: true,
+      imageUrl: "/merchants/dona-julia.jpg",
+      schedules: {
+        createMany: {
+          data: [0, 1, 2, 3, 4, 5, 6].map((day) => ({
+            dayOfWeek: day,
+            openTime: "07:30",
+            closeTime: "22:00",
+            isClosed: false,
+          })),
+        },
+      },
+    },
+  });
+
+  await prisma.product.create({
+    data: {
+      merchantId: donaJulia.id,
+      category: "Almuerzos y Platos Típicos",
+      name: "[DEMO] Pique Macho Especial",
+      description: "Carne de res tierna salteada con salchichas, papas fritas, huevo duro, locoto y tomate.",
+      price: 30.0,
+      isAvailable: true,
+      preparationMinutes: 20,
+    },
+  });
+
+  await prisma.product.create({
+    data: {
+      merchantId: donaJulia.id,
+      category: "Almuerzos y Platos Típicos",
+      name: "[DEMO] Majadito Tostado de Charque",
+      description: "Arroz con charque desmenuzado, plátano frito y huevo estrellado.",
+      price: 20.0,
+      isAvailable: true,
+      preparationMinutes: 10,
+    },
+  });
+
+  // Comercio 3: Farmacia Bolivia
+  const farmacia = await prisma.merchant.create({
+    data: {
+      cityId: ivirgarzama.id,
+      categoryId: catFarmacias.id,
+      category: "Farmacia",
+      name: "[DEMO] Farmacia Bolivia",
+      slug: "demo-farmacia-bolivia",
+      description: "Medicamentos de venta libre, primeros auxilios, cuidado personal y productos para el hogar.",
+      phone: "+59174381111",
+      address: "Av. Mortensen esq. Santa Cruz, Ivirgarzama",
+      commissionRate: 0.08,
+      rating: 4.9,
+      isOpen: true,
+    },
+  });
+
+  await prisma.product.create({
+    data: {
+      merchantId: farmacia.id,
+      category: "Medicamentos Libres",
+      name: "[DEMO] Paracetamol 500mg (Caja 20 comprimidos)",
+      description: "Analgésico y antipirético para alivio de dolor y fiebre.",
+      price: 10.0,
+      isAvailable: true,
+      preparationMinutes: 5,
+    },
+  });
+
+  // Comercio 4: Mandados Express
+  const mandados = await prisma.merchant.create({
+    data: {
+      cityId: ivirgarzama.id,
+      categoryId: catMandados.id,
+      category: "Mandados",
+      name: "[DEMO] Mandados Express TropiGO",
+      slug: "demo-mandados-express",
+      description: "Diligencias, compras en tiendas de barrio, pagos de servicios o encomiendas en Ivirgarzama.",
+      phone: "+59174389012",
+      address: "Oficinas Centrales TropiGO, Ivirgarzama",
+      commissionRate: 0.15,
+      rating: 5.0,
+      isOpen: true,
+    },
+  });
+
+  await prisma.product.create({
+    data: {
+      merchantId: mandados.id,
+      category: "Servicios",
+      name: "[DEMO] Mandado Urbano Personalizado",
+      description: "Un repartidor irá al comercio de tu preferencia a comprar lo que indiques en las notas.",
+      price: 7.0,
+      isAvailable: true,
+      preparationMinutes: 5,
+    },
+  });
+  console.log("✅ 4 Comercios [DEMO] y menú inicial creados");
+
+  // =================================================================
+  // 6. REPARTIDORES Y FLOTA ([DEMO])
+  // =================================================================
+  console.log("🛵 Registrando flota de repartidores y mototaxistas [DEMO]...");
+
+  const rider1User = await prisma.user.create({
+    data: {
+      email: "rider1@tropigo.bo",
+      phone: "+59171234567",
+      password: await bcrypt.hash("RiderDemo2025!", 10),
+      name: "Juan Carlos Choque",
+      role: "RIDER",
+      status: "ACTIVE",
+    },
+  });
+
+  const rider1 = await prisma.rider.create({
+    data: {
+      userId: rider1User.id,
+      cityId: ivirgarzama.id,
+      name: "[DEMO] Juan Carlos - Moto 1",
+      phone: "+59171234567",
+      vehicleType: "MOTO",
+      plateNumber: "4321-XYZ",
+      vehicleModel: "Honda CB125F Roja",
+      vehicleColor: "Rojo",
+      rating: 4.95,
+      isActive: true,
+      isAvailable: true,
+      totalDeliveries: 48,
+      earnedBalance: 240.0,
+    },
+  });
+
+  const rider2User = await prisma.user.create({
+    data: {
+      email: "rider2@tropigo.bo",
+      phone: "+59172345678",
+      password: await bcrypt.hash("RiderDemo2025!", 10),
+      name: "Wilson Mamani",
+      role: "RIDER",
+      status: "ACTIVE",
+    },
+  });
+
+  const rider2 = await prisma.rider.create({
+    data: {
+      userId: rider2User.id,
+      cityId: ivirgarzama.id,
+      name: "[DEMO] Wilson Mamani - Torito 1",
+      phone: "+59172345678",
+      vehicleType: "TORITO_TRIMOVIL",
+      plateNumber: "TR-892",
+      vehicleModel: "Trimóvil Bajaj RE Amarillo",
+      vehicleColor: "Amarillo",
+      rating: 4.9,
+      isActive: true,
+      isAvailable: true,
+      totalDeliveries: 32,
+      totalRides: 64,
+      earnedBalance: 320.0,
+    },
+  });
+
+  const rider3User = await prisma.user.create({
+    data: {
+      email: "rider3@tropigo.bo",
+      phone: "+59173456789",
+      password: await bcrypt.hash("RiderDemo2025!", 10),
+      name: "Mario Quispe",
+      role: "RIDER",
+      status: "ACTIVE",
+    },
+  });
+
+  await prisma.rider.create({
+    data: {
+      userId: rider3User.id,
+      cityId: ivirgarzama.id,
+      name: "[DEMO] Mario Quispe - Moto 2",
+      phone: "+59173456789",
+      vehicleType: "MOTO",
+      plateNumber: "1289-ABC",
+      vehicleModel: "Suzuki GN125 Azul",
+      vehicleColor: "Azul",
+      rating: 4.88,
+      isActive: true,
+      isAvailable: true,
+      totalDeliveries: 25,
+      earnedBalance: 125.0,
+    },
+  });
+  console.log("✅ 3 Conductores [DEMO] registrados");
+
+  // =================================================================
+  // 7. CLIENTE Y PEDIDO DE DEMOSTRACIÓN ([DEMO])
+  // =================================================================
+  console.log("📦 Creando cliente y orden de demostración [DEMO] con preservación histórica...");
+
+  const customerDemo = await prisma.customer.create({
+    data: {
+      phone: "+59178901234",
+      name: "Sandra Mamani",
+      defaultAddress: "Av. Mortensen esq. Cochabamba, lado farmacia",
+      referencePoint: "Casa de dos plantas con rejas negras",
+      totalOrders: 1,
+    },
+  });
+
+  const zoneCentral = await prisma.deliveryZone.findFirst({
+    where: { cityId: ivirgarzama.id, name: "Casco Central" },
+  });
+
+  const orderDemo = await prisma.order.create({
+    data: {
+      orderNumber: "TRP-1041",
+      cityId: ivirgarzama.id,
+      customerId: customerDemo.id,
+      merchantId: pahuichi.id,
+      assignedRiderId: rider1.id,
+      deliveryZoneId: zoneCentral?.id,
+      orderType: "DELIVERY",
+      itemsJson: JSON.stringify([
+        {
+          productId: pCuartoBroaster.id,
+          name: "[DEMO] Cuarto de Pollo a la Broaster",
+          quantity: 2,
+          unitPrice: 18.0,
+          variantName: "Pierna con Cuadril",
+          notes: "Con abundante llajwa por favor",
+        },
+      ]),
+      subtotal: 36.0,
+      deliveryFee: 5.0,
+      discountAmount: 0.0,
+      totalAmount: 41.0,
+      paymentMethod: "QR_BANCO",
+      paymentStatus: "PENDIENTE",
+      status: "EN_PREPARACION",
+      deliveryAddressText: "Av. Mortensen esq. Cochabamba, lado farmacia",
+      referencePoint: "Casa de dos plantas con rejas negras",
+      customerNotes: "Llamar al llegar a la puerta.",
+      items: {
+        create: [
+          {
+            productId: pCuartoBroaster.id,
+            productName: "[DEMO] Cuarto de Pollo a la Broaster",
+            unitPrice: 18.0,
+            quantity: 2,
+            subtotal: 36.0,
+            variantName: "Pierna con Cuadril",
+            specialInstructions: "Con abundante llajwa por favor",
+          },
+        ],
+      },
+      statusHistory: {
+        create: [
+          {
+            fromStatus: null,
+            toStatus: "RECIBIDO",
+            comment: "Pedido ingresado desde el portal web",
+          },
+          {
+            fromStatus: "RECIBIDO",
+            toStatus: "EN_PREPARACION",
+            changedByUserId: operatorUser.id,
+            comment: "Cocina confirmó recepción (tiempo est.: 15 min)",
+          },
+        ],
+      },
+      paymentRecords: {
+        create: {
+          amount: 41.0,
+          currency: "BOB",
+          provider: "QR_SIMPLE",
+          verificationStatus: "PENDIENTE",
+        },
+      },
+    },
+  });
+
+  // Carrera de Mototaxi de demostración
+  await prisma.rideTrip.create({
+    data: {
+      tripNumber: "VIAJE-2001",
+      cityId: ivirgarzama.id,
+      customerId: customerDemo.id,
+      assignedRiderId: rider2.id,
+      vehicleType: "TORITO_TRIMOVIL",
+      originAddress: "Mercado Central de Ivirgarzama",
+      destinationAddress: "Sindicato San Salvador, Villa 14",
+      fareAmount: 5.0,
+      paymentMethod: "EFECTIVO",
+      paymentStatus: "PENDIENTE",
+      status: "CONDUCTOR_ASIGNADO",
+      passengerNotes: "Somos dos personas con dos bolsas de víveres.",
+      statusHistory: {
+        create: [
+          {
+            toStatus: "SOLICITADO",
+            comment: "Pasajero solicitó torito desde el portal web",
+          },
+          {
+            toStatus: "CONDUCTOR_ASIGNADO",
+            comment: "Despachado a Wilson Mamani (Torito 1)",
+          },
+        ],
+      },
+    },
+  });
+  console.log("✅ Pedido TRP-1041 y Carrera VIAJE-2001 [DEMO] creados con trazabilidad completa");
+
+  // =================================================================
+  // 8. CONFIGURACIONES GENERALES, ASISTENTE IA Y AUDITORÍA
+  // =================================================================
+  console.log("⚙️ Estableciendo configuraciones del sistema y asistente TropiBot...");
+
   await prisma.agencyProfile.create({
     data: {
       name: "TropiGO Tecnologías",
@@ -52,7 +701,6 @@ async function main() {
     },
   });
 
-  // 3. Perfil del Negocio TropiGO
   await prisma.businessProfile.create({
     data: {
       name: "TropiGO Ivirgarzama",
@@ -70,9 +718,7 @@ async function main() {
       assistantEnabled: true,
     },
   });
-  console.log("✅ Perfil de TropiGO Ivirgarzama configurado");
 
-  // 4. Configuración del Asistente de IA (TropiBot)
   await prisma.assistantConfig.create({
     data: {
       name: "TropiBot",
@@ -81,7 +727,7 @@ async function main() {
       welcomeMessage:
         "¡Hola! 👋 Te habla TropiBot, tu asistente de TropiGO en Ivirgarzama. ¿Qué se te antoja pedir hoy? Tenemos delivery de comida de los mejores restaurantes, farmacia, mandados y mototaxis.",
       instructions:
-        "Eres TropiBot, el asistente inteligente de TropiGO en Ivirgarzama (Trópico de Cochabamba, Bolivia). Atiendes a los clientes por WhatsApp y Web de forma ágil, respetuosa y con calidez cochabambina. Muestra precios siempre en Bolivianos (Bs.). Para pedidos de comida pide siempre confirmación de los platos, ubicación o referencia clara y método de pago (Efectivo o QR Simple). Para mototaxis, solicita el punto de partida y destino para cotizar la tarifa.",
+        "Eres TropiBot, el asistente inteligente oficial de TropiGO en Ivirgarzama (Trópico de Cochabamba, Bolivia). Atiendes a los clientes por WhatsApp y Web de forma ágil, respetuosa y con calidez cochabambina. Muestra precios siempre en Bolivianos (Bs.). Para pedidos de comida pide siempre confirmación de los platos, ubicación o referencia clara y método de pago (Efectivo o QR Simple). Para mototaxis, solicita el punto de partida y destino para cotizar la tarifa.",
       prohibitedActions:
         "1. Nunca inventes precios o comercios que no existan en el catálogo oficial.\n2. Nunca des confirmación final a un pedido sin dirección, ubicación o referencia y método de pago.\n3. Si un cliente reclama airadamente o el audio no se entiende, deriva inmediatamente a un operador humano.\n4. No proporciones diagnósticos médicos ni recomendaciones farmacológicas.",
       operatingHours: JSON.stringify({
@@ -101,473 +747,74 @@ async function main() {
         "no sabe la respuesta",
         "urgencia",
       ]),
-      customHandoffRule: "Compras especiales mayores a 150 Bs.",
+      activeProvider: "GROQ",
+      activeModel: "llama-3.3-70b-versatile",
       safeMode: false,
     },
   });
-  console.log("✅ Asistente TropiBot configurado");
 
-  // 5. Zonas de Cobertura y Tarifas de Ivirgarzama
-  const zonas = [
-    {
-      name: "Casco Central y Plaza Principal",
-      description: "Radio urbano de Ivirgarzama, Plaza 14 de Septiembre y bancos",
-      baseDeliveryCost: 5.0,
-      baseRideCost: 4.0,
-      estimatedMinutes: 15,
-    },
-    {
-      name: "Av. Mortensen y Mercado Central",
-      description: "Zona comercial principal, ferias y mercados",
-      baseDeliveryCost: 5.0,
-      baseRideCost: 4.0,
-      estimatedMinutes: 15,
-    },
-    {
-      name: "Zona Terminal de Buses & Rotonda",
-      description: "Paradas interprovinciales y surtidores de salida",
-      baseDeliveryCost: 6.0,
-      baseRideCost: 5.0,
-      estimatedMinutes: 20,
-    },
-    {
-      name: "Sindicato San Salvador / Villa 14",
-      description: "Zona periurbana sobre carretera principal",
-      baseDeliveryCost: 10.0,
-      baseRideCost: 8.0,
-      estimatedMinutes: 30,
-    },
-    {
-      name: "Senda III y Puerto Villarroel (Tramo Especial)",
-      description: "Comunidades aledañas y puerto fluvial",
-      baseDeliveryCost: 18.0,
-      baseRideCost: 15.0,
-      estimatedMinutes: 45,
-    },
-  ];
-
-  for (const z of zonas) {
-    await prisma.deliveryZone.create({ data: z });
-  }
-  console.log(`✅ ${zonas.length} zonas de cobertura creadas`);
-
-  // 6. Comercios y Catálogo de Productos
-  const pahuichi = await prisma.merchant.create({
+  await prisma.knowledgeBase.create({
     data: {
-      name: "Pollería El Pahuichi",
-      category: "Restaurante",
-      description: "El mejor pollo a la broaster y a la brasa de Ivirgarzama con papas y arroz con queso.",
-      phone: "+59173829101",
-      address: "Av. Mortensen frente a Entel",
-      commissionRate: 0.10,
-      rating: 4.9,
-      isOpen: true,
-      imageUrl: "/merchants/pahuichi.jpg",
-      products: {
-        create: [
-          {
-            name: "Cuarto de Pollo a la Broaster",
-            description: "Presa de pierna o pecho crocante, papas fritas caseras, arroz con queso y llajwa.",
-            price: 18.0,
-            category: "Platos",
-            isAvailable: true,
-          },
-          {
-            name: "Medio Pollo a la Broaster",
-            description: "Dos presas grandes de pollo broaster con doble porción de papas y arroz.",
-            price: 35.0,
-            category: "Platos",
-            isAvailable: true,
-          },
-          {
-            name: "Pollo Entero Familiar TropiGO",
-            description: "Pollo entero en 4 cuartos, abundante papa frita, arroz con queso y gaseosa de 2 litros.",
-            price: 68.0,
-            category: "Combos",
-            isAvailable: true,
-          },
-          {
-            name: "Porción Extra de Arroz con Queso",
-            description: "Arroz cremoso con queso criollo del trópico.",
-            price: 7.0,
-            category: "Guarniciones",
-            isAvailable: true,
-          },
-        ],
+      freeText:
+        "TropiGO es la plataforma de delivery y movilidad líder en Ivirgarzama (Trópico de Cochabamba, Bolivia). Conectamos a los mejores restaurantes, farmacias y comercios con clientes mediante repartidores en moto y mototaxis.",
+    },
+  });
+
+  await prisma.faq.createMany({
+    data: [
+      {
+        cityId: ivirgarzama.id,
+        category: "Delivery",
+        question: "¿Cuánto cuesta el delivery urbano en Ivirgarzama?",
+        answer: "La tarifa base en el radio urbano de Ivirgarzama es de 5.00 Bs. Para zonas más alejadas como Villa 14 es 8.00 Bs. y Senda III es 10.00 Bs.",
+        order: 1,
       },
-    },
-  });
-
-  const tipicos = await prisma.merchant.create({
-    data: {
-      name: "Comidas Doña Julia",
-      category: "Restaurante",
-      description: "Especialidad en majadito tostado, pique macho y silpancho cochabambino.",
-      phone: "+59174910283",
-      address: "Calle Bolívar lado Mercado Central",
-      commissionRate: 0.10,
-      rating: 4.8,
-      isOpen: true,
-      imageUrl: "/merchants/donajulia.jpg",
-      products: {
-        create: [
-          {
-            name: "Pique Macho Especial",
-            description: "Trozos de lomo de res, salchichas viena, papas fritas, huevo duro, cebolla, tomate y locoto.",
-            price: 30.0,
-            category: "Platos",
-            isAvailable: true,
-          },
-          {
-            name: "Majadito Tostado de Charque",
-            description: "Arroz con charque desmenuzado, plátano frito maduro y huevo frito.",
-            price: 20.0,
-            category: "Platos",
-            isAvailable: true,
-          },
-          {
-            name: "Silpancho Cochabambino",
-            description: "Carne apanada gigante sobre cama de arroz y papas doradas, con huevo y salsa criolla picada.",
-            price: 18.0,
-            category: "Platos",
-            isAvailable: true,
-          },
-        ],
+      {
+        cityId: ivirgarzama.id,
+        category: "Movilidad",
+        question: "¿Cuánto cuesta la carrera en mototaxi o torito?",
+        answer: "En moto individual la tarifa urbana es de 4.00 Bs. En torito (trimóvil para más pasajeros o carga) es de 5.00 Bs.",
+        order: 2,
       },
-    },
-  });
-
-  const farmacia = await prisma.merchant.create({
-    data: {
-      name: "Farmacia Bolivia - Ivirgarzama",
-      category: "Farmacia",
-      description: "Medicamentos de urgencia, analgésicos, cuidado infantil y primeros auxilios.",
-      phone: "+59171239084",
-      address: "Av. Panamericana esq. Sucre",
-      commissionRate: 0.08,
-      rating: 4.7,
-      isOpen: true,
-      imageUrl: "/merchants/farmacia.jpg",
-      products: {
-        create: [
-          {
-            name: "Paracetamol 500mg (Caja 20 comp.)",
-            description: "Analgésico y antipirético para alivio rápido de fiebre y dolor.",
-            price: 12.0,
-            category: "Medicamentos",
-            isAvailable: true,
-          },
-          {
-            name: "Ibuprofeno 400mg (Caja 10 comp.)",
-            description: "Antiinflamatorio no esteroideo para dolores musculares y articulares.",
-            price: 15.0,
-            category: "Medicamentos",
-            isAvailable: true,
-          },
-          {
-            name: "Sales de Rehidratación Oral (Electrolitos)",
-            description: "Polvo para preparar 1L de solución rehidratante contra deshidratación.",
-            price: 8.0,
-            category: "Salud",
-            isAvailable: true,
-          },
-          {
-            name: "Alcohol en Gel 500ml",
-            description: "Sanitizante para manos con 70% de alcohol y dosificador.",
-            price: 18.0,
-            category: "Cuidado Personal",
-            isAvailable: true,
-          },
-        ],
+      {
+        cityId: ivirgarzama.id,
+        category: "Pagos",
+        question: "¿Cómo puedo pagar mi pedido?",
+        answer: "Aceptamos pago en efectivo al momento de la entrega o transferencia por QR Simple de cualquier banco boliviano o Tigo Money.",
+        order: 3,
       },
-    },
+    ],
   });
 
-  const mandados = await prisma.merchant.create({
-    data: {
-      name: "Mandados y Encomiendas TropiGO",
-      category: "Mandados",
-      description: "Servicio de compras personalizadas, retiro de encomiendas y pagos de servicios.",
-      phone: "+59174389012",
-      address: "Oficina Central TropiGO",
-      commissionRate: 0.15,
-      rating: 5.0,
-      isOpen: true,
-      imageUrl: "/merchants/mandados.jpg",
-      products: {
-        create: [
-          {
-            name: "Mandado Urbano Simple",
-            description: "Compra rápida en tiendas locales, farmacias o recojo de paquetes pequeños.",
-            price: 7.0,
-            category: "Servicios",
-            isAvailable: true,
-          },
-          {
-            name: "Recojo de Encomienda en Terminal de Buses",
-            description: "Recepción de encomienda interprovincial y entrega en la puerta de tu domicilio.",
-            price: 10.0,
-            category: "Servicios",
-            isAvailable: true,
-          },
-        ],
-      },
-    },
-  });
-
-  console.log("✅ 4 Comercios y 14 productos creados con precios en Bs.");
-
-  // 7. Flota de Repartidores y Mototaxistas
-  const rider1 = await prisma.rider.create({
-    data: {
-      name: "Juan Carlos Choque",
-      phone: "+59171234567",
-      vehicleType: "MOTO",
-      plateNumber: "4821-XRT",
-      rating: 4.9,
-      isActive: true,
-      isAvailable: true,
-      currentLocation: "Plaza Principal",
-      totalDeliveries: 42,
-      totalRides: 18,
-      earnedBalance: 240.0,
-    },
-  });
-
-  const rider2 = await prisma.rider.create({
-    data: {
-      name: "Marcos Torrico (Torito)",
-      phone: "+59172345678",
-      vehicleType: "TORITO",
-      plateNumber: "3192-TYU",
-      rating: 5.0,
-      isActive: true,
-      isAvailable: true,
-      currentLocation: "Mercado Central",
-      totalDeliveries: 15,
-      totalRides: 58,
-      earnedBalance: 320.0,
-    },
-  });
-
-  const rider3 = await prisma.rider.create({
-    data: {
-      name: "Brayan Flores",
-      phone: "+59173456789",
-      vehicleType: "MOTO",
-      plateNumber: "5541-BNM",
-      rating: 4.8,
-      isActive: true,
-      isAvailable: true,
-      currentLocation: "Av. Mortensen",
-      totalDeliveries: 31,
-      totalRides: 12,
-      earnedBalance: 195.0,
-    },
-  });
-  console.log("✅ 3 Conductores y Repartidores registrados (Motos y Torito)");
-
-  // 8. Clientes de Ejemplo
-  const customer1 = await prisma.customer.create({
-    data: {
-      name: "Sandra Mamani",
-      phone: "+59178901234",
-      defaultAddress: "Av. Mortensen esq. Calle Cochabamba",
-      referencePoint: "Frente al surtidor central",
-      totalOrders: 3,
-      totalRides: 1,
-    },
-  });
-
-  const customer2 = await prisma.customer.create({
-    data: {
-      name: "Roberto Claure",
-      phone: "+59179012345",
-      defaultAddress: "Barrio 1º de Mayo, Calle 3",
-      referencePoint: "A media cuadra de la cancha deportiva",
-      totalOrders: 5,
-      totalRides: 4,
-    },
-  });
-
-  // 9. Pedido de Ejemplo en curso
-  await prisma.order.create({
-    data: {
-      orderNumber: "TRP-1041",
-      customerId: customer1.id,
-      merchantId: pahuichi.id,
-      assignedRiderId: rider1.id,
-      orderType: "DELIVERY",
-      itemsJson: JSON.stringify([
-        {
-          name: "Cuarto de Pollo a la Broaster",
-          quantity: 2,
-          unitPrice: 18.0,
-          notes: "Pierna y pecho bien dorado, llajwa extra",
-        },
-        {
-          name: "Porción Extra de Arroz con Queso",
-          quantity: 1,
-          unitPrice: 7.0,
-        },
-      ]),
-      subtotal: 43.0,
-      deliveryFee: 5.0,
-      totalAmount: 48.0,
-      paymentMethod: "QR_BANCO",
-      paymentStatus: "PAGADO_VERIFICADO",
-      status: "EN_CAMINO",
-      deliveryAddressText: "Av. Mortensen esq. Calle Cochabamba",
-      referencePoint: "Frente al surtidor central",
-      notes: "El cliente paga con QR Simple BCP, comprobante verificado por operador.",
-    },
-  });
-
-  // 10. Carrera de Mototaxi de Ejemplo
-  await prisma.rideTrip.create({
-    data: {
-      tripNumber: "VIAJE-2001",
-      customerId: customer2.id,
-      assignedRiderId: rider2.id,
-      vehicleType: "TORITO",
-      originAddress: "Mercado Central de Ivirgarzama",
-      destinationAddress: "Terminal de Buses Interprovincial",
-      fareAmount: 5.0,
-      paymentMethod: "EFECTIVO",
-      paymentStatus: "PENDIENTE",
-      status: "EN_CURSO",
-      passengerNotes: "Pasajero con dos bolsas de compras del mercado.",
-    },
-  });
-
-  // 11. Conversación activa de WhatsApp
-  const conv = await prisma.conversation.create({
-    data: {
-      customerId: customer1.id,
-      channel: "WHATSAPP",
-      status: "AI_ACTIVE",
-      messages: {
-        create: [
-          {
-            sender: "CUSTOMER",
-            content: "Buenas tardes, ¿tienen pollo a la broaster de El Pahuichi?",
-          },
-          {
-            sender: "ASSISTANT",
-            content:
-              "¡Hola Sandra! 👋 Sí, en Pollería El Pahuichi tenemos:\n\n• **Cuarto de Pollo a la Broaster:** 18 Bs. (con papas, arroz con queso y llajwa)\n• **Medio Pollo a la Broaster:** 35 Bs.\n• **Combo Familiar:** 68 Bs.\n\n¿Te gustaría que te lo enviemos a tu dirección en Av. Mortensen?",
-            toolCallsJson: JSON.stringify([
-              {
-                tool: "consultar_comercios_y_menu",
-                args: { categoria: "Pollería", comercio: "El Pahuichi" },
-              },
-            ]),
-          },
-          {
-            sender: "CUSTOMER",
-            content: "Sí por favor, envíame 2 cuartos y una porción extra de arroz con queso. Pago con QR.",
-          },
-        ],
-      },
-    },
-  });
-
-  // 12. Configuración de Canales WhatsApp
   await prisma.whatsAppConfig.create({
     data: {
       activeProvider: "BAILEYS_QR",
-      baileysStatus: "DISCONNECTED",
       metaWebhookVerifyToken: "tropigo_verify_token_2025",
+      baileysStatus: "DISCONNECTED",
     },
   });
 
-  await prisma.channel.create({
+  await prisma.activityLog.create({
     data: {
-      type: "whatsapp",
-      status: "disconnected",
-      settingsJson: JSON.stringify({
-        provider: "BAILEYS_QR",
-        bufferSeconds: 8,
+      userId: adminUser.id,
+      action: "DATABASE_SEEDED",
+      entityName: "System",
+      status: "success",
+      detailsJson: JSON.stringify({
+        plataforma: "TropiGO",
+        localidadInicial: "Ivirgarzama",
+        expansionesRegistradas: ["Shinahota", "Puerto Villarroel", "Chimoré", "Villa Tunari"],
+        modo: "DEMO_COMPLETO",
       }),
     },
   });
 
-  await prisma.channel.create({
-    data: {
-      type: "webchat",
-      status: "connected",
-      settingsJson: JSON.stringify({
-        enabled: true,
-        primaryColor: "#059669",
-        welcomeMessage: "¡Bienvenido a TropiGO Ivirgarzama! ¿Qué necesitas pedir hoy?",
-      }),
-    },
-  });
-
-  // 13. Preguntas Frecuentes de TropiGO
-  const faqs = [
-    {
-      question: "¿Cómo puedo pagar mis pedidos y carreras?",
-      answer: "Aceptamos efectivo en Bolivianos al momento de la entrega, QR Simple interoperable de cualquier banco (BCP, BNB, Banco Unión, BISA, Fie, Fassil) y Tigo Money.",
-      category: "Pagos",
-      order: 1,
-    },
-    {
-      question: "¿Hasta qué hora atienden?",
-      answer: "Nuestro servicio de delivery y mototaxi funciona de lunes a domingo desde las 07:00 hasta las 23:00 (viernes y sábado hasta las 23:59).",
-      category: "Horarios",
-      order: 2,
-    },
-    {
-      question: "¿Llegan a sindicatos y zonas alejadas como Villa 14 o Senda III?",
-      answer: "Sí, llegamos a comunidades aledañas como Senda III, Villa 14 y Puerto Villarroel con una tarifa especial por tramo o distancia calculada.",
-      category: "Cobertura",
-      order: 3,
-    },
-    {
-      question: "¿Cómo pido un mototaxi o torito?",
-      answer: "Solo debes escribirnos por WhatsApp indicando tu punto de partida y tu destino. TropiBot te cotiza la tarifa en Bs. y te envía al conductor más cercano.",
-      category: "Movilidad",
-      order: 4,
-    },
-    {
-      question: "¿Qué pasa si llueve?",
-      answer: "Seguimos operando con toritos cubiertos y repartidores con impermeables. En lluvia intensa puede aplicarse un pequeño recargo de 2 Bs. para proteger al conductor.",
-      category: "Servicio",
-      order: 5,
-    },
-  ];
-
-  for (const f of faqs) {
-    await prisma.faq.create({ data: f });
-  }
-
-  // 14. Integraciones listas (desconectadas por defecto, modulares)
-  const integrations = [
-    { provider: "google_calendar", name: "Google Calendar" },
-    { provider: "gmail", name: "Gmail" },
-    { provider: "google_sheets", name: "Google Sheets" },
-    { provider: "slack", name: "Slack" },
-    { provider: "stripe", name: "Stripe" },
-    { provider: "webhooks", name: "Webhooks" },
-  ];
-
-  for (const integ of integrations) {
-    await prisma.integration.create({
-      data: {
-        provider: integ.provider,
-        name: integ.name,
-        status: "disconnected",
-      },
-    });
-  }
-
-  console.log("✅ Base de datos sembrada con éxito para TropiGO Ivirgarzama.");
+  console.log("✨ Sembrado completado exitosamente con integridad referencial verificada.");
 }
 
 main()
   .catch((e) => {
-    console.error("❌ Error en seed:", e);
+    console.error("❌ Error durante el sembrado:", e);
     process.exit(1);
   })
   .finally(async () => {

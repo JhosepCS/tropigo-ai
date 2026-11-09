@@ -24,14 +24,28 @@ export interface IncomingLocation {
 export interface IncomingWhatsAppMessage {
   id: string;
   from: string; // Número de teléfono en formato E.164 (ej: 59174389012)
+  senderProfileName?: string; // Nombre del perfil de WhatsApp proporcionado por Meta
   timestamp: number;
-  type: "text" | "audio" | "location" | "interactive" | "other";
+  type: "text" | "audio" | "image" | "location" | "document" | "interactive" | "other";
   text?: string;
   location?: IncomingLocation;
   audioMediaId?: string; // ID de medio para descargar audio
   audioBuffer?: Buffer; // Buffer en caso de Baileys
+  imageMediaId?: string;
+  documentMediaId?: string;
+  mediaCaption?: string;
   interactiveResponseId?: string; // ID de botón o ítem de lista pulsado
   raw?: any;
+}
+
+export interface IncomingWhatsAppStatus {
+  id: string; // wamid original del mensaje
+  status: "sent" | "delivered" | "read" | "failed";
+  recipientId: string;
+  timestamp: number;
+  errors?: any[];
+  conversation?: any;
+  pricing?: any;
 }
 
 export interface IWhatsAppProvider {

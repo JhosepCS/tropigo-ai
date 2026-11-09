@@ -1,4 +1,6 @@
 import { prisma } from "../prisma";
+import { executeTool, getToolDefinitions, TROPIGO_TOOLS } from "./tools";
+import { OrderToolContext } from "../orders/order-service";
 
 export interface ToolCallExecution {
   tool: string;
@@ -12,183 +14,26 @@ export interface AssistantResponse {
 }
 
 /**
- * Catálogo completo de herramientas de Atiende (Clínica Dental Lumen)
+ * Catálogo oficial de herramientas de TropiBot (Delivery & Movilidad Ivirgarzama)
  */
-export const CLINIC_ASSISTANT_TOOLS = [
-  {
-    type: "function",
-    function: {
-      name: "consultar_servicios",
-      description: "Consulta el catálogo oficial de servicios, tratamientos, duración y tarifas de la clínica.",
-      parameters: {
-        type: "object",
-        properties: {
-          filtro: {
-            type: "string",
-            description: "Nombre o palabra clave del tratamiento (ej: limpieza, empaste, invisalign, implante, blanqueamiento).",
-          },
-        },
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "consultar_huecos_libres",
-      description: "Consulta en Google Calendar los huecos libres disponibles dentro del horario de atención de la clínica (L-V 09:00-14:00 y 16:00-20:00).",
-      parameters: {
-        type: "object",
-        properties: {
-          dia: {
-            type: "string",
-            description: "Día de la semana o fecha (ej: 'martes', 'mañana', '2026-10-27').",
-          },
-          franja: {
-            type: "string",
-            enum: ["manana", "tarde", "cualquiera"],
-            description: "Preferencia de mañana (09:00-14:00) o tarde (16:00-20:00).",
-          },
-        },
-        required: ["dia"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "crear_cita",
-      description: "Crea una cita formal en Google Calendar una vez que el paciente ha confirmado explícitamente el día, la hora y el servicio.",
-      parameters: {
-        type: "object",
-        properties: {
-          pacienteNombre: { type: "string", description: "Nombre completo del paciente." },
-          pacienteTelefono: { type: "string", description: "Teléfono de contacto del paciente." },
-          servicio: { type: "string", description: "Nombre del servicio o tratamiento odontológico." },
-          fechaHoraInicio: {
-            type: "string",
-            description: "Fecha y hora de inicio de la cita en formato ISO 8601 (ej: 2026-10-28T17:30:00).",
-          },
-          notas: { type: "string", description: "Notas adicionales o motivo de consulta." },
-        },
-        required: ["pacienteNombre", "servicio", "fechaHoraInicio"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "cambiar_cita",
-      description: "Reprograma una cita existente a un nuevo día y hora acordados con el paciente.",
-      parameters: {
-        type: "object",
-        properties: {
-          citaId: { type: "string", description: "ID de la cita existente." },
-          nuevaFechaHora: { type: "string", description: "Nueva fecha y hora en formato ISO 8601." },
-        },
-        required: ["nuevaFechaHora"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "cancelar_cita",
-      description: "Cancela una cita existente tras la solicitud explícita del paciente.",
-      parameters: {
-        type: "object",
-        properties: {
-          citaId: { type: "string" },
-          motivo: { type: "string" },
-        },
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "consultar_proximas_citas",
-      description: "Consulta las próximas citas agendadas para este paciente.",
-      parameters: {
-        type: "object",
-        properties: {
-          telefono: { type: "string" },
-        },
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "guardar_datos_contacto",
-      description: "Guarda o actualiza los datos del paciente (nombre, teléfono, email, tratamiento de interés) y los sincroniza con Google Sheets.",
-      parameters: {
-        type: "object",
-        properties: {
-          nombre: { type: "string" },
-          telefono: { type: "string" },
-          email: { type: "string" },
-          interes: { type: "string" },
-        },
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "enviar_correo_confirmacion",
-      description: "Envía un correo con los detalles de la cita agendada a través de Gmail si el paciente ha proporcionado su email.",
-      parameters: {
-        type: "object",
-        properties: {
-          email: { type: "string" },
-          servicio: { type: "string" },
-          fechaHora: { type: "string" },
-        },
-        required: ["email", "servicio", "fechaHora"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "cobrar_senal",
-      description: "Genera un enlace de pago de Stripe para la señal de reserva de un tratamiento.",
-      parameters: {
-        type: "object",
-        properties: {
-          servicio: { type: "string" },
-          importeEuros: { type: "number" },
-        },
-        required: ["servicio", "importeEuros"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "pasar_a_humano",
-      description: "Deriva la conversación a una persona del equipo de la clínica ante quejas, urgencias o peticiones explícitas, avisando por Slack.",
-      parameters: {
-        type: "object",
-        properties: {
-          motivo: { type: "string" },
-        },
-        required: ["motivo"],
-      },
-    },
-  },
-];
+export const TROPIGO_ASSISTANT_TOOLS = getToolDefinitions();
 
 /**
- * Ejecutor local de herramientas
+ * Ejecutor de Herramientas de TropiGO
  */
 export async function executeToolCall(
   name: string,
   args: any,
-  safeMode = true
+  safeMode = false,
+  context?: OrderToolContext
 ): Promise<any> {
-  // Registrar llamada en Actividad
-  const logActivity = async (action: string, provider: string, status: string, details: any, errorText?: string) => {
+  // 1. Si es una de las herramientas internas modulares conectadas a la base de datos
+  const isModularTool = TROPIGO_TOOLS.some((t) => t.name === name);
+  if (isModularTool) {
+    return executeTool(name, args, context);
+  }
+
+  const logActivity = async (action: string, provider: string, status: string, details: any) => {
     try {
       await prisma.activityLog.create({
         data: {
@@ -197,164 +42,144 @@ export async function executeToolCall(
           channel: "whatsapp",
           status,
           detailsJson: JSON.stringify(details),
-          errorText,
         },
       });
     } catch (e) {}
   };
 
   switch (name) {
-    case "consultar_servicios": {
-      const services = await prisma.service.findMany({
-        where: { isActive: true },
-        select: { name: true, durationMinutes: true, price: true, priceType: true, requiresAssessment: true, description: true },
+    case "consultar_catalogo": {
+      const merchants = await prisma.merchant.findMany({
+        where: { isOpen: true },
+        include: { products: { where: { isAvailable: true } } },
       });
-      await logActivity("Consulta de servicios", "assistant", "success", args);
-      return { servicios: services };
-    }
 
-    case "consultar_huecos_libres": {
-      // Simulación de Google Calendar con huecos libres reales dentro del horario L-V
-      const slots = [
-        "10:00 h (Dra. Elena Gómez)",
-        "12:30 h (Dr. Pablo Serrano)",
-        "17:30 h (Dra. Elena Gómez)",
-        "19:00 h (Dr. Pablo Serrano)",
-      ];
-      await logActivity("Consulta en Google Calendar", "google_calendar", "success", {
-        dia: args.dia,
-        franja: args.franja || "todas",
-        huecosEncontrados: slots.length,
-      });
+      await logActivity("Consulta de catálogo TropiGO", "assistant_groq", "success", args);
+
       return {
-        mensaje: `Consultando Google Calendar... ${slots.length} huecos libres encontrados para el ${args.dia}:`,
-        huecosDisponibles: slots,
+        comercios: merchants.map((m) => ({
+          nombre: m.name,
+          categoria: m.category,
+          menu: m.products.map((p) => ({
+            plato: p.name,
+            precioBs: p.price,
+            descripcion: p.description,
+          })),
+        })),
       };
     }
 
-    case "crear_cita": {
+    case "cotizar_tarifa": {
+      const zones = await prisma.deliveryZone.findMany({ where: { isActive: true } });
+      const matchedZone = zones.find((z) =>
+        args.destino?.toLowerCase().includes(z.name.toLowerCase())
+      ) || zones[0];
+
+      const tarifa =
+        args.tipo === "MOTOTAXI"
+          ? args.vehiculo === "TORITO"
+            ? (matchedZone?.baseRideCost || 4.0) + 1.0
+            : matchedZone?.baseRideCost || 4.0
+          : matchedZone?.baseDeliveryCost || 5.0;
+
+      await logActivity("Cotización de tarifa", "assistant_groq", "success", {
+        destino: args.destino,
+        tipo: args.tipo,
+        tarifaBs: tarifa,
+      });
+
+      return {
+        zona: matchedZone?.name || "Radio Urbano Ivirgarzama",
+        tipo: args.tipo,
+        tarifaBs: tarifa,
+        mensaje: `La tarifa para ${args.tipo === "MOTOTAXI" ? "tu carrera en mototaxi" : "el delivery"} hacia ${args.destino} es de ${tarifa.toFixed(2)} Bs.`,
+      };
+    }
+
+    case "crear_pedido_delivery": {
+      // Ruta legacy deshabilitada: los pedidos reales solo se crean con una
+      // cotización oficial y una confirmación explícita verificada por el canal.
+      await logActivity(
+        "Intento de pedido por ruta legacy bloqueado",
+        "assistant_groq",
+        "blocked",
+        args
+      );
+      return {
+        error:
+          "La creación directa de pedidos está deshabilitada. Usa 'preparar_resumen_pedido' para cotizar y 'registrar_pedido' con el quoteId tras la confirmación explícita del cliente.",
+      };
+    }
+
+    case "solicitar_mototaxi": {
       if (safeMode) {
-        await logActivity("Cita creada (Simulación)", "google_calendar", "simulated", args);
         return {
           estado: "simulado",
-          mensaje: `[MODO SEGURO ACTIVO]: Cita simulada con éxito para ${args.pacienteNombre} (${args.servicio}) el ${args.fechaHoraInicio}. No se ha modificado Google Calendar real.`,
-          marca: "Creada por Atiende",
+          mensaje: `[MODO SEGURO]: Mototaxi solicitada de ${args.origen} a ${args.destino}.`,
         };
       }
 
-      // Crear cita real en base de datos
-      let contact = await prisma.contact.findFirst({
-        where: { phone: args.pacienteTelefono },
+      let customer = await prisma.customer.findUnique({
+        where: { phone: args.pasajeroTelefono },
       });
-      if (!contact) {
-        contact = await prisma.contact.create({
+      if (!customer) {
+        customer = await prisma.customer.create({
           data: {
-            name: args.pacienteNombre,
-            phone: args.pacienteTelefono,
-            channel: "whatsapp",
-            interest: args.servicio,
-            bookedAppointment: true,
+            phone: args.pasajeroTelefono,
+            name: args.pasajeroNombre || "Pasajero",
           },
         });
       }
 
-      const appointment = await prisma.appointment.create({
+      const count = await prisma.rideTrip.count();
+      const tripNumber = `VIAJE-${2000 + count + 1}`;
+      const fare = args.vehiculo === "TORITO" ? 5.0 : 4.0;
+
+      const trip = await prisma.rideTrip.create({
         data: {
-          contactId: contact.id,
-          serviceName: args.servicio,
-          startTime: new Date(args.fechaHoraInicio),
-          endTime: new Date(new Date(args.fechaHoraInicio).getTime() + 1000 * 60 * 30),
-          status: "confirmed",
-          notes: `Creada por Atiende — ${args.notas || "Cita confirmada"}`,
+          tripNumber,
+          customerId: customer.id,
+          vehicleType: args.vehiculo || "MOTO",
+          originAddress: args.origen,
+          destinationAddress: args.destino,
+          fareAmount: fare,
+          status: "SOLICITADO",
         },
       });
 
-      await logActivity("Cita agendada en Google Calendar", "google_calendar", "success", {
-        paciente: args.pacienteNombre,
-        servicio: args.servicio,
-        fecha: args.fechaHoraInicio,
+      await logActivity(`Carrera solicitada: ${tripNumber}`, "assistant_groq", "success", args);
+
+      return {
+        viajeId: trip.id,
+        tripNumber: trip.tripNumber,
+        tarifaBs: fare,
+        estado: "SOLICITADO",
+        mensaje: `¡Carrera ${tripNumber} solicitada! Estamos avisando a los conductores de ${args.vehiculo || "mototaxi"} más cercanos a ${args.origen}.`,
+      };
+    }
+
+    case "consultar_estado_pedido": {
+      const order = await prisma.order.findUnique({
+        where: { orderNumber: args.codigo },
+        include: { assignedRider: true },
       });
-
-      return {
-        citaId: appointment.id,
-        estado: "confirmada",
-        mensaje: `Cita creada con éxito en Google Calendar para ${args.pacienteNombre}.`,
-        marca: "Creada por Atiende",
-      };
-    }
-
-    case "cambiar_cita": {
-      if (safeMode) {
-        await logActivity("Cambio de cita (Simulación)", "google_calendar", "simulated", args);
+      if (order) {
         return {
-          estado: "simulado",
-          mensaje: `[MODO SEGURO ACTIVO]: Cita reprogramada con éxito a ${args.nuevaFechaHora}.`,
+          tipo: "DELIVERY",
+          codigo: order.orderNumber,
+          estado: order.status,
+          repartidor: order.assignedRider?.name || "Por asignar",
+          mensaje: `Tu pedido ${order.orderNumber} se encuentra en estado: ${order.status}.`,
         };
       }
-      return { estado: "reprogramada", mensaje: "Cita cambiada con éxito en Google Calendar." };
-    }
-
-    case "cancelar_cita": {
-      if (safeMode) {
-        await logActivity("Cancelación de cita (Simulación)", "google_calendar", "simulated", args);
-        return {
-          estado: "simulado",
-          mensaje: "[MODO SEGURO ACTIVO]: Cita cancelada con éxito.",
-        };
-      }
-      return { estado: "cancelada", mensaje: "Cita cancelada correctamente." };
-    }
-
-    case "consultar_proximas_citas": {
-      return {
-        citas: [
-          {
-            servicio: "Primera visita y revisión con radiografía",
-            fecha: "Jueves 17:30 h",
-            estado: "confirmada",
-          },
-        ],
-      };
-    }
-
-    case "guardar_datos_contacto": {
-      await logActivity("Contacto sincronizado con Google Sheets", "google_sheets", "success", args);
-      return {
-        estado: "guardado",
-        mensaje: `Datos de ${args.nombre || "paciente"} actualizados y añadidos a la hoja «Contactos — Clínica Dental Lumen».`,
-      };
-    }
-
-    case "enviar_correo_confirmacion": {
-      if (safeMode) {
-        await logActivity("Correo confirmación (Simulación)", "gmail", "simulated", args);
-        return {
-          estado: "simulado",
-          mensaje: `[MODO SEGURO ACTIVO]: Correo de confirmación simulado a ${args.email}.`,
-        };
-      }
-      await logActivity("Correo enviado con Gmail", "gmail", "success", args);
-      return { estado: "enviado", mensaje: `Correo de confirmación enviado a ${args.email}.` };
-    }
-
-    case "cobrar_senal": {
-      const link = `https://buy.stripe.com/test_atiende_${Date.now()}`;
-      await logActivity("Enlace de pago Stripe generado", "stripe", "success", {
-        servicio: args.servicio,
-        importe: args.importeEuros,
-      });
-      return {
-        enlacePago: link,
-        modo: "test",
-        mensaje: `Enlace de pago seguro de Stripe (${args.importeEuros} €) generado para la señal de ${args.servicio}.`,
-      };
+      return { mensaje: `No encontramos ningún pedido activo con el código ${args.codigo}.` };
     }
 
     case "pasar_a_humano": {
-      await logActivity("Pase a persona notificado a Slack", "slack", "success", args);
+      await logActivity("Pase a operador humano", "assistant_groq", "success", args);
       return {
         derivado: true,
-        mensaje: `Aviso urgente emitido al canal de Slack del equipo por motivo: ${args.motivo}. El asistente se calla en esta conversación.`,
+        mensaje: "He avisado a nuestra operadora de despacho en Ivirgarzama para que tome la conversación y te atienda enseguida.",
       };
     }
 
@@ -364,154 +189,130 @@ export async function executeToolCall(
 }
 
 /**
- * Invoca el motor de IA con OpenRouter API (o fallback inteligente local)
+ * Invoca el motor de IA de TropiBot
+ * Prioridad 1: Groq API (Plan 100% gratuito de alta velocidad con llama-3.3-70b-versatile)
+ * Prioridad 2: OpenRouter API (Fallback)
+ * Prioridad 3: Simulador contextualizado local para Ivirgarzama (Zero Config)
  */
 export async function runAssistantChat(
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
-  safeMode = true
+  safeMode = false,
+  context?: OrderToolContext
 ): Promise<AssistantResponse> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  const defaultModel = process.env.OPENROUTER_DEFAULT_MODEL || "anthropic/claude-haiku-5.5";
+  const groqKey = process.env.GROQ_API_KEY;
+  const groqModel = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 
-  // Si no hay API key en local, usamos el simulador contextualizado para Clínica Dental Lumen
-  if (!apiKey) {
-    const lastMsg = messages[messages.length - 1]?.content.toLowerCase() || "";
-    const toolCalls: ToolCallExecution[] = [];
-
-    let reply = "";
-    if (lastMsg.includes("confirmo") || lastMsg.includes("reserva") || lastMsg.includes("17:30") || lastMsg.includes("19:00") || lastMsg.includes("perfecto")) {
-      const res = await executeToolCall(
-        "crear_cita",
-        {
-          pacienteNombre: "Marta Gómez",
-          pacienteTelefono: "+34 612 345 678",
-          servicio: "Primera visita y revisión con radiografía",
-          fechaHoraInicio: "2026-10-29T17:30:00",
-          notas: "Creada por Atiende — Valoración Invisalign",
-        },
-        safeMode
-      );
-      toolCalls.push({
-        tool: "crear_cita",
-        args: { paciente: "Marta Gómez", servicio: "Revisión dental", fecha: "Jueves 17:30" },
-        result: res,
-      });
-      reply =
-        "¡Estupendo! 🎉 Te he agendado tu cita en Google Calendar para el **jueves a las 17:30 h** con la Dra. Gómez en nuestra clínica de Calle Gran Vía 42.\n\nRecuerda que dispones de 1 hora de aparcamiento gratuito concertado en el Parking Central. Si tienes cualquier duda o necesitas reprogramar, avísanos por aquí.";
-    } else if (lastMsg.includes("precio") || lastMsg.includes("cuesta") || lastMsg.includes("invisalign") || lastMsg.includes("limpieza") || lastMsg.includes("blanqueamiento")) {
-      const res = await executeToolCall("consultar_servicios", { filtro: lastMsg }, safeMode);
-      toolCalls.push({
-        tool: "consultar_servicios",
-        args: { filtro: "precios y tratamientos" },
-        result: res,
-      });
-      reply =
-        "En Clínica Dental Lumen tenemos los siguientes precios oficiales:\n\n• **Primera visita y revisión con radiografía 3D:** 100% Gratuita y sin compromiso.\n• **Limpieza dental y pulido:** Desde 45 €.\n• **Empaste dental:** Desde 50 €.\n• **Blanqueamiento dental LED:** Desde 220 €.\n• **Ortodoncia invisible (Invisalign):** Desde 2.500 € (con financiación sin intereses hasta 24 meses).\n\n¿Te gustaría agendar una primera valoración gratuita con nuestros especialistas?";
-    } else if (lastMsg.includes("cita") || lastMsg.includes("hueco") || lastMsg.includes("jueves") || lastMsg.includes("martes") || lastMsg.includes("horario")) {
-      const res = await executeToolCall("consultar_huecos_libres", { dia: "jueves", franja: "tarde" }, safeMode);
-      toolCalls.push({
-        tool: "consultar_huecos_libres",
-        args: { dia: "jueves", franja: "tarde" },
-        result: res,
-      });
-      reply =
-        "He consultado nuestra agenda en Google Calendar 📅. Para el jueves por la tarde disponemos de los siguientes huecos libres:\n\n• **17:30 h** (Dra. Elena Gómez)\n• **19:00 h** (Dr. Pablo Serrano)\n\n¿Cuál de estos dos horarios te viene mejor para tu primera visita gratuita?";
-    } else if (lastMsg.includes("dolor") || lastMsg.includes("urgencia") || lastMsg.includes("persona") || lastMsg.includes("humano")) {
-      const res = await executeToolCall("pasar_a_humano", { motivo: "Urgencia o solicitud del paciente" }, safeMode);
-      toolCalls.push({
-        tool: "pasar_a_humano",
-        args: { motivo: "Derivación a equipo médico" },
-        result: res,
-      });
-      reply =
-        "Lamento mucho las molestias. He pasado el aviso urgente a nuestro equipo médico para atenderte de inmediato. Si se trata de un dolor agudo o flemón, también puedes llamarnos directamente al teléfono de urgencias de la clínica: **912 345 678**.";
-    } else {
-      reply =
-        "¡Hola! 👋 Soy el asistente virtual de Clínica Dental Lumen en Madrid. ¿En qué puedo ayudarte hoy? Puedo informarte sobre nuestros tratamientos (ortodoncia invisible, implantes, blanqueamiento), tarifas oficiales o agendar tu cita en Google Calendar.";
-    }
-
-    return { content: reply, toolCalls };
-  }
-
-  // Llamada oficial a OpenRouter API con cabeceras requeridas
-  try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": process.env.APP_URL || "http://localhost:3000",
-        "X-Title": "Atiende",
-      },
-      body: JSON.stringify({
-        model: defaultModel,
-        messages,
-        tools: CLINIC_ASSISTANT_TOOLS,
-        tool_choice: "auto",
-        temperature: 0.3,
-      }),
-    });
-
-    if (!res.ok) {
-      throw new Error(`OpenRouter Error ${res.status}: ${await res.text()}`);
-    }
-
-    const data = await res.json();
-    const choice = data.choices?.[0]?.message;
-    const toolCalls: ToolCallExecution[] = [];
-
-    if (choice?.tool_calls?.length > 0) {
-      // Máximo de 5 llamadas a herramientas por respuesta (según especificación)
-      for (const call of choice.tool_calls.slice(0, 5)) {
-        const fnName = call.function.name;
-        const fnArgs = JSON.parse(call.function.arguments || "{}");
-        const execResult = await executeToolCall(fnName, fnArgs, safeMode);
-        toolCalls.push({
-          tool: fnName,
-          args: fnArgs,
-          result: execResult,
-        });
-      }
-    }
-
-    return {
-      content: choice?.content || "Mensaje procesado por Clínica Dental Lumen.",
-      toolCalls,
-    };
-  } catch (error: any) {
-    console.error("Fallo con el modelo elegido en OpenRouter. Reintentando con modelo por defecto...", error);
-
-    // Reintento una vez con modelo por defecto si falló el modelo elegido
+  // 1. Si existe GROQ_API_KEY configurada, usar el endpoint gratuito de Groq
+  if (groqKey) {
     try {
-      const fallbackRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${groqKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": process.env.APP_URL || "http://localhost:3000",
-          "X-Title": "Atiende",
         },
         body: JSON.stringify({
-          model: "anthropic/claude-haiku-5.5",
+          model: groqModel,
           messages,
-          tools: CLINIC_ASSISTANT_TOOLS,
+          tools: TROPIGO_ASSISTANT_TOOLS,
           tool_choice: "auto",
+          temperature: 0.3,
         }),
       });
 
-      if (fallbackRes.ok) {
-        const fallbackData = await fallbackRes.json();
-        const choice = fallbackData.choices?.[0]?.message;
+      if (res.ok) {
+        const data = await res.json();
+        const choice = data.choices?.[0]?.message;
+        const toolCalls: ToolCallExecution[] = [];
+
+        if (choice?.tool_calls?.length > 0) {
+          for (const call of choice.tool_calls.slice(0, 4)) {
+            const fnName = call.function.name;
+            const fnArgs = JSON.parse(call.function.arguments || "{}");
+            const result = await executeToolCall(fnName, fnArgs, safeMode, context);
+            toolCalls.push({ tool: fnName, args: fnArgs, result });
+          }
+        }
+
         return {
-          content: choice?.content || "Respuesta recibida.",
-          toolCalls: [],
+          content: choice?.content || "Mensaje procesado por TropiGO.",
+          toolCalls,
         };
       }
-    } catch (e) {}
-
-    return {
-      content: "Lo siento, ha habido un problema temporal de conexión con el modelo. Avisamos al equipo de la clínica.",
-      toolCalls: [],
-    };
+    } catch (e) {
+      console.warn("Fallo temporal en llamada a Groq API, usando motor de respaldo...");
+    }
   }
+
+  // 2. Fallback contextualizado local para Ivirgarzama (funciona sin claves externas)
+  const lastMsg = messages[messages.length - 1]?.content.toLowerCase() || "";
+  const toolCalls: ToolCallExecution[] = [];
+  let reply = "";
+
+  if (
+    lastMsg.includes("pollo") ||
+    lastMsg.includes("broaster") ||
+    lastMsg.includes("majadito") ||
+    lastMsg.includes("pique") ||
+    lastMsg.includes("menu") ||
+    lastMsg.includes("plato") ||
+    lastMsg.includes("precio") ||
+    lastMsg.includes("comida")
+  ) {
+    const res = await executeToolCall("consultar_catalogo", { comercio: "Pollería El Pahuichi" }, safeMode, context);
+    toolCalls.push({
+      tool: "consultar_catalogo",
+      args: { comercio: "El Pahuichi / Doña Julia" },
+      result: res,
+    });
+    const platos = (res?.productos || [])
+      .slice(0, 6)
+      .map((p: any) => `• **${p.nombre}** [${p.comercio}]: ${p.precioTexto}`)
+      .join("\n");
+    reply =
+      `¡Claro que sí! 🍗 Estos son los platos disponibles ahora en el sistema:\n\n${platos || "No hay platos disponibles en este momento."}\n\n` +
+      "El costo de envío depende de tu zona exacta en Ivirgarzama. ¿Qué te gustaría pedir y a qué zona/barrio lo enviamos?";
+  } else if (
+    lastMsg.includes("moto") ||
+    lastMsg.includes("torito") ||
+    lastMsg.includes("carrera") ||
+    lastMsg.includes("viaje") ||
+    lastMsg.includes("terminal") ||
+    lastMsg.includes("mercado")
+  ) {
+    const res = await executeToolCall("cotizar_tarifa", { tipo: "MOTOTAXI", destino: "Mercado Central", vehiculo: "MOTO" }, safeMode, context);
+    toolCalls.push({
+      tool: "cotizar_tarifa",
+      args: { tipo: "MOTOTAXI", destino: "Mercado Central" },
+      result: res,
+    });
+    reply = res?.mensajeOficial ||
+      "Para cotizar tu mototaxi necesito la zona o barrio exacto de destino en Ivirgarzama.";
+  } else if (
+    lastMsg.includes("confirmo") ||
+    lastMsg.includes("quiero") ||
+    lastMsg.includes("mandame") ||
+    lastMsg.includes("envia") ||
+    lastMsg.includes("pido")
+  ) {
+    // Sin cotización oficial no se registra ningún pedido ni se inventan datos.
+    reply =
+      "¡Con gusto! Para preparar tu pedido necesito: 1) comercio, 2) producto(s) y cantidad, " +
+      "3) variantes u opciones, 4) dirección/zona exacta de entrega y 5) método de pago (efectivo o QR). " +
+      "Con esos datos genero el resumen oficial y te pido confirmación antes de registrar nada.";
+  } else if (lastMsg.includes("reclamo") || lastMsg.includes("queja") || lastMsg.includes("humano") || lastMsg.includes("persona")) {
+    const res = await executeToolCall("pasar_a_humano", { motivo: "Solicitud o reclamo del cliente" }, safeMode, context);
+    toolCalls.push({
+      tool: "pasar_a_humano",
+      args: { motivo: "Derivación a operadora de despacho" },
+      result: res,
+    });
+    reply =
+      "Entiendo perfectamente. He transferido la conversación a nuestra operadora de despacho en Ivirgarzama para que te asista de inmediato.";
+  } else {
+    reply =
+      "¡Hola! 👋 Te habla **TropiBot**, tu asistente inteligente de **TropiGO** en Ivirgarzama. ¿En qué te ayudo hoy? Puedo tomar tu pedido de comida de los mejores restaurantes, compras de farmacia o enviarte una mototaxi o torito a tu ubicación.";
+  }
+
+  return { content: reply, toolCalls };
 }

@@ -1,14 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Lock, Mail, ArrowRight, AlertCircle } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { Lock, Mail, ArrowRight, AlertCircle, ShieldCheck } from "lucide-react";
 
 export function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@atiende.es");
-  const [password, setPassword] = useState("AdminAtiende2025!");
-  const [error, setError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const fromParam = searchParams.get("from");
+  const errorParam = searchParams.get("error");
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(
+    errorParam === "unauthorized"
+      ? "Tu rol de usuario no tiene autorización para acceder a esa sección."
+      : null
+  );
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -20,15 +29,27 @@ export function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Error de inicio de sesión");
+        throw new Error(data.error || "Credenciales incorrectas o usuario no encontrado");
       }
 
-      router.push("/dashboard");
+      const userRole = data.user?.role;
+
+      if (fromParam) {
+        router.push(fromParam);
+      } else if (userRole === "RIDER" || userRole === "MOTOTAXISTA") {
+        router.push("/repartidor");
+      } else if (userRole === "MERCHANT_OWNER") {
+        router.push("/comercio");
+      } else if (userRole === "CUSTOMER") {
+        router.push("/cuenta");
+      } else {
+        router.push("/dashboard");
+      }
       router.refresh();
     } catch (err: any) {
       setError(err.message);
@@ -38,56 +59,76 @@ export function LoginForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-      {error && (
-        <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{error}</span>
+    <div className="space-y-4 text-xs">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <label className="font-semibold text-slate-700">
+            Correo Electrónico o Teléfono
+          </label>
+          <div className="relative">
+            <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              required
+              placeholder="tu-correo@tropigo.bo"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+            />
+          </div>
         </div>
-      )}
 
-      <div className="space-y-1.5">
-        <label className="font-medium text-[#344054]">Correo electrónico</label>
-        <div className="relative">
-          <Mail className="w-4 h-4 text-[#98A2B3] absolute left-3 top-2.5" />
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl pl-9 pr-3 py-2 text-[#101828] focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
-          />
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label className="font-semibold text-slate-700">Contraseña</label>
+            <Link
+              href="/forgot-password"
+              className="text-[11px] font-semibold text-emerald-700 hover:underline"
+            >
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </div>
+          <div className="relative">
+            <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="password"
+              required
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+            />
+          </div>
         </div>
-      </div>
 
-      <div className="space-y-1.5">
-        <label className="font-medium text-[#344054]">Contraseña</label>
-        <div className="relative">
-          <Lock className="w-4 h-4 text-[#98A2B3] absolute left-3 top-2.5" />
-          <input
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl pl-9 pr-3 py-2 text-[#101828] focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
-          />
+        <div className="pt-2">
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
+          >
+            <span>{loading ? "Comprobando credenciales..." : "Iniciar Sesión"}</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
         </div>
-      </div>
+      </form>
 
-      <div className="pt-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
-        >
-          <span>{loading ? "Comprobando..." : "Entrar al Panel"}</span>
-          <ArrowRight className="w-4 h-4" />
-        </button>
+      <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+        <span className="flex items-center gap-1 font-medium">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+          Acceso protegido por RBAC
+        </span>
+        <Link href="/" className="hover:text-emerald-700 font-semibold">
+          Ir a la Portada
+        </Link>
       </div>
-
-      <div className="p-3 bg-[#F9FAFB] border border-[#EAECF0] rounded-xl text-[11px] text-[#667085] text-center mt-4">
-        Credenciales por defecto: <strong>admin@atiende.es</strong> / <strong>AdminAtiende2025!</strong>
-      </div>
-    </form>
+    </div>
   );
 }

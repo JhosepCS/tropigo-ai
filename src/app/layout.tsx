@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Atiende | Asistente de IA para Negocios Locales",
-  description: "Asistente de IA para WhatsApp y Web que atiende clientes, agenda citas en Google Calendar y avisa al equipo.",
+  title: "TropiGO | Movemos el Trópico — Delivery & Mototaxis en Ivirgarzama",
+  description:
+    "Plataforma profesional de delivery de comida, compras de farmacia, mandados express y mototaxis en Ivirgarzama y el Trópico de Cochabamba.",
 };
 
 export default function RootLayout({

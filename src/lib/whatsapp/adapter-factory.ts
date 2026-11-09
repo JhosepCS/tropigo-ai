@@ -1,67 +1,40 @@
-import { prisma } from "../prisma";
 import { IWhatsAppProvider } from "./types";
-import { BaileysAdapter } from "./baileys-adapter";
-
-// Instancia global en memoria del socket de Baileys cuando el worker está corriendo
-let globalBaileysSocket: any = null;
-
-export function registerBaileysSocket(sock: any) {
-  globalBaileysSocket = sock;
-}
-
-export function getBaileysSocket(): any {
-  return globalBaileysSocket;
-}
+import { getActiveMetaAdapter } from "./meta-manager";
 
 export class WhatsAppAdapterFactory {
   /**
-   * Obtiene el proveedor de WhatsApp (Baileys)
+   * Obtiene el proveedor oficial de WhatsApp (Meta Cloud API)
+   * Si no está configurado, retorna un fallback que informa que se debe conectar desde Ajustes.
    */
   static async getAdapter(): Promise<IWhatsAppProvider> {
-    if (globalBaileysSocket) {
-      return new BaileysAdapter(globalBaileysSocket);
+    const metaAdapter = await getActiveMetaAdapter();
+
+    if (metaAdapter) {
+      return metaAdapter;
     }
 
-    // Si estamos en el proceso web, encolamos el comando para que el worker de Baileys lo ejecute
+    const fallbackSend = async (to: string, _text: string): Promise<string> => {
+      console.warn(
+        `[WhatsAppAdapterFactory] No se pudo enviar mensaje a ${to}. WhatsApp Business Cloud API no está conectado en Ajustes.`
+      );
+      throw new Error(
+        "WhatsApp Cloud API no está configurado. Ve a Ajustes > Conectar WhatsApp para activar tu número oficial de Meta."
+      );
+    };
+
     return {
-      async sendMessage(to: string, text: string): Promise<string> {
-        const cmd = await prisma.workerCommand.create({
-          data: {
-            command: "SEND_WHATSAPP_MESSAGE",
-            payloadJson: JSON.stringify({ to, text }),
-          },
-        });
-        return cmd.id;
+      sendMessage: fallbackSend,
+      async sendInteractiveButtons(to, text, _buttons) {
+        return fallbackSend(to, text);
       },
-      async sendInteractiveButtons(to: string, text: string, buttons: any[]): Promise<string> {
-        const cmd = await prisma.workerCommand.create({
-          data: {
-            command: "SEND_WHATSAPP_BUTTONS",
-            payloadJson: JSON.stringify({ to, text, buttons }),
-          },
-        });
-        return cmd.id;
+      async sendInteractiveList(to, header, body, _sections) {
+        return fallbackSend(to, `${header}\n\n${body}`);
       },
-      async sendInteractiveList(to: string, header: string, body: string, sections: any[]): Promise<string> {
-        const cmd = await prisma.workerCommand.create({
-          data: {
-            command: "SEND_WHATSAPP_LIST",
-            payloadJson: JSON.stringify({ to, header, body, sections }),
-          },
-        });
-        return cmd.id;
+      async sendLocationRequest(to, text) {
+        return fallbackSend(to, text);
       },
-      async sendLocationRequest(to: string, text: string): Promise<string> {
-        const cmd = await prisma.workerCommand.create({
-          data: {
-            command: "SEND_WHATSAPP_LOCATION_REQUEST",
-            payloadJson: JSON.stringify({ to, text }),
-          },
-        });
-        return cmd.id;
-      },
-      async markAsRead(): Promise<void> {},
-      async sendPresenceTyping(): Promise<void> {},
+      async markAsRead() {},
+      async sendPresenceTyping() {},
     };
   }
 }

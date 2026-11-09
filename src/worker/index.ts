@@ -1,5 +1,7 @@
 import { prisma } from "../lib/prisma";
 import { runAssistantChat } from "../lib/ai/assistant";
+import { buildCustomerMemoryPrompt } from "../lib/memory/customer-memory";
+import { ensureConversationSession } from "../lib/memory/conversation-summary";
 import QRCode from "qrcode";
 import fs from "fs";
 import pino from "pino";
@@ -27,11 +29,11 @@ async function startWorker() {
           reminderSent: false,
           status: "confirmed",
         },
-        include: { contact: true },
+        include: { customer: true },
       });
 
       for (const appt of appointmentsToRemind) {
-        console.log(`⏰ [Recordatorio WhatsApp] Enviando recordatorio a ${appt.contact.name || appt.contact.phone} para cita: ${appt.serviceName}`);
+        console.log(`⏰ [Recordatorio WhatsApp] Enviando recordatorio a ${appt.customer.name || appt.customer.phone} para servicio: ${appt.serviceName}`);
         await prisma.appointment.update({
           where: { id: appt.id },
           data: { reminderSent: true },
@@ -39,12 +41,12 @@ async function startWorker() {
 
         await prisma.activityLog.create({
           data: {
-            action: "Recordatorio de cita enviado",
+            action: "Recordatorio enviado",
             provider: "whatsapp",
             channel: "whatsapp",
             status: "success",
             detailsJson: JSON.stringify({
-              paciente: appt.contact.name,
+              cliente: appt.customer.name,
               servicio: appt.serviceName,
               fecha: appt.startTime,
             }),
@@ -111,7 +113,7 @@ async function startWorker() {
       auth: state,
       printQRInTerminal: false,
       logger: pino({ level: "silent" }) as any,
-      browser: ["Atiende - Clínica Dental Lumen", "Chrome", "1.0.0"],
+      browser: ["Atiende - TropiGO AI", "Chrome", "1.0.0"],
     });
 
     sock.ev.on("creds.update", saveCreds);
@@ -222,35 +224,23 @@ async function startWorker() {
                 return; // En pausa
               }
 
-              // Obtener o crear contacto
-              let contact = await prisma.contact.findFirst({
+              // Obtener o crear cliente
+              let customer = await prisma.customer.findUnique({
                 where: { phone: senderPhone },
               });
-              if (!contact) {
-                contact = await prisma.contact.create({
+              if (!customer) {
+                customer = await prisma.customer.create({
                   data: {
                     phone: senderPhone,
-                    channel: "whatsapp",
                   },
                 });
               }
 
-              // Conversación
-              let conv = await prisma.conversation.findFirst({
-                where: { contactId: contact.id, channel: "whatsapp" },
-              });
-              if (!conv) {
-                conv = await prisma.conversation.create({
-                  data: {
-                    contactId: contact.id,
-                    channel: "whatsapp",
-                    status: "ai_active",
-                  },
-                });
-              }
+              // Conversación con rotación por inactividad y memoria por cliente
+              const conv = await ensureConversationSession(customer.id, "WHATSAPP");
 
               // Si la ha tomado una persona, el asistente se calla
-              if (conv.status === "human_takeover") {
+              if (conv.status === "HUMAN_TAKEOVER" || conv.status === "human_takeover") {
                 return;
               }
 
@@ -258,22 +248,36 @@ async function startWorker() {
               await prisma.message.create({
                 data: {
                   conversationId: conv.id,
-                  sender: "customer",
+                  sender: "CUSTOMER",
                   content: joinedContent,
                 },
               });
 
               // Llamar al motor de IA
               const assistant = await prisma.assistantConfig.findFirst();
+              const memoryContext = await buildCustomerMemoryPrompt(customer.id);
               const fullMessages = [
                 {
                   role: "system" as const,
-                  content: `Eres ${assistant?.name || "LumenBot"}, asistente de Clínica Dental Lumen en Madrid. Atiende con tono ${assistant?.tone || "cercano"} en español de España.`,
+                  content:
+                    `Eres ${assistant?.name || "TropiBot"}, asistente virtual de TropiGO en Ivirgarzama (Bolivia). ` +
+                    `Atiende con tono ${assistant?.tone || "cercano"} y responde con precios en Bolivianos (Bs.). ` +
+                    `No inventes productos, zonas, tarifas ni pedidos.` +
+                    (memoryContext ? `\n\n${memoryContext}` : ""),
                 },
                 { role: "user" as const, content: joinedContent },
               ];
 
-              const response = await runAssistantChat(fullMessages, Boolean(assistant?.safeMode));
+              const response = await runAssistantChat(
+                fullMessages,
+                Boolean(assistant?.safeMode),
+                {
+                  customerId: customer.id,
+                  conversationId: conv.id,
+                  confirmationVerified: false,
+                  source: "WHATSAPP",
+                }
+              );
 
               // Enviar respuesta por WhatsApp
               await sock.sendMessage(jid, { text: response.content });
@@ -281,7 +285,7 @@ async function startWorker() {
               await prisma.message.create({
                 data: {
                   conversationId: conv.id,
-                  sender: "assistant",
+                  sender: "ASSISTANT",
                   content: response.content,
                   toolCallsJson: response.toolCalls?.length ? JSON.stringify(response.toolCalls) : null,
                 },

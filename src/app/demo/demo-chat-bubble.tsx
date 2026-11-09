@@ -9,6 +9,19 @@ interface DemoChatBubbleProps {
   businessName: string;
 }
 
+function getOrCreateWebchatSessionId(): string {
+  if (typeof window === "undefined") return "";
+  const storageKey = "tropigo_webchat_session";
+  let sessionId = window.localStorage.getItem(storageKey);
+  if (!sessionId) {
+    sessionId = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `web_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+    window.localStorage.setItem(storageKey, sessionId);
+  }
+  return sessionId;
+}
+
 export function DemoChatBubble({
   primaryColor,
   welcomeMessage,
@@ -20,6 +33,7 @@ export function DemoChatBubble({
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sessionId] = useState<string>(getOrCreateWebchatSessionId);
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -37,6 +51,7 @@ export function DemoChatBubble({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userText,
+          sessionId,
           history: newMsgs.map((m) => ({
             role: m.sender === "customer" ? "user" : "assistant",
             content: m.content,

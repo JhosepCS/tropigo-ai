@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export default async function ConversacionesPage() {
   const conversations = await prisma.conversation.findMany({
     include: {
-      contact: true,
+      customer: true,
       messages: {
         orderBy: { createdAt: "asc" },
       },
@@ -17,9 +17,16 @@ export default async function ConversacionesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-[#101828]">Bandeja de Conversaciones</h2>
-        <p className="text-sm text-[#475467]">
-          Bandeja unificada para WhatsApp y Web. Supervisa las respuestas del asistente, revisa qué herramientas usó en cada mensaje o toma el control manual en cualquier momento.
+        <div className="flex items-center gap-2">
+          <h2 className="text-xl font-black text-[#101828]">
+            Bandeja Unificada de WhatsApp & Web
+          </h2>
+          <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+            TropiBot + Operadores
+          </span>
+        </div>
+        <p className="text-xs text-[#667085] mt-0.5">
+          Supervisa en vivo los pedidos y carreras de los clientes de Ivirgarzama, toma el control manual cuando sea necesario o devuelve la atención a TropiBot.
         </p>
       </div>
 

@@ -3,33 +3,789 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-// ----------------------------------------------------
-// 1. USUARIOS Y ADMINISTRACIÓN
-// ----------------------------------------------------
+// =================================================================
+// 1. MULTI-LOCALIDAD Y ZONIFICACIÓN DE TARIFAS
+// =================================================================
+
+model City {
+  id               String          @id @default(cuid())
+  name             String          @unique // Ej: "Ivirgarzama", "Shinahota", "Chimoré"
+  department       String          @default("Cochabamba")
+  country          String          @default("BO")
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  zones            DeliveryZone[]
+  merchants        Merchant[]
+  orders           Order[]
+  rideTrips        RideTrip[]
+  riders           Rider[]
+  services         Service[]
+  promotions       Promotion[]
+  faqs             Faq[]
+
+  @@index([name])
+}
+
+model DeliveryZone {
+  id               String          @id @default(cuid())
+  cityId           String?
+  city             City?           @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  name             String          // Ej: "Casco Central", "Av. Mortensen", "Villa 14", "Senda III"
+  description      String?
+  baseDeliveryCost Float           @default(5.0) // Bs.
+  baseRideCost     Float           @default(4.0) // Bs.
+  estimatedMinutes Int             @default(20)
+  polygonGeoJson   String?         // Coordenadas geoespaciales opcionales
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  userAddresses    UserAddress[]
+  orders           Order[]         @relation("DeliveryZone")
+  orderQuotes      OrderQuote[]
+  originRides      RideTrip[]      @relation("OriginZone")
+  destRides        RideTrip[]      @relation("DestZone")
+
+  @@unique([cityId, name])
+  @@index([cityId, isActive])
+}
+
+// =================================================================
+// 3. USUARIOS, SEGURIDAD, PERFILES Y SESIONES
+// =================================================================
+
 model User {
+  id                    String                 @id @default(cuid())
+  email                 String                 @unique
+  phone                 String?                @unique // Formato E.164: +591XXXXXXXX
+  password              String                 // Hash bcrypt
+  name                  String
+  role                  String                 @default("OPERATOR") // SUPERADMIN, ADMIN, DISPATCHER, OPERATOR, MERCHANT_OWNER, RIDER, CUSTOMER
+  status                String                 @default("ACTIVE")   // ACTIVE, SUSPENDED, INACTIVE
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  profile               Profile?
+  sessions              Session[]
+  addresses             UserAddress[]
+  riderProfile          Rider?
+  ownedMerchants        Merchant[]             @relation("MerchantOwner")
+  customerProfile       Customer?
+  passwordResetTokens   PasswordResetToken[]
+  activityLogs          ActivityLog[]
+  assignedConversations Conversation[]         @relation("OperatorConversations")
+  handoffs              HandoffHistory[]       @relation("OperatorHandoffs")
+  statusChanges         OrderStatusHistory[]
+  verifiedPayments      PaymentRecord[]        @relation("PaymentVerifier")
+
+  @@index([role, status])
+}
+
+model Profile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  avatarUrl      String?
+  documentNumber String?  // Cédula de Identidad (CI)
+  internalNotes  String?
+  updatedAt      DateTime @updatedAt
+}
+
+model Session {
   id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String
-  role      String   @default("ADMIN") // ADMIN, DISPATCHER, OPERATOR
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+  @@index([token])
+}
+
+model Customer {
+  id             String         @id @default(cuid())
+  userId         String?        @unique
+  user           User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  phone          String         @unique // E.164: +591XXXXXXXX
+  whatsappLid    String?
+  name           String?
+  defaultAddress String?
+  referencePoint String?
+  savedLatitude  Float?
+  savedLongitude Float?
+  totalOrders    Int            @default(0)
+  totalRides     Int            @default(0)
+  notes          String?
+  memoryOptOut   Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  addresses             UserAddress[]
+  orders                Order[]
+  orderQuotes           OrderQuote[]
+  rideTrips             RideTrip[]
+  conversations         Conversation[]
+  memoryFacts           CustomerMemoryFact[]
+  conversationSummaries ConversationSummary[]
+
+  @@index([phone])
+  @@index([userId])
+}
+
+model UserAddress {
+  id             String       @id @default(cuid())
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerId     String?
+  customer       Customer?    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  zoneId         String
+  zone           DeliveryZone @relation(fields: [zoneId], references: [id], onDelete: Restrict)
+  label          String       @default("Casa") // "Casa", "Trabajo", "Negocio"
+  streetAddress  String
+  referencePoint String?
+  latitude       Float?
+  longitude      Float?
+  isDefault      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([customerId])
+  @@index([userId])
+}
+
+// =================================================================
+// 4. COMERCIOS, SUCURSALES Y HORARIOS
+// =================================================================
+
+model CommercialCategory {
+  id        String     @id @default(cuid())
+  name      String     @unique // "Restaurantes", "Pollerías", "Farmacias", "Abarrotes"
+  slug      String     @unique
+  icon      String?
+  order     Int        @default(0)
+  isActive  Boolean    @default(true)
+
+  merchants Merchant[]
+}
+
+model Merchant {
+  id                 String              @id @default(cuid())
+  ownerId            String?
+  owner              User?               @relation("MerchantOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  cityId             String?
+  city               City?               @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  categoryId         String?
+  commercialCategory CommercialCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category           String              @default("Restaurante") // Compatible con vistas existentes
+  name               String              // Ej: "Pollería El Pahuichi"
+  slug               String?             @unique
+  legalName          String?
+  nit                String?
+  description        String?
+  phone              String?
+  address            String?
+  commissionRate     Float               @default(0.10) // 10% estándar
+  rating             Float               @default(4.8)
+  isOpen             Boolean             @default(true)
+  imageUrl           String?
+  logoUrl            String?
+  bannerUrl          String?
+  latitude           Float?
+  longitude          Float?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  branches           MerchantBranch[]
+  schedules          MerchantSchedule[]
+  productCategories  ProductCategory[]
+  products           Product[]
+  orders             Order[]
+  orderQuotes        OrderQuote[]
+  promotions         Promotion[]
+
+  @@index([cityId, isOpen])
+  @@index([categoryId])
+}
+
+model MerchantBranch {
+  id         String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  name       String   // "Sucursal Mercado Central"
+  phone      String?
+  address    String
+  latitude   Float?
+  longitude  Float?
+  isOpen     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([merchantId])
+}
+
+model MerchantSchedule {
+  id         String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  dayOfWeek  Int      // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
+  openTime   String   // "07:00"
+  closeTime  String   // "23:00"
+  isClosed   Boolean  @default(false)
+
+  @@unique([merchantId, dayOfWeek])
+}
+
+// =================================================================
+// 5. CATÁLOGOS: PRODUCTOS, VARIANTES, OPCIONES Y SERVICIOS
+// =================================================================
+
+model ProductCategory {
+  id         String    @id @default(cuid())
+  merchantId String
+  merchant   Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  name       String    // "Platos Broaster", "Bebidas", "Combos Familiares"
+  order      Int       @default(0)
+  isActive   Boolean   @default(true)
+
+  products   Product[]
+
+  @@index([merchantId, order])
+}
+
+model Product {
+  id                 String               @id @default(cuid())
+  merchantId         String
+  merchant           Merchant             @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  productCategoryId  String?
+  productCategory    ProductCategory?     @relation(fields: [productCategoryId], references: [id], onDelete: SetNull)
+  category           String?              // Compatible con vistas existentes
+  name               String               // "Cuarto de Pollo a la Broaster"
+  description        String?
+  price              Float                // Precio en Bolivianos (Bs.)
+  isAvailable        Boolean              @default(true)
+  imageUrl           String?
+  preparationMinutes Int?                 @default(15)
+  order              Int                  @default(0)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  images             ProductImage[]
+  variants           ProductVariant[]
+  optionGroups       ProductOptionGroup[]
+  orderItems         OrderItem[]
+
+  @@index([merchantId, isAvailable])
+  @@index([productCategoryId])
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  imageUrl  String
+  order     Int     @default(0)
+}
+
+model ProductVariant {
+  id         String  @id @default(cuid())
+  productId  String
+  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name       String  // "Pierna / Cuadril", "Pecho / Ala"
+  finalPrice Float   // Precio final en Bs.
+  isAvailable Boolean @default(true)
+
+  @@index([productId])
+}
+
+model ProductOptionGroup {
+  id         String              @id @default(cuid())
+  productId  String
+  product    Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name       String              // "Guarnición", "Salsas"
+  minSelect  Int                 @default(0)
+  maxSelect  Int                 @default(1)
+  isRequired Boolean             @default(false)
+
+  items      ProductOptionItem[]
+
+  @@index([productId])
+}
+
+model ProductOptionItem {
+  id              String             @id @default(cuid())
+  groupId         String
+  group           ProductOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name            String             // "Arroz con queso", "Papas fritas", "Extra Llajwa"
+  additionalPrice Float              @default(0.0) // Bs.
+}
+
+model Service {
+  id                 String   @id @default(cuid())
+  cityId             String?
+  city               City?    @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  name               String   // "Mandado Express", "Catering Programado"
+  description        String
+  durationMinutes    Int      @default(30)
+  price              Float    @default(0.0)
+  priceType          String   @default("fixed") // "fixed", "from", "variable"
+  requiresAssessment Boolean  @default(false)
+  isActive           Boolean  @default(true)
+  order              Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([cityId, isActive])
+}
+
+// =================================================================
+// 6. PEDIDOS, DETALLES Y PRESERVACIÓN HISTÓRICA
+// =================================================================
+
+model Order {
+  id                  String               @id @default(cuid())
+  orderNumber         String               @unique // Ej: "TRP-1045"
+  cityId              String?
+  city                City?                @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  customerId          String
+  customer            Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  merchantId          String?
+  merchant            Merchant?            @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  assignedRiderId     String?
+  assignedRider       Rider?               @relation(fields: [assignedRiderId], references: [id], onDelete: SetNull)
+  deliveryZoneId      String?
+  deliveryZone        DeliveryZone?        @relation("DeliveryZone", fields: [deliveryZoneId], references: [id], onDelete: SetNull)
+  orderType           String               @default("DELIVERY") // DELIVERY, MANDADO_EXPRESS, TAKEAWAY
+  itemsJson           String               // JSON para retrocompatibilidad instantánea con KDS
+  subtotal            Float                @default(0.0)
+  deliveryFee         Float                @default(5.0)
+  discountAmount      Float                @default(0.0)
+  totalAmount         Float                @default(5.0)
+  paymentMethod       String               @default("EFECTIVO") // EFECTIVO, QR_BANCO, TIGO_MONEY
+  paymentStatus       String               @default("PENDIENTE") // PENDIENTE, PAGADO_VERIFICADO, RECHAZADO
+  status              String               @default("RECIBIDO") // RECIBIDO, EN_PREPARACION, LISTO_RECOJO, ASIGNADO, EN_CAMINO, ENTREGADO, CANCELADO
+  deliveryAddressText String
+  referencePoint      String?
+  latitude            Float?
+  longitude           Float?
+  customerNotes       String?
+  notes               String?              // Compatible con vistas previas
+  cancellationReason  String?
+  cancelledBy         String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  items               OrderItem[]
+  quote               OrderQuote?
+  statusHistory       OrderStatusHistory[]
+  discounts           OrderDiscount[]
+  paymentRecords      PaymentRecord[]
+
+  @@index([cityId, status])
+  @@index([customerId])
+  @@index([assignedRiderId])
+  @@index([merchantId])
+  @@index([createdAt])
+}
+
+// =================================================================
+// 6.1 COTIZACIONES DE PEDIDO Y NUMERACIÓN ATÓMICA
+// =================================================================
+
+model OrderQuote {
+  id                  String        @id @default(cuid())
+  token               String        @unique
+  customerId          String
+  customer            Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  conversationId      String?
+  conversation        Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  merchantId          String
+  merchant            Merchant      @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  deliveryZoneId      String
+  deliveryZone        DeliveryZone  @relation(fields: [deliveryZoneId], references: [id], onDelete: Restrict)
+  itemsJson           String
+  subtotal            Float
+  deliveryFee         Float
+  totalAmount         Float
+  paymentMethod       String        @default("EFECTIVO")
+  deliveryAddressText String
+  referencePoint      String?
+  latitude            Float?
+  longitude           Float?
+  customerNotes       String?
+  status              String        @default("PENDIENTE") // PENDIENTE, PROCESANDO, CONSUMIDA, EXPIRADA, CANCELADA
+  expiresAt           DateTime
+  consumedAt          DateTime?
+  orderId             String?       @unique
+  order               Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@index([customerId, status])
+  @@index([conversationId, status])
+  @@index([expiresAt])
+}
+
+model OrderCounter {
+  id        String   @id
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model OrderItem {
+  id                  String   @id @default(cuid())
+  orderId             String
+  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId           String?
+  product             Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  // Snapshot inmutable de los datos del producto al momento de la compra
+  productName         String   // "Cuarto de Pollo a la Broaster"
+  unitPrice           Float    // Precio congelado en Bs.
+  quantity            Int      @default(1)
+  subtotal            Float    // unitPrice * quantity
+  variantName         String?  // "Pierna con arroz"
+  optionsSnapshotJson String?  // Adicionales y salsas seleccionadas
+  specialInstructions String?  // "Sin ensalada"
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model OrderStatusHistory {
+  id              String      @id @default(cuid())
+  orderId         String
+  order           Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus      String?
+  toStatus        String
+  changedByUserId String?
+  changedByUser   User?       @relation(fields: [changedByUserId], references: [id], onDelete: SetNull)
+  comment         String?
+  createdAt       DateTime    @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+model OrderDiscount {
+  id          String     @id @default(cuid())
+  orderId     String
+  order       Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  promotionId String?
+  promotion   Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  description String     // "Cupón TROPIGO5"
+  amount      Float      // Monto descontado en Bs.
+
+  @@index([orderId])
+}
+
+// =================================================================
+// 7. LOGÍSTICA, FLOTA Y MOVILIDAD DE PASAJEROS (MOTOTAXIS)
+// =================================================================
+
+model Rider {
+  id               String            @id @default(cuid())
+  userId           String?           @unique
+  user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  cityId           String?
+  city             City?             @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  name             String            // Nombre para visualización ágil sin joins
+  phone            String            @unique // E.164
+  vehicleType      String            @default("MOTO") // MOTO, TORITO_TRIMOVIL, BICICLETA
+  plateNumber      String            // Placa o número de móvil
+  vehicleModel     String?           // "Honda CB125F" o "Torito RE"
+  vehicleColor     String?
+  rating           Float             @default(5.0)
+  isActive         Boolean           @default(true)
+  isAvailable      Boolean           @default(true)
+  currentLocation  String?
+  currentLatitude  Float?
+  currentLongitude Float?
+  totalDeliveries  Int               @default(0)
+  totalRides       Int               @default(0)
+  earnedBalance    Float             @default(0.0) // Saldo acumulado en Bs.
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  orders           Order[]
+  rideTrips        RideTrip[]
+  settlements      RiderSettlement[]
+
+  @@index([cityId, isActive, isAvailable])
+  @@index([vehicleType])
+}
+
+model RideTrip {
+  id                  String              @id @default(cuid())
+  tripNumber          String              @unique // Ej: "VIAJE-2041"
+  cityId              String?
+  city                City?               @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  customerId          String
+  customer            Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  assignedRiderId     String?
+  assignedRider       Rider?              @relation(fields: [assignedRiderId], references: [id], onDelete: SetNull)
+  originZoneId        String?
+  originZone          DeliveryZone?       @relation("OriginZone", fields: [originZoneId], references: [id], onDelete: SetNull)
+  destZoneId          String?
+  destZone            DeliveryZone?       @relation("DestZone", fields: [destZoneId], references: [id], onDelete: SetNull)
+  vehicleType         String              @default("MOTO") // MOTO, TORITO_TRIMOVIL
+  originAddress       String              // "Mercado Central"
+  destinationAddress  String              // "Sindicato San Salvador, Villa 14"
+  originLat           Float?
+  originLng           Float?
+  destLat             Float?
+  destLng             Float?
+  distanceKm          Float?
+  fareAmount          Float               @default(4.0) // Monto de la carrera en Bs.
+  paymentMethod       String              @default("EFECTIVO") // EFECTIVO, QR_BANCO
+  paymentStatus       String              @default("PENDIENTE") // PENDIENTE, PAGADO_VERIFICADO
+  status              String              @default("SOLICITADO") // SOLICITADO, CONDUCTOR_ASIGNADO, EN_CURSO, FINALIZADO, CANCELADO
+  passengerNotes      String?
+  cancellationReason  String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  statusHistory       RideStatusHistory[]
+  paymentRecords      PaymentRecord[]
+
+  @@index([cityId, status])
+  @@index([customerId])
+  @@index([assignedRiderId])
+  @@index([createdAt])
+}
+
+model RideStatusHistory {
+  id         String     @id @default(cuid())
+  rideTripId String
+  rideTrip   RideTrip   @relation(fields: [rideTripId], references: [id], onDelete: Cascade)
+  toStatus   String
+  comment    String?
+  createdAt  DateTime   @default(now())
+
+  @@index([rideTripId])
+}
+
+// =================================================================
+// 8. ATENCIÓN AL CLIENTE, CONVERSACIONES, WHATSAPP E IA
+// =================================================================
+
+model Conversation {
+  id                 String             @id @default(cuid())
+  customerId         String
+  customer           Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  channel            String             @default("WHATSAPP") // WHATSAPP, WEBCHAT
+  status             String             @default("AI_ACTIVE") // AI_ACTIVE, HUMAN_TAKEOVER, CLOSED
+  assignedOperatorId String?
+  assignedOperator   User?              @relation("OperatorConversations", fields: [assignedOperatorId], references: [id], onDelete: SetNull)
+  lastMessageAt      DateTime           @default(now())
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  // Identificador de sesión para canales sin cliente persistente (WEBCHAT).
+  // Permite aislar conversaciones y memoria entre visitantes.
+  sessionKey         String?
+
+  messages           Message[]
+  orderQuotes        OrderQuote[]
+  handoffHistory     HandoffHistory[]
+  summary            ConversationSummary?
+
+  @@index([customerId, channel])
+  @@index([status, lastMessageAt])
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         String           // CUSTOMER, ASSISTANT, OPERATOR, SYSTEM
+  content        String
+  mediaType      String?          @default("text") // text, audio, image, location, document
+  mediaUrl       String?
+  latitude       Float?
+  longitude      Float?
+  transcription  String?          // Transcripción Whisper si fue nota de voz
+  toolCallsJson  String?          // Herramientas invocadas por la IA
+  tokensUsed     Int?             // Tokens consumidos en inferencia
+  providerModel  String?          // Ej: "groq/llama-3.3-70b"
+  rawPayload     String?
+  createdAt      DateTime         @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// =================================================================
+// 8.1 MEMORIA PERSISTENTE DEL CLIENTE
+// Datos duraderos y útiles para futuras conversaciones. Nunca se
+// comparten entre clientes y el administrador puede editarlos o
+// eliminarlos desde el CRM.
+// =================================================================
+
+model CustomerMemoryFact {
+  id            String   @id @default(cuid())
+  customerId    String
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  category      String   // PERFIL, PREFERENCIA, DIRECCION, OBSERVACION
+  key           String   // Etiqueta legible para el CRM
+  keyNormalized String   // Clave normalizada para deduplicar
+  value         String
+  source        String   @default("AI_WHATSAPP") // AI_WHATSAPP, CRM, SYSTEM
+  createdBy     String?  // userId del administrador cuando se crea desde CRM
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([customerId, category, keyNormalized])
+  @@index([customerId, updatedAt])
+}
+
+model ConversationSummary {
+  id             String       @id @default(cuid())
+  customerId     String
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  conversationId String       @unique
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  summaryText    String
+  topicsJson     String       @default("[]")
+  messageCount   Int          @default(0)
+  periodStart    DateTime?
+  periodEnd      DateTime?
+  generatedBy    String       @default("SYSTEM") // SYSTEM, CRM
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([customerId, createdAt])
+}
+
+model HandoffHistory {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  operatorId     String?
+  operator       User?        @relation("OperatorHandoffs", fields: [operatorId], references: [id], onDelete: SetNull)
+  reason         String       // "Reclamo por demora", "Pide hablar con persona"
+  action         String       // "TAKEOVER", "RETURN_TO_AI"
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+}
+
+model Faq {
+  id        String   @id @default(cuid())
+  cityId    String?
+  city      City?    @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  question  String
+  answer    String
+  category  String   @default("General")
+  order     Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([category, order])
 }
 
-model AgencyProfile {
+model KnowledgeBase {
   id        String   @id @default(cuid())
-  name      String   @default("TropiGO Admin")
-  logoUrl   String?
+  freeText  String   @default("TropiGO es la plataforma de delivery y movilidad líder en el Trópico de Cochabamba.")
   updatedAt DateTime @updatedAt
 }
 
-// ----------------------------------------------------
-// 2. PERFIL DE NEGOCIO TROPIGO (IVIRGARZAMA)
-// ----------------------------------------------------
+model KnowledgeDocument {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  category  String   @default("Operaciones")
+  isActive  Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+
+model AssistantConfig {
+  id                 String     @id @default(cuid())
+  name               String     @default("TropiBot")
+  avatarUrl          String     @default("/avatar-tropigo.png")
+  tone               String     @default("cercano")
+  welcomeMessage     String     @default("¡Hola! 👋 Te habla TropiBot, tu asistente de TropiGO en Ivirgarzama. ¿Qué se te antoja pedir hoy? Tenemos delivery de comida, compras de farmacia, mandados y mototaxis.")
+  instructions       String
+  prohibitedActions  String
+  operatingHours     String     @default("{}")
+  operatingHoursJson String     @default("{}")
+  offHoursPolicy     String     @default("TAKE_MESSAGE")
+  handoffRules       String     @default("[]")
+  handoffRulesJson   String     @default("[]")
+  customHandoffRule  String?
+  activeProvider     String     @default("GROQ") // GROQ, GEMINI, CEREBRAS, OPENROUTER, LOCAL
+  activeModel        String     @default("llama-3.3-70b-versatile")
+  safeMode           Boolean    @default(false)
+  updatedAt          DateTime   @updatedAt
+}
+
+// =================================================================
+// 9. PAGOS, TRANSACCIONES, COMPROBANTES QR Y LIQUIDACIONES
+// =================================================================
+
+model PaymentRecord {
+  id                 String          @id @default(cuid())
+  orderId            String?
+  order              Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  rideTripId         String?
+  rideTrip           RideTrip?       @relation(fields: [rideTripId], references: [id], onDelete: SetNull)
+  amount             Float           // Monto en Bs.
+  currency           String          @default("BOB")
+  provider           String          @default("QR_SIMPLE") // QR_SIMPLE, EFECTIVO, TIGO_MONEY, MANUAL
+  qrStringData       String?         // Payload EMVCo
+  receiptImageUrl    String?         // Captura enviada por el cliente
+  verificationStatus String          @default("PENDIENTE") // PENDIENTE, PAGADO_VERIFICADO, RECHAZADO
+  verifiedByUserId   String?
+  verifiedByUser     User?           @relation("PaymentVerifier", fields: [verifiedByUserId], references: [id], onDelete: SetNull)
+  verifiedBy         String?         // Compatible con código previo
+  verifiedAt         DateTime?
+  rejectionReason    String?
+  createdAt          DateTime        @default(now())
+
+  @@index([orderId])
+  @@index([rideTripId])
+  @@index([verificationStatus])
+}
+
+model RiderSettlement {
+  id                 String   @id @default(cuid())
+  riderId            String
+  rider              Rider    @relation(fields: [riderId], references: [id], onDelete: Restrict)
+  periodStart        DateTime
+  periodEnd          DateTime
+  totalOrdersCount   Int      @default(0)
+  totalRidesCount    Int      @default(0)
+  grossEarned        Float    @default(0.0) // Recaudación bruta en Bs.
+  platformCommission Float    @default(0.0) // Comisión TropiGO
+  netPayout          Float    @default(0.0) // Saldo neto
+  status             String   @default("PENDIENTE") // "PENDIENTE", "PAGADO"
+  paidAt             DateTime?
+  createdAt          DateTime @default(now())
+
+  @@index([riderId, status])
+}
+
+// =================================================================
+// 10. ADMINISTRACIÓN, INTEGRACIONES, CONFIGURACIÓN Y AUDITORÍA
+// =================================================================
+
 model BusinessProfile {
   id               String   @id @default(cuid())
   name             String   @default("TropiGO Ivirgarzama")
@@ -42,248 +798,30 @@ model BusinessProfile {
   currencySymbol   String   @default("Bs.")
   timezone         String   @default("America/La_Paz")
   paymentModes     String   @default("[\"EFECTIVO\", \"QR_BANCO\", \"TIGO_MONEY\"]")
-  bankQrImage      String?  // Imagen Base64 o URL del QR Simple de la cuenta bancaria de Tropigo
-  baseDeliveryFee  Float    @default(5.0)  // 5 Bs tarifa base urbana
-  baseRideFee      Float    @default(4.0)  // 4 Bs tarifa base mototaxi urbano
+  bankQrImage      String?
+  baseDeliveryFee  Float    @default(5.0)
+  baseRideFee      Float    @default(4.0)
   assistantEnabled Boolean  @default(true)
   updatedAt        DateTime @updatedAt
 }
 
-// ----------------------------------------------------
-// 3. AGENTE DE IA (TROPIGO BOT / GROQ)
-// ----------------------------------------------------
-model AssistantConfig {
-  id                String   @id @default(cuid())
-  name              String   @default("TropiBot")
-  avatarUrl         String   @default("/avatar-tropigo.png")
-  tone              String   @default("cercano") // cercano, rapido, profesional
-  welcomeMessage    String   @default("¡Hola! 👋 Te habla TropiBot, tu asistente de TropiGO en Ivirgarzama. ¿Qué se te antoja pedir hoy? Tenemos delivery de comida, compras de farmacia, mandados y mototaxis.")
-  instructions      String   @default("Eres TropiBot, el asistente inteligente oficial de TropiGO en Ivirgarzama (Trópico de Cochabamba, Bolivia). Atiendes a los clientes por WhatsApp y Web con calidez, rapidez y amabilidad. Responde consultas sobre restaurantes, menús en Bs., tarifas de delivery y mototaxis. Si el cliente pide un servicio, confirma siempre los detalles (productos o destino, dirección/ubicación exacta y método de pago en Bs.) antes de registrarlo.")
-  prohibitedActions String   @default("1. Nunca inventes precios o comercios que no existan en el catálogo.\n2. Nunca confirmes un pedido sin ubicación/dirección clara y confirmación de pago.\n3. Ante reclamos airados o quejas, deriva a un operador humano inmediatamente.\n4. No proporciones diagnósticos médicos en pedidos de farmacia.")
-  operatingHours    String   @default("{\"lunes\":{\"open\":\"07:00\",\"close\":\"23:00\"},\"martes\":{\"open\":\"07:00\",\"close\":\"23:00\"},\"miercoles\":{\"open\":\"07:00\",\"close\":\"23:00\"},\"jueves\":{\"open\":\"07:00\",\"close\":\"23:00\"},\"viernes\":{\"open\":\"07:00\",\"close\":\"23:59\"},\"sabado\":{\"open\":\"07:00\",\"close\":\"23:59\"},\"domingo\":{\"open\":\"07:00\",\"close\":\"23:00\"}}")
-  offHoursPolicy    String   @default("TAKE_MESSAGE") // TAKE_MESSAGE, SCHEDULE_FOR_TOMORROW
-  handoffRules      String   @default("[\"queja\",\"reclamo\",\"pide hablar con alguien\",\"no sabe la respuesta\",\"urgencia\"]")
-  customHandoffRule String?  @default("Solicitudes de compras especiales de más de 200 Bs.")
-  safeMode          Boolean  @default(false)
-  updatedAt         DateTime @updatedAt
+model AgencyProfile {
+  id        String   @id @default(cuid())
+  name      String   @default("TropiGO Tecnologías")
+  logoUrl   String?
+  updatedAt DateTime @updatedAt
 }
 
-// ----------------------------------------------------
-// 4. COMERCIOS Y CATÁLOGO DE PRODUCTOS (DELIVERY)
-// ----------------------------------------------------
-model Merchant {
-  id             String    @id @default(cuid())
-  name           String
-  category       String    // Restaurante, Pollería, Farmacia, Tienda de Abarrotes, Mandados
-  description    String?
-  phone          String?
-  address        String?
-  commissionRate Float     @default(0.10) // 10% estándar
-  rating         Float     @default(4.8)
-  isOpen         Boolean   @default(true)
-  imageUrl       String?
-  products       Product[]
-  orders         Order[]
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-}
-
-model Product {
-  id          String   @id @default(cuid())
-  merchantId  String
-  merchant    Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  price       Float    // Precio en Bolivianos (Bs.)
-  category    String?  // Platos, Bebidas, Combos, etc.
-  isAvailable Boolean  @default(true)
-  imageUrl    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-// ----------------------------------------------------
-// 5. ZONAS DE COBERTURA Y TARIFARIO
-// ----------------------------------------------------
-model DeliveryZone {
-  id               String   @id @default(cuid())
-  name             String   // Ej: Casco Central, Av. Mortensen, Villa 14, Senda III
-  description      String?
-  baseDeliveryCost Float    @default(5.0) // Bs.
-  baseRideCost     Float    @default(4.0) // Bs.
-  estimatedMinutes Int      @default(20)
-  isActive         Boolean  @default(true)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-}
-
-// ----------------------------------------------------
-// 6. REPARTIDORES Y CONDUCTORES (MOTOTAXIS / TORITOS)
-// ----------------------------------------------------
-model Rider {
-  id              String     @id @default(cuid())
-  name            String
-  phone           String     @unique
-  vehicleType     String     @default("MOTO") // MOTO, TORITO, BICICLETA
-  plateNumber     String     // Placa o número de móvil
-  rating          Float      @default(5.0)
-  isActive        Boolean    @default(true)  // Habilitado en la plataforma
-  isAvailable     Boolean    @default(true)  // Libre para nuevo viaje/pedido
-  currentLocation String?    // Coordenadas o zona actual
-  totalDeliveries Int        @default(0)
-  totalRides      Int        @default(0)
-  earnedBalance   Float      @default(0.0)   // Saldo acumulado en Bs.
-  orders          Order[]
-  rideTrips       RideTrip[]
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-}
-
-// ----------------------------------------------------
-// 7. CLIENTES Y USUARIOS FINALES
-// ----------------------------------------------------
-model Customer {
-  id             String         @id @default(cuid())
-  phone          String         @unique
-  whatsappLid    String?
-  name           String?
-  defaultAddress String?
-  referencePoint String?
-  savedLatitude  Float?
-  savedLongitude Float?
-  totalOrders    Int            @default(0)
-  totalRides     Int            @default(0)
-  notes          String?
-  orders         Order[]
-  rideTrips      RideTrip[]
-  conversations  Conversation[]
-  appointments   Appointment[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-}
-
-// ----------------------------------------------------
-// 8. PEDIDOS DE DELIVERY Y MANDADOS
-// ----------------------------------------------------
-model Order {
-  id                  String          @id @default(cuid())
-  orderNumber         String          @unique // Ej: TRP-1042
-  customerId          String
-  customer            Customer        @relation(fields: [customerId], references: [id])
-  merchantId          String?
-  merchant            Merchant?       @relation(fields: [merchantId], references: [id])
-  assignedRiderId     String?
-  assignedRider       Rider?          @relation(fields: [assignedRiderId], references: [id])
-  orderType           String          @default("DELIVERY") // DELIVERY, MANDADO_EXPRESS
-  itemsJson           String          // JSON: [{ productId, name, quantity, unitPrice, notes }]
-  subtotal            Float           @default(0.0)
-  deliveryFee         Float           @default(5.0)
-  totalAmount         Float           @default(5.0)
-  paymentMethod       String          @default("EFECTIVO") // EFECTIVO, QR_BANCO, TIGO_MONEY
-  paymentStatus       String          @default("PENDIENTE") // PENDIENTE, PAGADO_VERIFICADO
-  status              String          @default("RECIBIDO") // RECIBIDO, EN_PREPARACION, ASIGNADO, EN_CAMINO, ENTREGADO, CANCELADO
-  deliveryAddressText String
-  referencePoint      String?
-  latitude            Float?
-  longitude           Float?
-  notes               String?
-  paymentRecords      PaymentRecord[]
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-}
-
-// ----------------------------------------------------
-// 9. SERVICIOS DE MOVILIDAD Y MOTOTAXI
-// ----------------------------------------------------
-model RideTrip {
-  id                String          @id @default(cuid())
-  tripNumber        String          @unique // Ej: VIAJE-2031
-  customerId        String
-  customer          Customer        @relation(fields: [customerId], references: [id])
-  assignedRiderId   String?
-  assignedRider     Rider?          @relation(fields: [assignedRiderId], references: [id])
-  vehicleType       String          @default("MOTO") // MOTO, TORITO
-  originAddress     String          // Ej: Mercado Central
-  destinationAddress String         // Ej: Sindicato San Salvador, Villa 14
-  originLat         Float?
-  originLng         Float?
-  destLat           Float?
-  destLng           Float?
-  distanceKm        Float?
-  fareAmount        Float           @default(4.0) // Monto de la carrera en Bs.
-  paymentMethod     String          @default("EFECTIVO") // EFECTIVO, QR_BANCO
-  paymentStatus     String          @default("PENDIENTE")
-  status            String          @default("SOLICITADO") // SOLICITADO, CONDUCTOR_ASIGNADO, EN_CURSO, FINALIZADO, CANCELADO
-  passengerNotes    String?
-  paymentRecords    PaymentRecord[]
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-}
-
-// ----------------------------------------------------
-// 10. PAGOS QR INTEROPERABLES DE BOLIVIA (QR SIMPLE)
-// ----------------------------------------------------
-model PaymentRecord {
-  id                String    @id @default(cuid())
-  orderId           String?
-  order             Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  rideTripId        String?
-  rideTrip          RideTrip? @relation(fields: [rideTripId], references: [id], onDelete: SetNull)
-  amount            Float     // Monto en Bs.
-  currency          String    @default("BOB")
-  provider          String    @default("QR_SIMPLE") // QR_SIMPLE, TIGO_MONEY, MANUAL
-  qrStringData      String?   // Payload interoperable EMVCo
-  receiptImageUrl   String?   // Captura de pantalla enviada por el cliente por WhatsApp
-  verificationStatus String   @default("PENDIENTE") // PENDIENTE, VERIFICADO, RECHAZADO
-  verifiedBy        String?   // Nombre del operador que verificó
-  verifiedAt        DateTime?
-  createdAt         DateTime  @default(now())
-}
-
-// ----------------------------------------------------
-// 11. CONVERSACIONES Y MENSAJERÍA MULTICANAL
-// ----------------------------------------------------
-model Conversation {
-  id            String    @id @default(cuid())
-  customerId    String
-  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  channel       String    @default("WHATSAPP") // WHATSAPP, WEB
-  status        String    @default("AI_ACTIVE") // AI_ACTIVE, HUMAN_TAKEOVER, CLOSED
-  lastMessageAt DateTime  @default(now())
-  messages      Message[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-}
-
-model Message {
-  id             String       @id @default(cuid())
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         String       // CUSTOMER, ASSISTANT, HUMAN
-  content        String
-  mediaType      String?      // text, audio, location, image
-  mediaUrl       String?
-  latitude       Float?
-  longitude      Float?
-  transcription  String?      // Texto generado por Whisper (Groq) si fue nota de voz
-  toolCallsJson  String?      // Registro de herramientas ejecutadas
-  rawPayload     String?
-  createdAt      DateTime     @default(now())
-}
-
-// ----------------------------------------------------
-// 12. CONFIGURACIÓN DE CANALES WHATSAPP
-// ----------------------------------------------------
 model WhatsAppConfig {
   id                       String   @id @default(cuid())
-  activeProvider           String   @default("BAILEYS_QR") // BAILEYS_QR, META_CLOUD_API
+  activeProvider           String   @default("BAILEYS_QR") // "BAILEYS_QR", "META_CLOUD_API"
   metaPhoneNumberId        String?
   metaWabaId               String?
   metaSystemTokenEncrypted String?  // AES-256-GCM
   metaWebhookVerifyToken   String   @default("tropigo_verify_token_2025")
   metaAppSecretEncrypted   String?
   baileysSessionData       String?
-  baileysStatus            String   @default("DISCONNECTED") // DISCONNECTED, SCAN_QR, CONNECTED
+  baileysStatus            String   @default("DISCONNECTED") // "DISCONNECTED", "SCAN_QR", "CONNECTED"
   baileysQr                String?
   connectedPhone           String?
   updatedAt                DateTime @updatedAt
@@ -291,8 +829,8 @@ model WhatsAppConfig {
 
 model Channel {
   id           String   @id @default(cuid())
-  type         String   @unique // whatsapp, webchat
-  status       String   @default("disconnected") // disconnected, scanning_qr, connected
+  type         String   @unique // "whatsapp", "webchat"
+  status       String   @default("disconnected")
   phone        String?
   whatsappLid  String?
   qrCode       String?
@@ -300,47 +838,64 @@ model Channel {
   updatedAt    DateTime @updatedAt
 }
 
-// ----------------------------------------------------
-// 13. BASE DE CONOCIMIENTO, FAQS Y SERVICIOS
-// ----------------------------------------------------
-model KnowledgeBase {
-  id        String   @id @default(cuid())
-  freeText  String   @default("TropiGO es la plataforma de delivery y movilidad líder en Ivirgarzama (Trópico de Cochabamba, Bolivia). Conectamos a los mejores restaurantes, farmacias y comercios con clientes mediante repartidores en moto y mototaxistas.")
-  updatedAt DateTime @updatedAt
+model WorkerCommand {
+  id          String   @id @default(cuid())
+  command     String
+  payloadJson String?
+  status      String   @default("PENDING") // "PENDING", "PROCESSING", "COMPLETED", "FAILED"
+  attempts    Int      @default(0)
+  errorText   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, createdAt])
 }
 
-model Faq {
-  id        String   @id @default(cuid())
-  question  String
-  answer    String
-  category  String   @default("General")
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Promotion {
+  id             String       @id @default(cuid())
+  cityId         String?
+  city           City?        @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  merchantId     String?
+  merchant       Merchant?    @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+  code           String       @unique // Ej: "TROPIGO5"
+  title          String
+  discountType   String       @default("FIXED_AMOUNT") // FIXED_AMOUNT, PERCENTAGE
+  discountValue  Float        @default(5.0) // 5.0 Bs o 10%
+  minOrderAmount Float        @default(0.0)
+  maxDiscount    Float?
+  startsAt       DateTime     @default(now())
+  expiresAt      DateTime
+  isActive       Boolean      @default(true)
+
+  orderDiscounts OrderDiscount[]
+
+  @@index([code, isActive])
 }
 
-model Service {
-  id                 String   @id @default(cuid())
-  name               String
-  description        String
-  durationMinutes    Int      @default(30)
-  price              Float    @default(0.0)
-  priceType          String   @default("from")
-  requiresAssessment Boolean  @default(false)
-  isActive           Boolean  @default(true)
-  order              Int      @default(0)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String
+  entityName  String?
+  entityId    String?
+  provider    String   @default("system")
+  channel     String   @default("whatsapp")
+  status      String   // "success", "error", "warning", "simulated"
+  detailsJson String?
+  errorText   String?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([action, createdAt])
+  @@index([entityId])
 }
 
-// ----------------------------------------------------
-// 14. INTEGRACIONES (GOOGLE CALENDAR, WEBHOOKS)
-// ----------------------------------------------------
 model Integration {
   id                   String   @id @default(cuid())
-  provider             String   @unique // google_calendar, gmail, google_sheets, slack, stripe, webhooks
+  provider             String   @unique // "google_calendar", "gmail", "webhooks"
   name                 String
-  status               String   @default("disconnected") // disconnected, connected, error
+  status               String   @default("disconnected")
   accountIdentifier    String?
   encryptedCredentials String?  // AES-256-GCM
   settingsJson         String   @default("{}")
@@ -353,7 +908,7 @@ model Appointment {
   id              String   @id @default(cuid())
   customerId      String
   customer        Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  serviceName     String   // Ej: Pedido Programado / Catering Evento / Traslado Aeropuerto
+  serviceName     String   // Pedido Programado / Catering
   startTime       DateTime
   endTime         DateTime
   calendarEventId String?
@@ -362,26 +917,4 @@ model Appointment {
   notes           String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-}
-
-// ----------------------------------------------------
-// 15. AUDITORÍA Y COMUNICACIÓN WEB-WORKER
-// ----------------------------------------------------
-model ActivityLog {
-  id          String   @id @default(cuid())
-  action      String
-  provider    String   // assistant_groq, whatsapp, google_calendar, payment_qr
-  channel     String   @default("whatsapp")
-  status      String   // success, error, simulated
-  detailsJson String?
-  errorText   String?
-  createdAt   DateTime @default(now())
-}
-
-model WorkerCommand {
-  id          String   @id @default(cuid())
-  command     String
-  payloadJson String?
-  status      String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
-  createdAt   DateTime @default(now())
 }
