@@ -2,6 +2,9 @@
   "name": "atiende",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "concurrently -k -n \"db,web,worker\" -c \"blue,green,magenta\" \"npm run dev:db\" \"npm run dev:web\" \"npm run dev:worker\"",
     "dev:db": "tsx scripts/local-db.ts",
