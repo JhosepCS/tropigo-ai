@@ -1,52 +1,49 @@
+# syntax=docker/dockerfile:1
 # =================================================================
-# DOCKERFILE MULTI-ETAPA STANDALONE PARA WEB Y WORKER
+# TROPIGO AI - IMAGEN DE PRODUCCION (WEB + WORKER WHATSAPP)
 # =================================================================
 
-# 1. Dependencias
-FROM node:20-alpine AS deps
-RUN apk add --no-cache libc6-compat
+FROM node:20-alpine AS base
+RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 
+# 1. Dependencias (incluye devDependencies: el worker corre con tsx)
+FROM base AS deps
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma/
 RUN npm ci
 
-# 2. Builder
-FROM node:20-alpine AS builder
-WORKDIR /app
+# 2. Compilacion de Next.js
+FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NEXT_OUTPUT_STANDALONE=true
 RUN npx prisma generate
 RUN npm run build
 
-# 3. Runner común (sirve para web y para worker)
-FROM node:20-alpine AS runner
-WORKDIR /app
-
+# 3. Imagen final unica: sirve para web y para worker
+FROM base AS runner
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN addgroup --system --gid 1001 nodejs \
+  && adduser --system --uid 1001 nextjs
 
-# Crear directorio para sesión persistente de WhatsApp
-RUN mkdir -p /app/data/whatsapp_session && chown -R nextjs:nodejs /app/data
-
-# Copiar archivos compilados y dependencias necesarias
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder --chown=nextjs:nodejs /app/src/worker ./src/worker
-COPY --from=builder --chown=nextjs:nodejs /app/src/lib ./src/lib
-COPY --from=builder --chown=nextjs:nodejs /app/docker-entrypoint.sh ./docker-entrypoint.sh
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/package-lock.json ./package-lock.json
+COPY --from=builder /app/next.config.ts ./next.config.ts
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/docker-entrypoint.sh ./docker-entrypoint.sh
 
-RUN chmod +x ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh \
+  && mkdir -p /app/data/whatsapp_session \
+  && chown -R nextjs:nodejs /app/data /app/.next
 
 USER nextjs
 
@@ -55,5 +52,5 @@ EXPOSE 3000
 ENTRYPOINT ["./docker-entrypoint.sh"]
 
 # Por defecto arranca el servidor web.
-# Para el worker, docker-compose sobreescribe CMD ["node", "src/worker/index.js"]
-CMD ["node", "server.js"]
+# El worker se arranca con: npx tsx src/worker/index.ts
+CMD ["npm", "start"]

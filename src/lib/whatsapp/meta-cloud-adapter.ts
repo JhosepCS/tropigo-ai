@@ -319,18 +319,45 @@ export class MetaCloudApiAdapter implements IWhatsAppProvider {
   }
 
   /**
-   * Descarga el buffer de audio desde Meta Graph API
+   * Descarga un medio desde Meta Graph API y devuelve también su MIME type
+   * real (audio/ogg, image/jpeg, etc.) para pasarlo al motor multimodal.
    */
-  async downloadMedia(mediaId: string): Promise<Buffer> {
+  async downloadMediaWithMetadata(
+    mediaId: string
+  ): Promise<{ buffer: Buffer; mimeType: string }> {
     const mediaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
       headers: { Authorization: `Bearer ${this.systemToken}` },
     });
-    if (!mediaRes.ok) throw new Error("No se pudo obtener URL del medio");
+    if (!mediaRes.ok) {
+      throw new Error(`No se pudo obtener la URL del medio (HTTP ${mediaRes.status})`);
+    }
+
     const mediaInfo = await mediaRes.json();
+    if (!mediaInfo?.url) {
+      throw new Error("Meta no devolvió una URL válida para el medio.");
+    }
+
     const binaryRes = await fetch(mediaInfo.url, {
       headers: { Authorization: `Bearer ${this.systemToken}` },
     });
+    if (!binaryRes.ok) {
+      throw new Error(`No se pudo descargar el medio (HTTP ${binaryRes.status})`);
+    }
+
     const arrayBuf = await binaryRes.arrayBuffer();
-    return Buffer.from(arrayBuf);
+    return {
+      buffer: Buffer.from(arrayBuf),
+      mimeType:
+        mediaInfo.mime_type ||
+        binaryRes.headers.get("content-type") ||
+        "application/octet-stream",
+    };
+  }
+
+  /**
+   * Compatibilidad: devuelve solo el buffer binario del medio.
+   */
+  async downloadMedia(mediaId: string): Promise<Buffer> {
+    return (await this.downloadMediaWithMetadata(mediaId)).buffer;
   }
 }

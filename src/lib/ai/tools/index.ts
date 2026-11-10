@@ -11,6 +11,7 @@ import { ordersTool } from "./orders-tool";
 import { orderSummaryTool } from "./order-summary-tool";
 import { orderCreateTool } from "./order-create-tool";
 import { memoryTool } from "./memory-tool";
+import { handoffTool } from "./handoff-tool";
 import { OrderToolContext } from "../../orders/order-service";
 
 export * from "./types";
@@ -25,6 +26,7 @@ export * from "./orders-tool";
 export * from "./order-summary-tool";
 export * from "./order-create-tool";
 export * from "./memory-tool";
+export * from "./handoff-tool";
 
 /**
  * Catálogo modular completo de las herramientas internas de TropiGO
@@ -41,6 +43,7 @@ export const TROPIGO_TOOLS: IAssistantTool[] = [
   orderSummaryTool,
   orderCreateTool,
   memoryTool,
+  handoffTool,
 ];
 
 /**

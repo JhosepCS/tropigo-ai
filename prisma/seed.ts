@@ -747,8 +747,8 @@ async function main() {
         "no sabe la respuesta",
         "urgencia",
       ]),
-      activeProvider: "GROQ",
-      activeModel: "llama-3.3-70b-versatile",
+      activeProvider: "GEMINI",
+      activeModel: "gemini-3.1-flash-lite",
       safeMode: false,
     },
   });

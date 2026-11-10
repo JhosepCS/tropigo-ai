@@ -1,18 +1,19 @@
 #!/bin/sh
 set -e
 
-echo "🚀 Iniciando Atiende..."
+echo "🚀 Iniciando TropiGO AI..."
 
-# Ejecutar migraciones automáticas sobre la base de datos de producción
-if [ "$NODE_ENV" = "production" ] && [ -n "$DATABASE_URL" ]; then
-  echo "📦 Sincronizando esquema de base de datos..."
-  npx prisma db push --skip-generate || true
+# Migraciones de produccion. Se ejecutan una sola vez (servicio web).
+# El worker las omite con RUN_MIGRATIONS=false.
+if [ "$RUN_MIGRATIONS" = "true" ] && [ -n "$DATABASE_URL" ]; then
+  echo "📦 Aplicando migraciones de Prisma..."
+  npx prisma migrate deploy
 
   if [ "$SEED_DEMO" = "true" ]; then
-    echo "🌱 Verificando carga de datos de demostración de Clínica Dental Lumen..."
+    echo "🌱 Cargando datos iniciales de TropiGO..."
     npm run db:seed || true
   fi
 fi
 
-# Ejecutar comando pasado al contenedor (por defecto server.js o worker)
+# Ejecutar el comando del contenedor (web o worker)
 exec "$@"

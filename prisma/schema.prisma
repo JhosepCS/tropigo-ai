@@ -149,6 +149,7 @@ model Customer {
   conversations         Conversation[]
   memoryFacts           CustomerMemoryFact[]
   conversationSummaries ConversationSummary[]
+  appointments          Appointment[]
 
   @@index([phone])
   @@index([userId])

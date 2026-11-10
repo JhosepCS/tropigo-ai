@@ -1,0 +1,42 @@
+# =================================================================
+# RENDER - WORKER DE WHATSAPP (BAILEYS)
+# El panel web vive en Vercel; este servicio mantiene la sesion de
+# WhatsApp y el motor de IA en un proceso persistente.
+# =================================================================
+services:
+  - type: web
+    name: tropigo-whatsapp-worker
+    runtime: node
+    plan: free
+    region: ohio
+    buildCommand: npm ci --include=dev
+    startCommand: npm run start:worker
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: WHATSAPP_PROVIDER
+        value: BAILEYS_QR
+      - key: WHATSAPP_SESSION_PERSIST
+        value: "true"
+      - key: WHATSAPP_SESSION_DIR
+        value: ./data/whatsapp_session
+      - key: WHATSAPP_BATCH_DELAY_MS
+        value: "6000"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MULTIMODAL_MODEL
+        value: gemini-3.1-flash-lite
+      - key: GROQ_API_KEY
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: ADMIN_EMAIL
+        value: admin@tropigo.bo

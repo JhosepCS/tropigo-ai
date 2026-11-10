@@ -43,13 +43,14 @@ export class ModelRouter {
       },
       {
         provider: "gemini",
-        name: "Google Gemini (1.5 Flash & 8B)",
+        name: "Google Gemini 3.x (Texto + Visión + Audio)",
         status: keys.geminiKey ? "ACTIVE" : "PENDING_KEY",
-        configuredModel: config.providerModels?.gemini || "gemini-1.5-flash",
+        configuredModel: config.providerModels?.gemini || "gemini-3.1-flash-lite",
         availableModels: VERIFIED_MODELS_CATALOG.gemini.map((m) => m.id),
         maskedKey: maskKey(keys.geminiKey),
         isFreeVerified: true,
-        notes: "Multimodal nativo. Permite interpretar fotos de menús y comprobantes QR en Ivirgarzama.",
+        notes:
+          "Motor principal gratuito: conversación, fotos de menús/comprobantes y transcripción de notas de voz en un solo proveedor.",
         limits: {
           rpm: 15,
           rpd: 1500,
@@ -123,7 +124,7 @@ export class ModelRouter {
       case "gemini":
         return new GeminiAdapter(
           keyOverride || keys.geminiKey,
-          modelOverride || config.providerModels?.gemini || "gemini-1.5-flash"
+          modelOverride || config.providerModels?.gemini || "gemini-3.1-flash-lite"
         );
       case "cerebras":
         return new CerebrasAdapter(
@@ -165,13 +166,18 @@ export class ModelRouter {
     const config = customConfig || (await getAssistantConfig());
     const keys = await getProviderKeys();
 
-    // 1. Determinar proveedor principal configurado en el CRM
-    const primaryProvider = (config.activeProvider || "GROQ").toLowerCase();
-    const primaryModel = config.activeModel || options?.model;
+    // 1. Determinar proveedor principal configurado en el CRM.
+    // Gemini es el motor gratuito principal (texto + visión + audio).
+    const primaryProvider = (config.activeProvider || "GEMINI").toLowerCase();
+    const primaryModel =
+      config.activeModel || options?.model || "gemini-3.1-flash-lite";
 
     // 2. Construir adaptadores
     const groq = new GroqAdapter(keys.groqKey, config.providerModels?.groq || "llama-3.3-70b-versatile");
-    const gemini = new GeminiAdapter(keys.geminiKey, config.providerModels?.gemini || "gemini-1.5-flash");
+    const gemini = new GeminiAdapter(
+      keys.geminiKey,
+      config.providerModels?.gemini || "gemini-3.1-flash-lite"
+    );
     const openrouter = new OpenRouterAdapter(keys.openRouterKey, config.providerModels?.openrouter || "meta-llama/llama-3.3-70b-instruct:free");
     const cerebras = new CerebrasAdapter(keys.cerebrasKey, config.providerModels?.cerebras || "llama3.1-70b");
     const simulator = new LocalSimulatorAdapter();
@@ -219,7 +225,7 @@ export class ModelRouter {
     }
 
     // Proveedores de respaldo autorizados (gratuitos)
-    const fallbacks = config.fallbackProviders || ["GEMINI", "OPENROUTER", "LOCAL"];
+    const fallbacks = config.fallbackProviders || ["GEMINI", "LOCAL"];
     for (const fb of fallbacks) {
       const norm = fb.toLowerCase();
       if (norm !== primaryProvider && adapterMap[norm]) {

@@ -1,0 +1,5 @@
+# Normaliza finales de linea para scripts y contenedores
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

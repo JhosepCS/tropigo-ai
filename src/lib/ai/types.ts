@@ -103,22 +103,23 @@ export const VERIFIED_MODELS_CATALOG: Record<
   ],
   gemini: [
     {
-      id: "gemini-1.5-flash",
-      name: "Gemini 1.5 Flash (Recomendado)",
+      id: "gemini-3.1-flash-lite",
+      name: "Gemini 3.1 Flash Lite (Recomendado)",
       isFree: true,
-      description: "Multimodal nativo (fotos de menús y comprobantes). 15 RPM / 1,500 RPD en AI Studio.",
+      description:
+        "Modelo multimodal vigente y gratuito: texto, visión (fotos de menús/comprobantes) y transcripción de audio. Ideal para atención por WhatsApp.",
     },
     {
-      id: "gemini-1.5-flash-8b",
-      name: "Gemini 1.5 Flash 8B",
+      id: "gemini-flash-lite-latest",
+      name: "Gemini Flash Lite Latest",
       isFree: true,
-      description: "Versión de alta velocidad optimizada para tareas de chat y clasificación.",
+      description: "Alias rotativo de Google al modelo Flash Lite más reciente disponible.",
     },
     {
-      id: "gemini-2.0-flash",
-      name: "Gemini 2.0 Flash (Next-Gen Preview)",
+      id: "gemini-3.8-flash",
+      name: "Gemini 3.8 Flash",
       isFree: true,
-      description: "Modelo experimental de última generación en Google AI Studio.",
+      description: "Mayor capacidad de razonamiento multimodal. Puede estar saturado; se usa como respaldo.",
     },
   ],
   cerebras: [

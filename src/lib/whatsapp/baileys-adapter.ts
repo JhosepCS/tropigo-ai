@@ -104,23 +104,29 @@ export class BaileysAdapter implements IWhatsAppProvider {
     if (!m?.message) return null;
     if (m.key?.fromMe) return null; // Ignorar mensajes propios
 
-    const from = (m.key?.remoteJid || "").replace("@s.whatsapp.net", "").replace("@lid", "");
+    const from = (m.key?.remoteJid || "")
+      .replace("@s.whatsapp.net", "")
+      .replace("@lid", "");
     if (!from || from.includes("@g.us") || from === "status@broadcast") {
       return null; // Ignorar grupos y estados
     }
 
     const id = m.key?.id || "";
     const timestamp = (m.messageTimestamp as number) * 1000 || Date.now();
-    const msg = m.message;
 
-    // 1. Mensaje de Texto simple o extendido
-    const text =
-      msg.conversation ||
-      msg.extendedTextMessage?.text ||
-      msg.imageMessage?.caption ||
-      msg.videoMessage?.caption;
+    // Desenvolver mensajes efímeros, de una sola visualización y editados.
+    let msg = m.message;
+    if (msg.ephemeralMessage?.message) msg = msg.ephemeralMessage.message;
+    if (msg.viewOnceMessage?.message) msg = msg.viewOnceMessage.message;
+    if (msg.viewOnceMessageV2?.message) msg = msg.viewOnceMessageV2.message;
+    if (msg.documentWithCaptionMessage?.message) {
+      msg = msg.documentWithCaptionMessage.message;
+    }
 
-    // 2. Ubicación GPS
+    // El raw normalizado es el que debe usar MediaDownloader.
+    const raw = { ...m, message: msg };
+
+    // 1. Ubicación GPS
     const location = msg.locationMessage || msg.liveLocationMessage;
     if (location) {
       return {
@@ -134,23 +140,55 @@ export class BaileysAdapter implements IWhatsAppProvider {
           name: location.name,
           address: location.address,
         },
-        raw: m,
+        raw,
       };
     }
 
-    // 3. Nota de voz o audio
-    const audio = msg.audioMessage;
-    if (audio) {
+    // 2. Nota de voz o audio
+    if (msg.audioMessage) {
       return {
         id,
         from,
         timestamp,
         type: "audio",
-        raw: m,
+        raw,
       };
     }
 
-    // 4. Texto estándar
+    // 3. Imagen (con o sin caption)
+    if (msg.imageMessage) {
+      return {
+        id,
+        from,
+        timestamp,
+        type: "image",
+        text: msg.imageMessage.caption || "",
+        mediaCaption: msg.imageMessage.caption || undefined,
+        raw,
+      };
+    }
+
+    // 4. Documento
+    if (msg.documentMessage) {
+      return {
+        id,
+        from,
+        timestamp,
+        type: "document",
+        text: msg.documentMessage.fileName || "",
+        mediaCaption:
+          msg.documentMessage.caption || msg.documentMessage.fileName || undefined,
+        raw,
+      };
+    }
+
+    // 5. Texto simple o extendido
+    const text =
+      msg.conversation ||
+      msg.extendedTextMessage?.text ||
+      msg.videoMessage?.caption ||
+      "";
+
     if (text) {
       return {
         id,
@@ -158,7 +196,7 @@ export class BaileysAdapter implements IWhatsAppProvider {
         timestamp,
         type: "text",
         text,
-        raw: m,
+        raw,
       };
     }
 
@@ -167,7 +205,7 @@ export class BaileysAdapter implements IWhatsAppProvider {
       from,
       timestamp,
       type: "other",
-      raw: m,
+      raw,
     };
   }
 }

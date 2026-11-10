@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMetaWhatsAppConfig } from "@/lib/whatsapp/meta-manager";
 import { MetaCloudApiAdapter } from "@/lib/whatsapp/meta-cloud-adapter";
-import { ModelRouter } from "@/lib/ai/model-router";
+import { runAgentChat } from "@/lib/ai/agent";
+import { analyzeImage, transcribeAudio } from "@/lib/ai/multimodal";
 import { getAssistantConfig, buildSystemPrompt } from "@/lib/ai/config-manager";
-import { getRealDataContextPrompt, getToolDefinitions, executeTool } from "@/lib/ai/tools";
+import { getRealDataContextPrompt } from "@/lib/ai/tools";
 import { prisma } from "@/lib/prisma";
 import { IncomingWhatsAppMessage, IncomingWhatsAppStatus } from "@/lib/whatsapp/types";
 import { confirmAndCreateOrder } from "@/lib/orders/order-service";
@@ -12,6 +13,7 @@ import { buildCustomerMemoryPrompt } from "@/lib/memory/customer-memory";
 import { ensureConversationSession } from "@/lib/memory/conversation-summary";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 // ============================================================================
 // CACHÉ DE IDEMPOTENCIA EN MEMORIA (TTL 15 MINUTOS)
@@ -27,6 +29,98 @@ function cleanupWamidCache() {
       recentWamids.delete(wamid);
     }
   }
+}
+
+/**
+ * Convierte un mensaje entrante de Meta en texto útil para el asistente.
+ * - Imágenes: se descargan y se analizan con Gemini Vision.
+ * - Notas de voz: se descargan y se transcriben con Gemini Audio.
+ * - Ubicaciones: se conservan las coordenadas GPS.
+ * Si el medio no se puede procesar, se devuelve una instrucción clara para
+ * que el asistente pida al cliente que repita o escriba el mensaje.
+ */
+async function resolveIncomingText(
+  msg: IncomingWhatsAppMessage,
+  adapter: MetaCloudApiAdapter | null
+): Promise<{ text: string; mediaType: string; mediaId?: string; mediaError?: string }> {
+  let text = (msg.text || "").trim();
+  const mediaId = msg.imageMediaId || msg.audioMediaId || msg.documentMediaId;
+  let mediaError: string | undefined;
+
+  if (msg.type === "location" && msg.location) {
+    return {
+      text:
+        `[Ubicación GPS compartida por el cliente: Lat ${msg.location.latitude}, ` +
+        `Lng ${msg.location.longitude}${msg.location.address ? ` - ${msg.location.address}` : ""}]`,
+      mediaType: "location",
+    };
+  }
+
+  if (msg.type === "image") {
+    const caption = msg.mediaCaption?.trim();
+    if (msg.imageMediaId && adapter) {
+      try {
+        const media = await adapter.downloadMediaWithMetadata(msg.imageMediaId);
+        const analysis = await analyzeImage(media.buffer, media.mimeType, caption);
+
+        if (analysis.text) {
+          text = [
+            caption
+              ? `El cliente envió una foto y escribió: "${caption}".`
+              : "El cliente envió una foto.",
+            `Contenido detectado en la imagen: ${analysis.text}`,
+          ].join("\n");
+        } else {
+          mediaError = analysis.error;
+          text = caption
+            ? `El cliente envió una foto con el texto "${caption}", pero la imagen no se pudo analizar. Pídele que describa lo que necesita.`
+            : "El cliente envió una foto que no se pudo analizar. Discúlpate y pídele que describa lo que necesita.";
+        }
+      } catch (error: any) {
+        mediaError = error?.message || String(error);
+        text = "El cliente envió una foto que no se pudo descargar. Discúlpate y pídele que describa lo que necesita.";
+      }
+    } else {
+      text = caption
+        ? `El cliente envió una foto con el texto: "${caption}".`
+        : "El cliente envió una foto.";
+    }
+  } else if (msg.type === "audio") {
+    if (msg.audioMediaId && adapter) {
+      try {
+        const media = await adapter.downloadMediaWithMetadata(msg.audioMediaId);
+        const transcription = await transcribeAudio(media.buffer, media.mimeType);
+
+        if (transcription.text) {
+          text = `El cliente envió una nota de voz. Transcripción literal: "${transcription.text}".`;
+        } else {
+          mediaError = transcription.error;
+          text =
+            "El cliente envió una nota de voz que no se pudo transcribir. " +
+            "Discúlpate brevemente y pídele que repita el audio o lo escriba por texto.";
+        }
+      } catch (error: any) {
+        mediaError = error?.message || String(error);
+        text =
+          "El cliente envió una nota de voz que no se pudo descargar. " +
+          "Discúlpate y pídele que repita el audio o lo escriba por texto.";
+      }
+    } else {
+      text =
+        "El cliente envió una nota de voz que no se pudo descargar. " +
+        "Discúlpate y pídele que repita el audio o lo escriba por texto.";
+    }
+  } else if (msg.type === "document") {
+    text = msg.mediaCaption
+      ? `El cliente envió un documento: "${msg.mediaCaption}".`
+      : "El cliente envió un documento adjunto.";
+  }
+
+  if (!text) {
+    text = "[Mensaje recibido por WhatsApp]";
+  }
+
+  return { text, mediaType: msg.type, mediaId, mediaError };
 }
 
 /**
@@ -136,22 +230,22 @@ export async function POST(req: NextRequest) {
       const e164 = `+${rawDigits}`;
       const customerPhone = msg.from; // formato enviado por Meta
 
-      let userText = msg.text || "";
-      if (msg.location) {
-        userText = `[Ubicación compartida: Lat ${msg.location.latitude}, Lng ${msg.location.longitude}${
-          msg.location.address ? ` - ${msg.location.address}` : ""
-        }]`;
-      } else if (msg.type === "image") {
-        userText = msg.mediaCaption ? `[Foto: ${msg.mediaCaption}]` : "[Foto compartida]";
-      } else if (msg.type === "audio") {
-        userText = "[Nota de voz recibida por WhatsApp]";
-      } else if (msg.type === "document") {
-        userText = msg.mediaCaption ? `[Documento: ${msg.mediaCaption}]` : "[Documento adjunto]";
-      }
+      // Credenciales de salida y adaptador de Meta. Se crea aquí porque también
+      // se usa para descargar imágenes y notas de voz antes de llamar a la IA.
+      const hasOutboundCredentials = Boolean(
+        config.metaPhoneNumberId && config.metaSystemToken
+      );
+      const metaAdapter = hasOutboundCredentials
+        ? new MetaCloudApiAdapter({
+            phoneNumberId: config.metaPhoneNumberId!,
+            systemToken: config.metaSystemToken!,
+            appSecret: config.metaAppSecret,
+          })
+        : null;
 
-      if (!userText.trim()) {
-        userText = "[Mensaje recibido por WhatsApp]";
-      }
+      // Visión y transcripción: convierte fotos/audios en texto comprensible.
+      const resolved = await resolveIncomingText(msg, metaAdapter);
+      const userText = resolved.text;
 
       // -------------------------------------------------------------
       // 2. IDENTIFICACIÓN Y REGISTRO DEL CLIENTE POR TELÉFONO
@@ -193,7 +287,7 @@ export async function POST(req: NextRequest) {
           conversationId: conversation.id,
           sender: "CUSTOMER",
           content: userText,
-          mediaType: msg.location ? "location" : msg.type,
+          mediaType: resolved.mediaType,
           latitude: msg.location?.latitude || null,
           longitude: msg.location?.longitude || null,
           rawPayload: JSON.stringify({
@@ -201,6 +295,8 @@ export async function POST(req: NextRequest) {
             timestamp: msg.timestamp,
             profileName: profileName || null,
             direction: "inbound",
+            mediaId: resolved.mediaId || null,
+            mediaError: resolved.mediaError || null,
           }),
         },
       });
@@ -224,21 +320,13 @@ export async function POST(req: NextRequest) {
       // -------------------------------------------------------------
       // 5. RESPUESTA AUTOMÁTICA DEL ASISTENTE SEGÚN AI STUDIO
       // -------------------------------------------------------------
-      const hasOutboundCredentials = Boolean(config.metaPhoneNumberId && config.metaSystemToken);
-
-      if (!hasOutboundCredentials) {
+      if (!metaAdapter) {
         console.warn("[Meta Webhook] Credenciales de Meta no configuradas para responder automáticamente.");
         recentWamids.set(msg.id, { timestamp: Date.now(), state: "COMPLETED" });
         continue;
       }
 
       try {
-        const metaAdapter = new MetaCloudApiAdapter({
-          phoneNumberId: config.metaPhoneNumberId!,
-          systemToken: config.metaSystemToken!,
-          appSecret: config.metaAppSecret,
-        });
-
         // Marcar leído en WhatsApp (doble check azul)
         metaAdapter.markAsRead(msg.id).catch((err) => {
           console.warn("[Meta Webhook] No se pudo marcar como leído en Meta:", err.message);
@@ -420,24 +508,14 @@ export async function POST(req: NextRequest) {
           content: m.content,
         }));
 
-        // Invocar motor multimodelo de TropiGO AI con herramientas conectadas a BD
-        const aiResponse = await ModelRouter.executeChat(
-          [{ role: "system", content: systemPrompt }, ...chatHistory],
-          {
-            tools: getToolDefinitions(),
-            toolContext,
-          },
-          assistantConfig
-        );
-
-        // Si la IA ejecutó llamadas a herramientas internas, resolverlas si no tienen resultado
-        if (aiResponse.toolCalls && aiResponse.toolCalls.length > 0) {
-          for (const call of aiResponse.toolCalls) {
-            if (!call.result) {
-              call.result = await executeTool(call.tool, call.args, toolContext);
-            }
-          }
-        }
+        // Motor único: Gemini (texto + visión + audio) con herramientas
+        // conectadas a la base de datos y bucle de resultados.
+        const aiResponse = await runAgentChat({
+          messages: [{ role: "system", content: systemPrompt }, ...chatHistory],
+          config: assistantConfig,
+          toolContext,
+          maxToolRounds: 3,
+        });
 
         // Si se activó traspaso a operador humano
         if (aiResponse.operatorHandoff) {
@@ -455,38 +533,9 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        // Determinar texto final de respuesta.
-        // Para herramientas de pedidos, el texto oficial de la herramienta
-        // tiene prioridad sobre una posible frase introductoria del modelo.
-        let replyText = aiResponse.content;
-
-        if (aiResponse.toolCalls && aiResponse.toolCalls.length > 0) {
-          const orderTool = aiResponse.toolCalls.find((call) =>
-            ["preparar_resumen_pedido", "registrar_pedido", "consultar_estado_pedido", "cotizar_tarifa"].includes(
-              call.tool
-            )
-          );
-          const primaryResult = orderTool?.result || aiResponse.toolCalls[0].result;
-
-          if (primaryResult) {
-            const toolText =
-              primaryResult.resumenTexto ||
-              primaryResult.mensajeConfirmacion ||
-              primaryResult.mensajeOficial ||
-              primaryResult.mensaje ||
-              primaryResult.error ||
-              null;
-
-            if (toolText && (!replyText || orderTool)) {
-              replyText = toolText;
-            }
-          }
-        }
-
-        if (!replyText) {
-          replyText =
-            "¡Hola! He recibido tu mensaje en TropiGO Ivirgarzama. En un momento te atendemos.";
-        }
+        const replyText =
+          aiResponse.content?.trim() ||
+          "¡Hola! He recibido tu mensaje en TropiGO Ivirgarzama. En un momento te atendemos.";
 
         // Enviar respuesta por WhatsApp oficial de Meta
         const outboundWamid = await metaAdapter.sendMessage(customerPhone, replyText);
