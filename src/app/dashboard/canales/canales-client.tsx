@@ -11,6 +11,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { WhatsAppMetaConnect } from "@/components/whatsapp-meta-connect";
+import { WhatsAppBaileysQr } from "@/components/whatsapp-baileys-qr";
 import { MaskedWhatsAppStatus } from "@/lib/whatsapp/meta-manager";
 
 interface CanalesClientProps {
@@ -21,6 +22,7 @@ interface CanalesClientProps {
 }
 
 export function CanalesClient({
+  initialWpChannel,
   initialWebChannel,
   businessName,
   initialWhatsAppStatus,
@@ -45,6 +47,16 @@ export function CanalesClient({
   );
   const [copiedSnippet, setCopiedSnippet] = useState(false);
   const [savedWeb, setSavedWeb] = useState(false);
+
+  const initialWpSettings = (() => {
+    try {
+      return JSON.parse(initialWpChannel?.settingsJson || "{}");
+    } catch {
+      return {};
+    }
+  })();
+
+  const metaActive = initialWpSettings.provider === "META_CLOUD_API";
 
   const handleSaveWebSettings = async () => {
     try {
@@ -77,7 +89,15 @@ export function CanalesClient({
       {/* 1. Canal Oficial WhatsApp Business Platform (Cloud API de Meta) */}
       <WhatsAppMetaConnect initialStatus={initialWhatsAppStatus} />
 
-      {/* 2. Chat para tu Web */}
+      {/* 2. Modo QR de Baileys (solo pruebas, no oficial) */}
+      <WhatsAppBaileysQr
+        initialStatus={initialWpChannel?.status}
+        initialQrCode={initialWpChannel?.qrCode}
+        initialPhone={initialWpChannel?.phone}
+        metaActive={metaActive}
+      />
+
+      {/* 3. Chat para tu Web */}
       <div className="bg-white rounded-3xl border border-[#EAECF0] p-6 shadow-2xs space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-[#EAECF0]">
           <div className="flex items-center gap-3">

@@ -2,11 +2,9 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies, headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { getSessionSecret } from "./secret";
 
-const SECRET_KEY = Buffer.from(
-  process.env.ENCRYPTION_KEY || "9f8b4a2e1d7c3b5a6f8e0d2c4b6a8f0e1d3c5b7a9f0e2d4c6b8a0f1e3d5c7b9a",
-  "utf-8"
-);
+const SECRET_KEY = getSessionSecret();
 const COOKIE_NAME = "tropigo_session";
 const LEGACY_COOKIE_NAME = "atiende_session";
 const SESSION_DURATION_DAYS = 7;

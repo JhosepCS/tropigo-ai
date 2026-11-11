@@ -13,6 +13,7 @@ import { orderCreateTool } from "./order-create-tool";
 import { memoryTool } from "./memory-tool";
 import { handoffTool } from "./handoff-tool";
 import { loyaltyTool } from "./loyalty-tool";
+import { loyaltyCodeTool } from "./loyalty-code-tool";
 import { OrderToolContext } from "../../orders/order-service";
 
 export * from "./types";
@@ -29,6 +30,7 @@ export * from "./order-create-tool";
 export * from "./memory-tool";
 export * from "./handoff-tool";
 export * from "./loyalty-tool";
+export * from "./loyalty-code-tool";
 
 /**
  * Catálogo modular completo de las herramientas internas de TropiGO
@@ -47,6 +49,7 @@ export const TROPIGO_TOOLS: IAssistantTool[] = [
   memoryTool,
   handoffTool,
   loyaltyTool,
+  loyaltyCodeTool,
 ];
 
 /**
@@ -192,8 +195,13 @@ export async function getRealDataContextPrompt(): Promise<string> {
       2,
       Math.floor(Number(business?.loyaltyStampsRequired) || 10)
     );
+    const countRides = business?.loyaltyCountRides ?? true;
     const loyaltyBlock = business?.loyaltyEnabled
-      ? `Activo. Cada pedido entregado suma 1 sello. Al llegar a ${
+      ? `Activo. Cada pedido entregado suma 1 sello${
+          countRides
+            ? " y cada carrera de mototaxi FINALIZADA también suma 1 sello"
+            : ". Las carreras de mototaxi se muestran como dato adicional, pero no suman sellos"
+        }. Al llegar a ${
           stampsRequired - 1
         } sellos, el pedido número ${stampsRequired} es gratis (${
           business?.loyaltyRewardDescription || "10mo pedido gratis"
@@ -201,7 +209,7 @@ export async function getRealDataContextPrompt(): Promise<string> {
           business?.loyaltyRewardFreeDelivery
             ? "El premio también cubre el envío."
             : "El envío del pedido premio se paga aparte."
-        } Cada cliente tiene un QR personal.`
+        } Cada cliente tiene un QR personal con un código TGO-XXXXXXXX. Si el cliente envía una foto de su QR o escribe su código, usa 'consultar_fidelidad_por_codigo' o el bloque [TARJETA DE FIDELIDAD DETECTADA] para explicarle sus sellos exactos.`
       : "El programa de fidelidad está pausado temporalmente.";
 
     return `
@@ -243,7 +251,7 @@ REGLA DE INTEGRIDAD ESTRICTA Y PROTOCOLO DE PEDIDOS:
    j) Para seguimiento, usa 'consultar_estado_pedido'. La consulta se limita al cliente de la conversación.
 4. DUPLICADOS: 'registrar_pedido' es idempotente. Si la cotización ya fue consumida, devuelve el pedido existente; no crees otra orden ni cambies el número.
 5. ESTADOS: el cliente solo consulta. Los cambios de estado los realiza el CRM/operador o el repartidor asignado; no prometas cambios de estado que no hayan sido registrados.
-6. FIDELIDAD: si el cliente pregunta por sus sellos, su premio o su QR personal, usa 'consultar_mi_fidelidad'. No inventes sellos ni premios. Cuando 'preparar_resumen_pedido' devuelva premioFidelidadAplicado=true, el descuento ya está incluido en el total del resumen; no lo sumes ni lo dupliques.
+6. FIDELIDAD: si el cliente pregunta por sus sellos, su premio o su QR personal, usa 'consultar_mi_fidelidad'. Si envía una foto de su QR/tarjeta o escribe un código TGO-XXXXXXXX, usa 'consultar_fidelidad_por_codigo' o los datos del bloque [TARJETA DE FIDELIDAD DETECTADA]. Explica siempre: sellos actuales, sellos faltantes, si el premio está disponible y en qué número de pedido/carrera se activa. No inventes sellos ni premios. Cuando 'preparar_resumen_pedido' devuelva premioFidelidadAplicado=true, el descuento ya está incluido en el total del resumen; no lo sumes ni lo dupliques.
 =================================================================
 `.trim();
   } catch (e: any) {

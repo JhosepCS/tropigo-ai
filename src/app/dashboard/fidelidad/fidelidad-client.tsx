@@ -40,9 +40,15 @@ interface SelectedCard {
   stamps: number;
   stampsRequired: number;
   stampsNeeded: number;
+  missingForReward: number;
   rewardAvailable: boolean;
   rewardsRedeemed: number;
   totalEarned: number;
+  completedOrders: number;
+  completedRides: number;
+  requestedRides: number;
+  countRides: boolean;
+  nextRewardAtNumber: number;
   qrUrl: string;
   programEnabled: boolean;
   rewardDescription: string;
@@ -375,27 +381,34 @@ export function FidelidadClient({
                   ) : (
                     <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5">
                       <p className="text-[11px] font-bold text-emerald-800">
-                        Faltan{" "}
-                        {Math.max(
-                          0,
-                          selectedCard.stampsNeeded - selectedCard.stamps
-                        )}{" "}
-                        sello(s) para el premio.
+                        Faltan {selectedCard.missingForReward} sello(s) para el premio.
                       </p>
                       <p className="mt-0.5 text-[10px] text-emerald-700">
-                        Cada pedido entregado suma un sello. El pedido número{" "}
-                        {selectedCard.stampsRequired} es gratis.
+                        Cada pedido entregado suma un sello
+                        {selectedCard.countRides
+                          ? " y cada carrera finalizada también"
+                          : ""}
+                        . Tu premio se activa en el número{" "}
+                        {selectedCard.nextRewardAtNumber}.
                       </p>
                     </div>
                   )}
 
-                  <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                     <div className="rounded-xl border border-slate-100 bg-slate-50 px-2 py-1.5">
                       <p className="text-[9px] font-bold uppercase text-slate-400">
-                        Pedidos
+                        Pedidos entregados
                       </p>
                       <p className="text-sm font-black text-slate-800">
-                        {selectedCard.totalOrders}
+                        {selectedCard.completedOrders}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 px-2 py-1.5">
+                      <p className="text-[9px] font-bold uppercase text-slate-400">
+                        Carreras
+                      </p>
+                      <p className="text-sm font-black text-slate-800">
+                        {selectedCard.completedRides}
                       </p>
                     </div>
                     <div className="rounded-xl border border-slate-100 bg-slate-50 px-2 py-1.5">

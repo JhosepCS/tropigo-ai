@@ -2,6 +2,13 @@
 # RENDER - WORKER DE WHATSAPP (BAILEYS)
 # El panel web vive en Vercel; este servicio mantiene la sesion de
 # WhatsApp y el motor de IA en un proceso persistente.
+#
+# IMPORTANTE:
+# - Solo se necesita para el modo QR (no oficial).
+# - Con Meta Cloud API puedes dejar WHATSAPP_PROVIDER=META_CLOUD_API:
+#   el worker queda saludable en /health pero no conecta Baileys.
+# - La sesion se guarda en Supabase (WHATSAPP_SESSION_PERSIST=true),
+#   porque el plan free no tiene disco persistente.
 # =================================================================
 services:
   - type: web
@@ -16,6 +23,7 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # BAILEYS_QR = genera QR (no oficial). META_CLOUD_API = worker idle.
       - key: WHATSAPP_PROVIDER
         value: BAILEYS_QR
       - key: WHATSAPP_SESSION_PERSIST
@@ -40,3 +48,4 @@ services:
         sync: false
       - key: ADMIN_EMAIL
         value: admin@tropigo.bo
+

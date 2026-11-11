@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { awardLoyaltyOnRideCompletionById } from "@/lib/loyalty/service";
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,6 +28,18 @@ export async function POST(req: NextRequest) {
           earnedBalance: { increment: trip.fareAmount },
         },
       });
+    }
+
+    // Si el programa cuenta carreras, sumar el sello de fidelidad.
+    if (status === "FINALIZADO") {
+      try {
+        await awardLoyaltyOnRideCompletionById(trip.id);
+      } catch (loyaltyError) {
+        console.error(
+          "[Rides] No se pudo sumar el sello de fidelidad de la carrera:",
+          loyaltyError
+        );
+      }
     }
 
     return NextResponse.json({ success: true, trip });

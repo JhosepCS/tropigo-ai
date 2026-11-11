@@ -10,8 +10,8 @@ import { getLoyaltySummary } from "../../loyalty/service";
 export const loyaltyTool: IAssistantTool = {
   name: "consultar_mi_fidelidad",
   description:
-    "Consulta los sellos, el premio disponible y el enlace/QR de la tarjeta de fidelidad del cliente de esta conversación. " +
-    "Úsala cuando el cliente pregunte cuántos sellos tiene, si ya ganó su pedido gratis o cómo obtener su QR personal. " +
+    "Consulta los sellos, pedidos entregados, carreras finalizadas, el premio disponible y el enlace/QR de la tarjeta de fidelidad del cliente de esta conversación. " +
+    "Úsala cuando el cliente pregunte cuántos sellos tiene, cuántos pedidos o carreras le faltan, si ya ganó su pedido gratis o cómo obtener su QR personal. " +
     "No revela información de otros clientes.",
   parameters: {
     type: "object",
@@ -28,7 +28,10 @@ export const loyaltyTool: IAssistantTool = {
       }
 
       const summary = await getLoyaltySummary(context.customerId);
-      const missing = Math.max(0, summary.stampsNeeded - summary.stamps);
+      const missing = summary.missingForReward;
+      const missingLabel = summary.countRides
+        ? `${missing} pedido(s) o carrera(s)`
+        : `${missing} pedido(s)`;
 
       return {
         cliente: summary.customerName,
@@ -40,15 +43,26 @@ export const loyaltyTool: IAssistantTool = {
         premioDescripcion: summary.rewardDescription,
         premiosCanjeados: summary.rewardsRedeemed,
         totalSellosGanados: summary.totalEarned,
+        pedidosEntregados: summary.completedOrders,
+        carrerasFinalizadas: summary.completedRides,
+        carrerasSolicitadas: summary.requestedRides,
+        carrerasSumanSellos: summary.countRides,
+        proximoPremioEnElNumero: summary.nextRewardAtNumber,
         programaActivo: summary.programEnabled,
         urlTarjeta: summary.qrUrl,
         mensaje: !summary.programEnabled
           ? "El programa de fidelidad está temporalmente pausado; tus sellos se conservan."
           : summary.rewardAvailable
-          ? `¡Ya tienes tu premio disponible! Tu próximo pedido confirmado se aplica como gratis (${summary.rewardDescription}).`
-          : `Tienes ${summary.stamps} de ${summary.stampsNeeded} sellos. Te faltan ${missing} sello(s) para tu pedido gratis.`,
+          ? `¡Ya puedes reclamar tu premio! ${summary.rewardDescription}. Se aplica automáticamente al confirmar tu próximo pedido.`
+          : `Tienes ${summary.stamps} de ${summary.stampsNeeded} sellos. Te faltan ${missingLabel} para completar la tarjeta. Tu premio se activa en el número ${summary.nextRewardAtNumber}.`,
+        detalle: `Llevas ${summary.completedOrders} pedido(s) entregado(s) y ${summary.completedRides} carrera(s) finalizada(s). ${
+          summary.countRides
+            ? "Las carreras finalizadas también suman sellos."
+            : "Las carreras se muestran como dato adicional, pero no suman sellos en este momento."
+        }`,
         instruccionParaAsistente:
-          "Comparte el enlace de la tarjeta solo si el cliente lo pide. No inventes sellos ni prometas premios que la herramienta no confirme.",
+          "Explica los números exactos que devuelve la herramienta. No inventes sellos ni prometas premios que no confirme. Comparte el enlace de la tarjeta solo si el cliente lo pide. Si el cliente pregunta cómo sumar, recuérdale que cada pedido entregado suma 1 sello" +
+          (summary.countRides ? " y que cada carrera finalizada también suma 1 sello." : "."),
       };
     } catch (error: any) {
       console.error("[Tool: consultar_mi_fidelidad] Error:", error);

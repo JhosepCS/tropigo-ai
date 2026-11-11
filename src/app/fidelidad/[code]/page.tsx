@@ -194,22 +194,31 @@ export default async function PublicLoyaltyCardPage({
             ) : (
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3">
                 <p className="text-sm font-bold text-emerald-800">
-                  Te faltan {Math.max(0, card.stampsNeeded - card.stamps)} sello(s)
+                  Te faltan {card.missingForReward} sello(s)
                 </p>
                 <p className="mt-1 text-[11px] text-emerald-700">
-                  Cada pedido entregado suma un sello. El pedido número{" "}
-                  {card.stampsRequired} es gratis.
+                  Cada pedido entregado suma un sello
+                  {card.countRides ? " y cada carrera finalizada también" : ""}.
+                  Tu premio se activa en el número {card.nextRewardAtNumber}.
                 </p>
               </div>
             )}
 
-            <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
               <div className="rounded-xl border border-slate-100 bg-slate-50 px-2 py-2">
                 <p className="text-[9px] font-bold uppercase text-slate-400">
-                  Pedidos
+                  Pedidos entregados
                 </p>
                 <p className="text-base font-black text-slate-800">
-                  {card.totalOrders}
+                  {card.completedOrders}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-slate-50 px-2 py-2">
+                <p className="text-[9px] font-bold uppercase text-slate-400">
+                  Carreras
+                </p>
+                <p className="text-base font-black text-slate-800">
+                  {card.completedRides}
                 </p>
               </div>
               <div className="rounded-xl border border-slate-100 bg-slate-50 px-2 py-2">

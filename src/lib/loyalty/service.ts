@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import QRCode from "qrcode";
 import { prisma } from "../prisma";
+import { normalizeLoyaltyCode } from "./code";
 
 export const DEFAULT_STAMPS_REQUIRED = 10;
 export const MIN_STAMPS_REQUIRED = 2;
@@ -20,6 +21,7 @@ export interface LoyaltySettings {
   businessAddress: string;
   currencySymbol: string;
   appUrl: string;
+  countRides: boolean;
 }
 
 export interface LoyaltySummary {
@@ -29,9 +31,16 @@ export interface LoyaltySummary {
   stamps: number;
   stampsRequired: number;
   stampsNeeded: number;
+  missingForReward: number;
   rewardAvailable: boolean;
   rewardsRedeemed: number;
   totalEarned: number;
+  completedOrders: number;
+  completedRides: number;
+  requestedRides: number;
+  countRides: boolean;
+  /** Número global del pedido/carrera en el que se activa el próximo premio. */
+  nextRewardAtNumber: number;
   qrUrl: string;
   programEnabled: boolean;
   rewardDescription: string;
@@ -125,6 +134,7 @@ export async function getLoyaltySettings(
       loyaltyStampsRequired: true,
       loyaltyRewardFreeDelivery: true,
       loyaltyRewardDescription: true,
+      loyaltyCountRides: true,
     },
   });
 
@@ -145,6 +155,7 @@ export async function getLoyaltySettings(
     businessAddress: business?.address || "",
     currencySymbol: business?.currencySymbol || "Bs.",
     appUrl: getAppUrl(),
+    countRides: business?.loyaltyCountRides ?? true,
   };
 }
 
@@ -152,17 +163,26 @@ export async function getLoyaltySummary(
   customerId: string,
   db: LoyaltyDb = prisma
 ): Promise<LoyaltySummary> {
-  const customer = await db.customer.findUnique({
-    where: { id: customerId },
-    select: {
-      id: true,
-      name: true,
-      loyaltyCode: true,
-      loyaltyStamps: true,
-      loyaltyTotalEarned: true,
-      loyaltyRewardsRedeemed: true,
-    },
-  });
+  const [customer, completedOrders, completedRides] = await Promise.all([
+    db.customer.findUnique({
+      where: { id: customerId },
+      select: {
+        id: true,
+        name: true,
+        loyaltyCode: true,
+        loyaltyStamps: true,
+        loyaltyTotalEarned: true,
+        loyaltyRewardsRedeemed: true,
+        totalRides: true,
+      },
+    }),
+    db.order.count({
+      where: { customerId, status: "ENTREGADO" },
+    }),
+    db.rideTrip.count({
+      where: { customerId, status: "FINALIZADO" },
+    }),
+  ]);
 
   if (!customer) throw new Error("Cliente no encontrado.");
 
@@ -170,7 +190,10 @@ export async function getLoyaltySummary(
   const code =
     customer.loyaltyCode || (await ensureLoyaltyCode(customer.id, db));
   const stamps = Math.max(0, customer.loyaltyStamps || 0);
+  const missingForReward = Math.max(0, settings.stampsNeeded - stamps);
   const rewardAvailable = settings.enabled && stamps >= settings.stampsNeeded;
+  const qualifyingEvents =
+    completedOrders + (settings.countRides ? completedRides : 0);
 
   return {
     customerId: customer.id,
@@ -179,9 +202,15 @@ export async function getLoyaltySummary(
     stamps,
     stampsRequired: settings.stampsRequired,
     stampsNeeded: settings.stampsNeeded,
+    missingForReward,
     rewardAvailable,
     rewardsRedeemed: customer.loyaltyRewardsRedeemed || 0,
     totalEarned: customer.loyaltyTotalEarned || 0,
+    completedOrders,
+    completedRides,
+    requestedRides: customer.totalRides || 0,
+    countRides: settings.countRides,
+    nextRewardAtNumber: qualifyingEvents + missingForReward + 1,
     qrUrl: `${settings.appUrl}/fidelidad/${encodeURIComponent(code)}`,
     programEnabled: settings.enabled,
     rewardDescription: settings.rewardDescription,
@@ -382,6 +411,98 @@ export async function awardLoyaltyOnDelivery(
 }
 
 /**
+ * Sella una carrera de mototaxi finalizada. Es idempotente por carrera.
+ * Solo suma si el programa está activo y la opción "contar carreras" está
+ * habilitada en Ajustes. El premio sigue siendo un pedido gratis.
+ */
+export async function awardLoyaltyOnRideCompletionById(
+  rideId: string
+): Promise<void> {
+  await prisma.$transaction(
+    async (tx) => {
+      const ride = await tx.rideTrip.findUnique({
+        where: { id: rideId },
+        select: {
+          id: true,
+          tripNumber: true,
+          customerId: true,
+          status: true,
+          loyaltyStampsAwarded: true,
+        },
+      });
+
+      if (
+        !ride ||
+        ride.status !== "FINALIZADO" ||
+        ride.loyaltyStampsAwarded
+      ) {
+        return;
+      }
+
+      const settings = await getLoyaltySettings(tx);
+      if (!settings.enabled || !settings.countRides) return;
+
+      const alreadyEarned = await tx.loyaltyEvent.findFirst({
+        where: {
+          customerId: ride.customerId,
+          rideId: ride.id,
+          type: "EARNED_RIDE",
+        },
+        select: { id: true },
+      });
+
+      if (alreadyEarned) {
+        await tx.rideTrip.update({
+          where: { id: ride.id },
+          data: { loyaltyStampsAwarded: true },
+        });
+        return;
+      }
+
+      // Marca la carrera como sellada de forma condicional para evitar
+      // duplicados si dos peticiones llegan al mismo tiempo.
+      const claimed = await tx.rideTrip.updateMany({
+        where: { id: ride.id, loyaltyStampsAwarded: false },
+        data: { loyaltyStampsAwarded: true },
+      });
+      if (claimed.count === 0) return;
+
+      const customer = await tx.customer.findUnique({
+        where: { id: ride.customerId },
+        select: { loyaltyStamps: true },
+      });
+      if (!customer) return;
+
+      const previousStamps = customer.loyaltyStamps;
+      const newStamps = Math.min(previousStamps + 1, settings.stampsNeeded);
+
+      await tx.customer.update({
+        where: { id: ride.customerId },
+        data: {
+          loyaltyStamps: newStamps,
+          loyaltyTotalEarned: { increment: 1 },
+        },
+      });
+
+      await tx.loyaltyEvent.create({
+        data: {
+          customerId: ride.customerId,
+          rideId: ride.id,
+          type: "EARNED_RIDE",
+          stampsDelta: newStamps - previousStamps,
+          stampsAfter: newStamps,
+          description:
+            newStamps >= settings.stampsNeeded
+              ? `¡Tarjeta completa con la carrera ${ride.tripNumber}! El próximo pedido es gratis.`
+              : `Sello ganado con la carrera ${ride.tripNumber}`,
+        },
+      });
+    },
+    { timeout: 15000, maxWait: 10000 }
+  );
+}
+
+/**
  * Si un pedido con premio se cancela antes de entregarse, devuelve los sellos
  * que habían sido reservados para que el cliente no pierda su tarjeta.
  */
@@ -560,7 +681,7 @@ export async function redeemRewardManually(
 }
 
 export async function getLoyaltyCardByCode(code: string) {
-  const normalized = String(code || "").trim().toUpperCase();
+  const normalized = normalizeLoyaltyCode(code);
   if (!normalized) return null;
 
   const customer = await prisma.customer.findUnique({
@@ -572,6 +693,7 @@ export async function getLoyaltyCardByCode(code: string) {
       loyaltyStamps: true,
       loyaltyTotalEarned: true,
       loyaltyRewardsRedeemed: true,
+      totalRides: true,
       createdAt: true,
       _count: { select: { orders: true } },
     },
@@ -579,9 +701,21 @@ export async function getLoyaltyCardByCode(code: string) {
 
   if (!customer) return null;
 
-  const settings = await getLoyaltySettings();
+  const [settings, completedOrders, completedRides] = await Promise.all([
+    getLoyaltySettings(),
+    prisma.order.count({
+      where: { customerId: customer.id, status: "ENTREGADO" },
+    }),
+    prisma.rideTrip.count({
+      where: { customerId: customer.id, status: "FINALIZADO" },
+    }),
+  ]);
+
   const stamps = Math.max(0, customer.loyaltyStamps);
+  const missingForReward = Math.max(0, settings.stampsNeeded - stamps);
   const rewardAvailable = settings.enabled && stamps >= settings.stampsNeeded;
+  const qualifyingEvents =
+    completedOrders + (settings.countRides ? completedRides : 0);
 
   return {
     code: customer.loyaltyCode || normalized,
@@ -589,10 +723,16 @@ export async function getLoyaltyCardByCode(code: string) {
     stamps,
     stampsRequired: settings.stampsRequired,
     stampsNeeded: settings.stampsNeeded,
+    missingForReward,
     rewardAvailable,
     rewardsRedeemed: customer.loyaltyRewardsRedeemed,
     totalEarned: customer.loyaltyTotalEarned,
     totalOrders: customer._count.orders,
+    completedOrders,
+    completedRides,
+    requestedRides: customer.totalRides,
+    countRides: settings.countRides,
+    nextRewardAtNumber: qualifyingEvents + missingForReward + 1,
     memberSince: customer.createdAt,
     settings,
   };

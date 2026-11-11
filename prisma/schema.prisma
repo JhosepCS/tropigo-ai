@@ -574,11 +574,14 @@ model RideTrip {
   status             String        @default("SOLICITADO") // SOLICITADO, CONDUCTOR_ASIGNADO, EN_CURSO, FINALIZADO, CANCELADO
   passengerNotes     String?
   cancellationReason String?
+  // Evita sellar dos veces la misma carrera en la tarjeta de fidelidad.
+  loyaltyStampsAwarded Boolean     @default(false)
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
   statusHistory  RideStatusHistory[]
   paymentRecords PaymentRecord[]
+  loyaltyEvents  LoyaltyEvent[]
 
   @@index([cityId, status])
   @@index([customerId])
@@ -823,6 +826,8 @@ model BusinessProfile {
   loyaltyStampsRequired     Int      @default(10)
   loyaltyRewardFreeDelivery Boolean  @default(false)
   loyaltyRewardDescription  String   @default("10mo pedido gratis")
+  // Si está activo, una carrera de mototaxi FINALIZADA también suma un sello.
+  loyaltyCountRides         Boolean  @default(true)
   assistantEnabled          Boolean  @default(true)
   updatedAt                 DateTime @updatedAt
 }
@@ -951,7 +956,9 @@ model LoyaltyEvent {
   customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   orderId     String?
   order       Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  // EARNED, RESERVED, REDEEMED, RESTORED, MANUAL_STAMP, MANUAL_REDEEM, RESET
+  rideId      String?
+  ride        RideTrip? @relation(fields: [rideId], references: [id], onDelete: SetNull)
+  // EARNED, EARNED_RIDE, RESERVED, REDEEMED, RESTORED, MANUAL_STAMP, MANUAL_REDEEM, RESET
   type        String
   stampsDelta Int      @default(0)
   stampsAfter Int
@@ -959,8 +966,10 @@ model LoyaltyEvent {
   createdBy   String?
   createdAt   DateTime @default(now())
 
-  // Evita sellar dos veces el mismo pedido o reservar dos veces el mismo premio.
+  // Evita sellar dos veces el mismo pedido/carrera o reservar dos veces el mismo premio.
   @@unique([customerId, orderId, type])
+  @@unique([customerId, rideId, type])
   @@index([customerId, createdAt])
   @@index([orderId])
+  @@index([rideId])
 }

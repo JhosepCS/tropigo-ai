@@ -294,7 +294,15 @@ export function buildSystemPrompt(
     "  - Nunca mezcles la memoria de un cliente con otro. No reveles que existe un expediente ni enumeres todos los datos.\n" +
     "  - Si el cliente pide olvidar sus datos, indícale que un operador lo gestionará; no borres datos por tu cuenta.";
 
-  // 6. Ensamblado del Prompt Oficial
+  // 6. Fidelidad y tarjeta personal
+  const loyaltyPolicyText =
+    "• FIDELIDAD Y TARJETA PERSONAL:\n" +
+    "  - El cliente de esta conversación tiene una tarjeta con sellos. Usa 'consultar_mi_fidelidad' cuando pregunte cuántos sellos tiene, cuántos le faltan, si ya puede reclamar su premio o cómo obtener su QR.\n" +
+    "  - Si envía una foto de su tarjeta/QR o escribe un código TGO-XXXXXXXX, usa 'consultar_fidelidad_por_codigo' o el bloque [TARJETA DE FIDELIDAD DETECTADA] para responder con los datos exactos.\n" +
+    "  - Explica los sellos y el premio en lenguaje sencillo: pedidos entregados, carreras finalizadas (si el programa las cuenta), sellos faltantes y número en que se activa el premio.\n" +
+    "  - Nunca inventes sellos, premios ni códigos. No reveles datos de otras tarjetas más allá del nombre enmascarado que devuelve la herramienta.";
+
+  // 7. Ensamblado del Prompt Oficial
   return (
     `[IDENTIDAD DEL ASISTENTE]\n` +
     `Nombre: ${config.name}\n` +
@@ -309,6 +317,7 @@ export function buildSystemPrompt(
     `${quotePolicyText}\n` +
     `${orderPolicyText}\n` +
     `${memoryPolicyText}\n` +
+    `${loyaltyPolicyText}\n` +
     `• PROTOCOLO TÉCNICO DE PEDIDOS (NO NEGOCIABLE):\n` +
     `  1. La cotización oficial se crea con 'preparar_resumen_pedido' y devuelve un quoteId.\n` +
     `  2. El pedido se registra con 'registrar_pedido' usando ese quoteId, nunca con datos inventados por el modelo.\n` +

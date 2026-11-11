@@ -11,6 +11,9 @@ import { confirmAndCreateOrder } from "@/lib/orders/order-service";
 import { isSafeExplicitConfirmation } from "@/lib/orders/confirmation";
 import { buildCustomerMemoryPrompt } from "@/lib/memory/customer-memory";
 import { ensureConversationSession } from "@/lib/memory/conversation-summary";
+import { decodeLoyaltyQrFromImage } from "@/lib/loyalty/qr-decode";
+import { buildLoyaltyCardPrompt } from "@/lib/loyalty/prompt";
+import { extractLoyaltyCode } from "@/lib/loyalty/code";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -61,6 +64,10 @@ async function resolveIncomingText(
     if (msg.imageMediaId && adapter) {
       try {
         const media = await adapter.downloadMediaWithMetadata(msg.imageMediaId);
+        const decodedQr = await decodeLoyaltyQrFromImage(media.buffer);
+        const loyaltyBlock = decodedQr
+          ? await buildLoyaltyCardPrompt(decodedQr.code)
+          : null;
         const analysis = await analyzeImage(media.buffer, media.mimeType, caption);
 
         if (analysis.text) {
@@ -69,12 +76,20 @@ async function resolveIncomingText(
               ? `El cliente envió una foto y escribió: "${caption}".`
               : "El cliente envió una foto.",
             `Contenido detectado en la imagen: ${analysis.text}`,
-          ].join("\n");
+            loyaltyBlock,
+          ]
+            .filter(Boolean)
+            .join("\n\n");
         } else {
           mediaError = analysis.error;
-          text = caption
-            ? `El cliente envió una foto con el texto "${caption}", pero la imagen no se pudo analizar. Pídele que describa lo que necesita.`
-            : "El cliente envió una foto que no se pudo analizar. Discúlpate y pídele que describa lo que necesita.";
+          text = [
+            caption
+              ? `El cliente envió una foto con el texto "${caption}", pero la imagen no se pudo analizar. Pídele que describa lo que necesita.`
+              : "El cliente envió una foto que no se pudo analizar. Discúlpate y pídele que describa lo que necesita.",
+            loyaltyBlock,
+          ]
+            .filter(Boolean)
+            .join("\n\n");
         }
       } catch (error: any) {
         mediaError = error?.message || String(error);
@@ -114,6 +129,17 @@ async function resolveIncomingText(
     text = msg.mediaCaption
       ? `El cliente envió un documento: "${msg.mediaCaption}".`
       : "El cliente envió un documento adjunto.";
+  }
+
+  // Si el cliente escribió el código de su tarjeta (TGO-XXXXXXXX), agrega
+  // los datos de fidelidad al contexto para que la IA los explique sin
+  // necesidad de una segunda consulta.
+  const typedLoyaltyCode = extractLoyaltyCode(text);
+  if (typedLoyaltyCode && !text.includes("[TARJETA DE FIDELIDAD DETECTADA")) {
+    const loyaltyBlock = await buildLoyaltyCardPrompt(typedLoyaltyCode);
+    if (loyaltyBlock) {
+      text = `${text}\n\n${loyaltyBlock}`;
+    }
   }
 
   if (!text) {

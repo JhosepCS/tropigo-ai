@@ -26,8 +26,14 @@ yarn-error.log*
 
 # Environment variables
 .env
-.env*.local
+.env.*
 !.env.example
+
+# Backups locales
+/backup/
+*.7z
+*.rar
+*.zip
 
 # OS files
 .DS_Store
@@ -39,4 +45,3 @@ tsconfig.tsbuildinfo
 *.tsbuildinfo
 
 .vercel
-.env*

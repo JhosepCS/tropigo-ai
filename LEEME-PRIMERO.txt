@@ -1,0 +1,139 @@
+==========================================================
+ TROPIGO AI - LEEME PRIMERO
+ Backup portable para abrir en otra PC
+==========================================================
+
+Este paquete contiene TODO lo necesario para continuar el proyecto:
+codigo fuente, base de datos configurada (Supabase), claves, documentos y
+contexto para OpenCode / Antigravity.
+
+La contrasena del archivo .7z se entrega APARTE (archivo PASSWORD-BACKUP.txt
+o mensaje privado). NO la guardes dentro de la misma carpeta que subas a
+MediaFire.
+
+----------------------------------------------------------
+ 1. INSTALAR EN LA PC NUEVA
+----------------------------------------------------------
+
+1. Instala 7-Zip: https://www.7-zip.org/
+2. Instala Node.js 22 LTS: https://nodejs.org/
+   (Node 24 tambien funciona, pero el proyecto declara 22.x.)
+3. Instala Git (opcional, para trabajar con GitHub):
+   https://git-scm.com/
+4. Extrae el archivo TropiGO-AI-completo-*.7z con 7-Zip.
+5. Abre una terminal dentro de la carpeta TropiGO-AI.
+
+----------------------------------------------------------
+ 2. INSTALAR DEPENDENCIAS
+----------------------------------------------------------
+
+   npm install
+
+Si Windows bloquea scripts, ejecuta la terminal como administrador o usa:
+
+   npm install --ignore-scripts
+   npx prisma generate
+
+----------------------------------------------------------
+ 3. VERIFICAR QUE LA BASE DE DATOS RESPONDE
+----------------------------------------------------------
+
+El archivo .env ya tiene la conexion a Supabase y todas las claves.
+No necesitas instalar PostgreSQL.
+
+   npx prisma migrate deploy
+
+Si dice "All migrations have been successfully applied", todo esta bien.
+NUNCA ejecutes "prisma migrate reset" ni "npm run db:seed": borran datos.
+
+----------------------------------------------------------
+ 4. LEVANTAR EL PROYECTO
+----------------------------------------------------------
+
+Modo desarrollo:
+
+   npm run dev
+
+Abre: http://localhost:3000
+
+Modo produccion local:
+
+   npm run build
+   npm start
+
+Usuario admin: el definido en ADMIN_EMAIL dentro de .env.
+Contrasena: la definida en ADMIN_PASSWORD dentro de .env.
+
+----------------------------------------------------------
+ 5. CONFIGURAR EL NUEVO NUMERO DE WHATSAPP
+----------------------------------------------------------
+
+Ruta oficial recomendada: Meta Cloud API (no usa QR ni Render).
+
+1. Crea la app en https://developers.facebook.com/apps
+   Caso de uso: "Connect with customers through WhatsApp".
+2. En API Setup copia:
+   - Phone Number ID
+   - WABA ID
+   - Token (temporal o System User Token permanente)
+3. Entra al panel: Canales -> Credenciales Oficiales Cloud API.
+4. Pega los datos y guarda. El sistema prueba la conexion.
+5. Configura el webhook en Meta:
+   - URL: https://tropigo-ai.vercel.app/api/channels/whatsapp/webhook
+   - Verify token: tropigo_verify_token_2025
+   - Campo: messages
+6. Prueba desde tu WhatsApp al numero de prueba de Meta.
+7. Cuando tengas el chip nuevo, agregalo en Meta, verificalo y actualiza el
+   Phone Number ID en el panel. El webhook y el token se mantienen.
+
+Guia completa: docs/CONFIGURAR-META.md
+
+----------------------------------------------------------
+ 6. TRABAJAR CON OPENCODE / ANTIGRAVITY
+----------------------------------------------------------
+
+1. Abre la carpeta TropiGO-AI en tu editor.
+2. Lee AGENTS.md: es el contexto oficial del proyecto.
+3. Lee docs/CONTEXTO-PROYECTO.md para el estado y las decisiones.
+4. Antes de cambiar algo, ejecuta:
+
+   npx tsc --noEmit
+   npm run build
+
+5. No subas .env a Git. No publiques tokens ni contrasenas.
+6. Si vas a desplegar en Vercel:
+
+   npx vercel
+
+   Importa las variables de .env o cargalas manualmente en Vercel.
+   APP_URL debe ser la URL publica de produccion.
+
+----------------------------------------------------------
+ 7. BACKUP Y SEGURIDAD
+----------------------------------------------------------
+
+- TropiGO-AI-completo-*.7z: codigo + .env + datos. CIFRADO. No compartir.
+- TropiGO-AI-codigo.zip: solo codigo y documentacion. Sin secretos.
+- SHA256SUMS.txt: checksums para verificar que la descarga no se corrompio.
+- PASSWORD-BACKUP.txt: contrasena del 7z. Guardala fuera del backup.
+
+Si la clave ENCRYPTION_KEY se filtra:
+1. Genera una nueva: openssl rand -hex 32
+2. Actualizala en .env y en Vercel/Render.
+3. Redespliega. Las sesiones viejas se invalidan.
+
+----------------------------------------------------------
+ 8. COMANDOS UTILES
+----------------------------------------------------------
+
+   npm run dev              web + worker + BD local
+   npm run build            build de produccion
+   npm start                servidor de produccion
+   npm run start:worker     worker Baileys (solo modo QR)
+   npx prisma migrate deploy
+   npx prisma studio
+   npx tsc --noEmit
+
+==========================================================
+ TropiGO AI - Ivirgarzama, Tropico de Cochabamba, Bolivia
+==========================================================

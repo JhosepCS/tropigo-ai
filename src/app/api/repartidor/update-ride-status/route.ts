@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, assertRiderTripAccess, UnauthorizedError, ForbiddenError } from "@/lib/auth/rbac";
+import { awardLoyaltyOnRideCompletionById } from "@/lib/loyalty/service";
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,6 +29,17 @@ export async function POST(req: NextRequest) {
       where: { id: rideId },
       data: updateData,
     });
+
+    if (status === "FINALIZADO") {
+      try {
+        await awardLoyaltyOnRideCompletionById(ride.id);
+      } catch (loyaltyError) {
+        console.error(
+          "[Repartidor] No se pudo sumar el sello de fidelidad de la carrera:",
+          loyaltyError
+        );
+      }
+    }
 
     return NextResponse.json({ success: true, ride });
   } catch (err: any) {

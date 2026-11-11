@@ -70,6 +70,9 @@ export function AjustesClient({
   const [loyaltyRewardDescription, setLoyaltyRewardDescription] = useState(
     initialBusiness?.loyaltyRewardDescription || "10mo pedido gratis"
   );
+  const [loyaltyCountRides, setLoyaltyCountRides] = useState(
+    initialBusiness?.loyaltyCountRides ?? true
+  );
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // 2. Marca de la Agencia
@@ -157,6 +160,7 @@ export function AjustesClient({
           loyaltyStampsRequired,
           loyaltyRewardFreeDelivery,
           loyaltyRewardDescription,
+          loyaltyCountRides,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -400,8 +404,9 @@ export function AjustesClient({
                     Tarjeta de fidelidad y premio del 10.º pedido
                   </h3>
                   <p className="text-[11px] text-[#667085]">
-                    Un sello por pedido entregado. Al completar la tarjeta, el siguiente
-                    pedido es gratis.
+                    Un sello por pedido entregado y, si lo activas, también por
+                    cada carrera de mototaxi finalizada. Al completar la tarjeta,
+                    el siguiente pedido es gratis.
                   </p>
                 </div>
               </div>
@@ -488,10 +493,30 @@ export function AjustesClient({
               </span>
             </label>
 
+            <label className="flex items-start gap-3 rounded-xl border border-[#EAECF0] px-3 py-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={loyaltyCountRides}
+                onChange={(e) => setLoyaltyCountRides(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-emerald-600"
+              />
+              <span>
+                <span className="block font-semibold text-[#344054]">
+                  Las carreras de mototaxi también suman sellos
+                </span>
+                <span className="block text-[10px] text-[#667085]">
+                  Si está marcado, cada carrera FINALIZADA suma 1 sello. Si lo
+                  desmarcas, las carreras solo se muestran como dato adicional y
+                  la tarjeta avanza únicamente con pedidos entregados.
+                </span>
+              </span>
+            </label>
+
             <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-[11px] text-emerald-800">
               Tarjeta configurada: <b>{Math.max(2, loyaltyStampsRequired - 1)} sellos</b> para
               el premio. El pedido <b>número {Math.max(2, loyaltyStampsRequired)}</b> se
-              aplica automáticamente como gratis al confirmar.
+              aplica automáticamente como gratis al confirmar
+              {loyaltyCountRides ? " (los pedidos y las carreras finalizadas suman sellos)" : " (solo pedidos entregados)"}.
             </div>
           </div>
 

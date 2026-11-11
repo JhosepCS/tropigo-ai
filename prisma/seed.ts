@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -216,8 +217,18 @@ async function main() {
   // 4. USUARIOS ADMINISTRATIVOS Y OPERATIVOS (HASH BCRYPT SEGURO)
   // =================================================================
   console.log("👤 Creando usuarios del sistema (sin contraseñas en texto plano)...");
-  const adminPasswordHash = await bcrypt.hash("AdminTropigo2025!", 10);
-  const operatorPasswordHash = await bcrypt.hash("OperadorDemo2025!", 10);
+
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  const operatorPassword = process.env.OPERATOR_PASSWORD;
+
+  if (!adminPassword || !operatorPassword) {
+    throw new Error(
+      "Define ADMIN_PASSWORD y OPERATOR_PASSWORD en tu .env antes de ejecutar el seed."
+    );
+  }
+
+  const adminPasswordHash = await bcrypt.hash(adminPassword, 12);
+  const operatorPasswordHash = await bcrypt.hash(operatorPassword, 12);
 
   const adminUser = await prisma.user.create({
     data: {

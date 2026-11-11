@@ -5,6 +5,9 @@ import { getAssistantConfig, buildSystemPrompt } from "../lib/ai/config-manager"
 import { getRealDataContextPrompt } from "../lib/ai/tools";
 import { buildCustomerMemoryPrompt } from "../lib/memory/customer-memory";
 import { ensureConversationSession } from "../lib/memory/conversation-summary";
+import { decodeLoyaltyQrFromImage } from "../lib/loyalty/qr-decode";
+import { buildLoyaltyCardPrompt } from "../lib/loyalty/prompt";
+import { extractLoyaltyCode } from "../lib/loyalty/code";
 import { BaileysAdapter } from "../lib/whatsapp/baileys-adapter";
 import { MediaDownloader } from "../lib/whatsapp/media-downloader";
 import QRCode from "qrcode";
@@ -267,6 +270,10 @@ async function buildUserContent(sock: any, items: BatchItem[]) {
           );
         }
       } else if (item.kind === "image") {
+        const decodedQr = await decodeLoyaltyQrFromImage(media.buffer);
+        const loyaltyBlock = decodedQr
+          ? await buildLoyaltyCardPrompt(decodedQr.code)
+          : null;
         const result = await analyzeImage(media.buffer, media.mimeType, item.text);
         if (result.text) {
           parts.push(
@@ -278,6 +285,7 @@ async function buildUserContent(sock: any, items: BatchItem[]) {
             "[Imagen que no se pudo analizar. Discúlpate y pide al cliente que describa lo que necesita.]"
           );
         }
+        if (loyaltyBlock) parts.push(loyaltyBlock);
       } else {
         parts.push(`[Documento: ${item.text || "adjunto"}]`);
       }
@@ -313,12 +321,20 @@ async function processBatch(
       return;
     }
 
-    const { content, mediaType, transcription, location } = await buildUserContent(
+    let { content, mediaType, transcription, location } = await buildUserContent(
       sock,
       items
     );
 
     if (!content) return;
+
+    const typedLoyaltyCode = extractLoyaltyCode(content);
+    if (typedLoyaltyCode && !content.includes("[TARJETA DE FIDELIDAD DETECTADA")) {
+      const loyaltyBlock = await buildLoyaltyCardPrompt(typedLoyaltyCode);
+      if (loyaltyBlock) {
+        content = `${content}\n\n${loyaltyBlock}`;
+      }
+    }
 
     await prisma.message.create({
       data: {
@@ -739,6 +755,16 @@ async function startWorker() {
   console.log("🚀 [TropiGO Worker] Iniciando asistente de WhatsApp...");
   startHealthServer();
   startBackgroundJobs();
+
+  const provider = (process.env.WHATSAPP_PROVIDER || "BAILEYS_QR").toUpperCase();
+
+  if (provider !== "BAILEYS_QR") {
+    console.log(
+      `[Worker] WHATSAPP_PROVIDER=${provider}. El worker queda activo en modo salud, pero no conecta Baileys.`
+    );
+    return;
+  }
+
   await connectBaileys();
 }
 

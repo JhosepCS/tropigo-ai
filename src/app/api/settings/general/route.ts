@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
       loyaltyStampsRequired,
       loyaltyRewardFreeDelivery,
       loyaltyRewardDescription,
+      loyaltyCountRides,
     } = body;
 
     const biz = await prisma.businessProfile.findFirst();
@@ -103,6 +104,11 @@ export async function POST(req: NextRequest) {
     const requestedFreeDelivery = optionalBoolean(loyaltyRewardFreeDelivery);
     if (requestedFreeDelivery !== null) {
       businessData.loyaltyRewardFreeDelivery = requestedFreeDelivery;
+    }
+
+    const requestedCountRides = optionalBoolean(loyaltyCountRides);
+    if (requestedCountRides !== null) {
+      businessData.loyaltyCountRides = requestedCountRides;
     }
 
     if (

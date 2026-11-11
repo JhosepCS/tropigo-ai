@@ -4,8 +4,20 @@ const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
 const TAG_LENGTH = 16;
 
+const DEV_FALLBACK_KEY = "tropigo-dev-only-insecure-encryption-key-change-me";
+
 function getKey(): Buffer {
-  const envKey = process.env.ENCRYPTION_KEY || "9f8b4a2e1d7c3b5a6f8e0d2c4b6a8f0e1d3c5b7a9f0e2d4c6b8a0f1e3d5c7b9a";
+  const envKey = process.env.ENCRYPTION_KEY;
+
+  if (!envKey) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "ENCRYPTION_KEY es obligatoria en produccion. Configura una clave de 64 caracteres hexadecimales."
+      );
+    }
+    return crypto.createHash("sha256").update(DEV_FALLBACK_KEY).digest();
+  }
+
   if (envKey.length === 64) {
     return Buffer.from(envKey, "hex");
   }

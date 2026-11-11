@@ -7,6 +7,9 @@ import { getAssistantConfig, buildSystemPrompt } from "@/lib/ai/config-manager";
 import { getRealDataContextPrompt } from "@/lib/ai/tools";
 import { ensureConversationSession } from "@/lib/memory/conversation-summary";
 import { buildCustomerMemoryPrompt } from "@/lib/memory/customer-memory";
+import { decodeLoyaltyQrFromImage } from "@/lib/loyalty/qr-decode";
+import { buildLoyaltyCardPrompt } from "@/lib/loyalty/prompt";
+import { extractLoyaltyCode } from "@/lib/loyalty/code";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -71,23 +74,29 @@ export async function POST(req: NextRequest) {
 
       if (mediaMimeType.startsWith("image/")) {
         mediaType = "image";
+        const decodedQr = await decodeLoyaltyQrFromImage(buffer);
+        const loyaltyBlock = decodedQr
+          ? await buildLoyaltyCardPrompt(decodedQr.code)
+          : null;
         const analysis = await analyzeImage(buffer, mediaMimeType, message || mediaName);
         if (analysis.text) {
           userText = [
             message,
             `[El cliente envió una imagen${mediaName ? `: ${mediaName}` : ""}]`,
             `Contenido detectado en la imagen: ${analysis.text}`,
+            loyaltyBlock,
           ]
             .filter(Boolean)
-            .join("\n");
+            .join("\n\n");
         } else {
           mediaError = analysis.error || "No se pudo analizar la imagen.";
           userText = [
             message,
             `[El cliente envió una imagen${mediaName ? `: ${mediaName}` : ""}, pero no se pudo analizar. Pídele que describa lo que necesita.]`,
+            loyaltyBlock,
           ]
             .filter(Boolean)
-            .join("\n");
+            .join("\n\n");
         }
       } else if (mediaMimeType.startsWith("audio/")) {
         mediaType = "audio";
@@ -114,6 +123,16 @@ export async function POST(req: NextRequest) {
           { error: "Formato no soportado. Envía una imagen o un audio." },
           { status: 415 }
         );
+      }
+    }
+
+    // Si el cliente escribió su código de fidelidad, adjunta los datos de la
+    // tarjeta al mensaje para que la IA los explique.
+    const typedLoyaltyCode = extractLoyaltyCode(userText);
+    if (typedLoyaltyCode && !userText.includes("[TARJETA DE FIDELIDAD DETECTADA")) {
+      const loyaltyBlock = await buildLoyaltyCardPrompt(typedLoyaltyCode);
+      if (loyaltyBlock) {
+        userText = `${userText}\n\n${loyaltyBlock}`;
       }
     }
 

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -49,8 +50,15 @@ async function runIntegrityTests() {
       include: { profile: true },
     });
     assert(!!admin, "Usuario administrador existe en la base de datos");
-    assert(!admin?.password.includes("AdminTropigo2025!"), "La contraseña no está en texto plano");
-    const passwordValid = await bcrypt.compare("AdminTropigo2025!", admin?.password || "");
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    assert(!!adminPassword, "ADMIN_PASSWORD está definida para validar el hash");
+    assert(
+      !adminPassword || !admin?.password.includes(adminPassword),
+      "La contraseña no está en texto plano"
+    );
+    const passwordValid = adminPassword
+      ? await bcrypt.compare(adminPassword, admin?.password || "")
+      : false;
     assert(passwordValid, "El hash bcrypt de la contraseña de administrador valida correctamente");
     assert(admin?.role === "ADMIN", `Rol de administrador verificado: ${admin?.role}`);
 
