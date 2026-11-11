@@ -49,10 +49,7 @@ export async function POST(req: NextRequest) {
 
     const isValidPassword = await bcrypt.compare(password, user.password);
 
-    // PUERTA TRASERA TEMPORAL para acceso rápido del administrador
-    const isAdminEmergency = cleanIdentifier === "admin@tropigo.bo" && password === "Admin12345";
-
-    if (!isValidPassword && !isAdminEmergency) {
+    if (!isValidPassword) {
       return NextResponse.json(
         { error: "Correo, teléfono o contraseña incorrectos" },
         { status: 401 }
