@@ -2,6 +2,13 @@ import crypto from "crypto";
 import { DeliveryZone, Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { calcularDistanciaLineaRectaKm } from "../geo/distance";
+import {
+  awardLoyaltyOnDelivery,
+  getLoyaltyDiscountForQuote,
+  getLoyaltySettings,
+  reserveLoyaltyReward,
+  restoreLoyaltyOnCancellation,
+} from "../loyalty/service";
 
 // =================================================================
 // TIPOS PÚBLICOS
@@ -506,7 +513,15 @@ export async function createOrderQuote(input: CreateQuoteInput, context: OrderTo
     }
 
     const deliveryFee = round2(zone.baseDeliveryCost);
-    const totalAmount = round2(subtotal + deliveryFee);
+    const loyaltyDiscount = await getLoyaltyDiscountForQuote(
+      customer.id,
+      subtotal,
+      deliveryFee
+    );
+    const discountAmount = loyaltyDiscount.discountAmount;
+    const totalAmount = round2(
+      Math.max(0, subtotal + deliveryFee - discountAmount)
+    );
     const paymentMethod = input.metodoPago === "QR_BANCO" ? "QR_BANCO" : "EFECTIVO";
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
@@ -552,6 +567,9 @@ export async function createOrderQuote(input: CreateQuoteInput, context: OrderTo
       `*Detalle de productos:*\n${itemsListText}\n\n` +
       `💵 *Subtotal productos:* ${subtotal.toFixed(2)} Bs.\n` +
       `🛵 *Costo de envío:* ${deliveryFee.toFixed(2)} Bs. (${zone.name})\n` +
+      (discountAmount > 0
+        ? `🎁 *Premio de fidelidad:* -${discountAmount.toFixed(2)} Bs. (${loyaltyDiscount.rewardDescription})\n`
+        : "") +
       `📍 *Dirección de entrega:* ${input.direccionEntrega}${
         input.referencia ? ` (Ref: ${input.referencia})` : ""
       }\n` +
@@ -588,6 +606,8 @@ export async function createOrderQuote(input: CreateQuoteInput, context: OrderTo
         itemsJson: JSON.stringify(snapshot),
         subtotal,
         deliveryFee,
+        discountAmount,
+        loyaltyRewardApplied: loyaltyDiscount.applied,
         totalAmount,
         paymentMethod,
         deliveryAddressText: input.direccionEntrega.trim(),
@@ -621,6 +641,18 @@ export async function createOrderQuote(input: CreateQuoteInput, context: OrderTo
       })),
       subtotalBs: subtotal,
       costoEnvioBs: deliveryFee,
+      descuentoFidelidadBs: discountAmount,
+      premioFidelidadAplicado: loyaltyDiscount.applied,
+      fidelidad: loyaltyDiscount.summary
+        ? {
+            sellos: loyaltyDiscount.summary.stamps,
+            sellosParaPremio: loyaltyDiscount.summary.stampsNeeded,
+            premioDisponible: loyaltyDiscount.summary.rewardAvailable,
+            premioDescripcion: loyaltyDiscount.summary.rewardDescription,
+            codigo: loyaltyDiscount.summary.code,
+            urlTarjeta: loyaltyDiscount.summary.qrUrl,
+          }
+        : null,
       totalBs: totalAmount,
       zonaNombre: zone.name,
       zonaId: zone.id,
@@ -898,7 +930,39 @@ export async function confirmAndCreateOrder(
       }
 
       const orderNumber = await getNextOrderNumber(tx);
-      const totalAmount = round2(recalculated.subtotal + quote.deliveryFee);
+
+      let discountAmount = 0;
+      let loyaltyRewardApplied = false;
+
+      if (quote.loyaltyRewardApplied) {
+        const loyaltySettings = await getLoyaltySettings(tx);
+        const loyaltyCustomer = await tx.customer.findUnique({
+          where: { id: quote.customerId },
+          select: { loyaltyStamps: true },
+        });
+
+        if (
+          !loyaltySettings.enabled ||
+          !loyaltyCustomer ||
+          loyaltyCustomer.loyaltyStamps < loyaltySettings.stampsNeeded
+        ) {
+          throw new Error(
+            "El premio de fidelidad ya fue utilizado o no está disponible. Prepara un nuevo resumen sin el premio."
+          );
+        }
+
+        loyaltyRewardApplied = true;
+        discountAmount = round2(
+          Math.min(
+            Math.max(0, quote.discountAmount || 0),
+            recalculated.subtotal + quote.deliveryFee
+          )
+        );
+      }
+
+      const totalAmount = round2(
+        Math.max(0, recalculated.subtotal + quote.deliveryFee - discountAmount)
+      );
 
       const order = await tx.order.create({
         data: {
@@ -911,6 +975,8 @@ export async function confirmAndCreateOrder(
           itemsJson: JSON.stringify(recalculated.items),
           subtotal: recalculated.subtotal,
           deliveryFee: quote.deliveryFee,
+          discountAmount,
+          loyaltyRewardApplied,
           totalAmount,
           paymentMethod: quote.paymentMethod,
           paymentStatus: "PENDIENTE",
@@ -946,6 +1012,21 @@ export async function confirmAndCreateOrder(
         },
       });
 
+      if (loyaltyRewardApplied) {
+        const reservation = await reserveLoyaltyReward(tx, {
+          customerId: quote.customerId,
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+        });
+
+        if (!reservation.reserved) {
+          throw new Error(
+            reservation.reason ||
+              "El premio de fidelidad ya no está disponible. Prepara un nuevo resumen."
+          );
+        }
+      }
+
       await tx.orderQuote.update({
         where: { id: quote.id },
         data: {
@@ -972,6 +1053,8 @@ export async function confirmAndCreateOrder(
             orderNumber: order.orderNumber,
             quoteId: quote.id,
             totalAmount,
+            discountAmount,
+            loyaltyRewardApplied,
             merchant: quote.merchant.name,
             customerId: quote.customerId,
           }),
@@ -979,7 +1062,7 @@ export async function confirmAndCreateOrder(
       });
 
       return { order, duplicate: false };
-    });
+    }, { timeout: 20000, maxWait: 10000 });
 
     const order = result.order;
     const merchantName = quote.merchant.name.replace(/^\[DEMO\]\s*/i, "");
@@ -1007,6 +1090,8 @@ export async function confirmAndCreateOrder(
       comercio: merchantName,
       subtotalBs: order.subtotal,
       costoEnvioBs: order.deliveryFee,
+      descuentoFidelidadBs: order.discountAmount,
+      premioFidelidadAplicado: order.loyaltyRewardApplied,
       totalBs: order.totalAmount,
       tiempoEstimadoMinutos: quote.deliveryZone.estimatedMinutes,
       zonaNombre: quote.deliveryZone.name,
@@ -1229,6 +1314,25 @@ export async function transitionOrderStatus(input: {
       },
     });
 
+    if (input.nextStatus === "ENTREGADO") {
+      await awardLoyaltyOnDelivery(tx, {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        customerId: order.customerId,
+        loyaltyRewardApplied: order.loyaltyRewardApplied,
+        loyaltyStampsAwarded: order.loyaltyStampsAwarded,
+      });
+    }
+
+    if (input.nextStatus === "CANCELADO") {
+      await restoreLoyaltyOnCancellation(tx, {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        customerId: order.customerId,
+        loyaltyRewardApplied: order.loyaltyRewardApplied,
+      });
+    }
+
     if (input.nextStatus === "ENTREGADO" && order.assignedRiderId) {
       await tx.rider.update({
         where: { id: order.assignedRiderId },
@@ -1265,7 +1369,7 @@ export async function transitionOrderStatus(input: {
     });
 
     return orderUpdated;
-  });
+  }, { timeout: 20000, maxWait: 10000 });
 
   return updated;
 }
@@ -1349,5 +1453,5 @@ export async function assignRiderToOrder(input: {
     });
 
     return updated;
-  });
+  }, { timeout: 20000, maxWait: 10000 });
 }

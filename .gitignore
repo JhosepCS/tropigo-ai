@@ -37,3 +37,6 @@ Thumbs.db
 # Next.js build info
 tsconfig.tsbuildinfo
 *.tsbuildinfo
+
+.vercel
+.env*

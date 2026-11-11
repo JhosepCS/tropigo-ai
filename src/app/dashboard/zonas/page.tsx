@@ -5,7 +5,7 @@ import { ZonasClient } from "./zonas-client";
 export const dynamic = "force-dynamic";
 
 export default async function ZonasPage() {
-  const [cities, zones] = await Promise.all([
+  const [cities, zones, business] = await Promise.all([
     prisma.city.findMany({
       orderBy: { isActive: "desc" },
     }),
@@ -13,7 +13,16 @@ export default async function ZonasPage() {
       where: { isActive: true },
       orderBy: { baseDeliveryCost: "asc" },
     }),
+    prisma.businessProfile.findFirst({
+      select: { rideMinFare: true },
+    }),
   ]);
 
-  return <ZonasClient cities={cities} zones={zones} />;
+  return (
+    <ZonasClient
+      cities={cities}
+      zones={zones}
+      minRideFare={Math.max(10, Number(business?.rideMinFare) || 10)}
+    />
+  );
 }

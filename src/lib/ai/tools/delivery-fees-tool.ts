@@ -1,6 +1,7 @@
 import { prisma } from "../../prisma";
 import { IAssistantTool } from "./types";
 import { findActiveZoneForQuery } from "../../orders/order-service";
+import { calculateRideFare, getRideFareConfig } from "../../rides/fare";
 
 export const deliveryFeesTool: IAssistantTool = {
   name: "cotizar_tarifa",
@@ -44,6 +45,7 @@ export const deliveryFeesTool: IAssistantTool = {
         };
       }
 
+      const fareConfig = await getRideFareConfig();
       const zoneLookup = await findActiveZoneForQuery(args.destino);
       const zone = zoneLookup.zone;
 
@@ -53,12 +55,22 @@ export const deliveryFeesTool: IAssistantTool = {
           error: zoneLookup.ambiguous
             ? "La zona indicada coincide con más de una zona de cobertura. Pide al cliente que precise el barrio exacto."
             : "No se encontró una zona de cobertura oficial para ese destino. No inventes una tarifa.",
+          tarifaMinimaCarreraBs: fareConfig.minFare,
           zonasDisponibles: zoneLookup.zones.map((z) => ({
             id: z.id,
             nombre: z.name,
             descripcion: z.description,
             tarifaDeliveryBs: z.baseDeliveryCost,
-            tarifaMototaxiBs: z.baseRideCost,
+            tarifaMototaxiBs: calculateRideFare({
+              zoneFare: z.baseRideCost,
+              vehicleType: "MOTO",
+              config: fareConfig,
+            }).fare,
+            tarifaMototaxiToritoBs: calculateRideFare({
+              zoneFare: z.baseRideCost,
+              vehicleType: "TORITO",
+              config: fareConfig,
+            }).fare,
             tiempoEstimadoMinutos: z.estimatedMinutes,
           })),
         };
@@ -66,13 +78,22 @@ export const deliveryFeesTool: IAssistantTool = {
 
       let tarifaFinal: number;
       let tiempoEstimado: number;
+      let detalleTarifa: Record<string, unknown> | null = null;
 
       if (args.tipo === "MOTOTAXI") {
-        const baseCost = zone.baseRideCost;
-        // Regla comercial existente: el torito/trimóvil tiene recargo de 1 Bs
-        // por capacidad extendida. No se aplica al delivery.
-        tarifaFinal = args.vehiculo === "TORITO" ? baseCost + 1.0 : baseCost;
+        const breakdown = calculateRideFare({
+          zoneFare: zone.baseRideCost,
+          vehicleType: args.vehiculo,
+          config: fareConfig,
+        });
+        tarifaFinal = breakdown.fare;
         tiempoEstimado = Math.max(10, zone.estimatedMinutes - 5);
+        detalleTarifa = {
+          tarifaBaseZonaBs: breakdown.baseFare,
+          tarifaMinimaBs: breakdown.minimumFare,
+          recargoToritoBs: breakdown.toritoSurcharge,
+          minimoAplicado: breakdown.minimumApplied,
+        };
       } else {
         tarifaFinal = zone.baseDeliveryCost;
         tiempoEstimado = zone.estimatedMinutes;
@@ -108,6 +129,7 @@ export const deliveryFeesTool: IAssistantTool = {
         zonaId: zone.id,
         tarifaBs: tarifaFinal,
         tarifaFormateada: `${tarifaFinal.toFixed(2)} Bs.`,
+        detalleTarifa,
         tiempoEstimadoMinutos: tiempoEstimado,
         metodosPagoPermitidos: paymentModes,
         mensajeOficial:

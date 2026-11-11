@@ -1,0 +1,11 @@
+.env
+.env*.local
+data
+node_modules
+.next
+.git
+.github
+coverage
+*.log
+tsconfig.tsbuildinfo
+scripts/temp-*

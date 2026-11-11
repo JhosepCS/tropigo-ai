@@ -1,6 +1,7 @@
 import { prisma } from "../prisma";
 import { executeTool, getToolDefinitions, TROPIGO_TOOLS } from "./tools";
 import { OrderToolContext } from "../orders/order-service";
+import { calculateRideFare, getRideFareConfig } from "../rides/fare";
 
 export interface ToolCallExecution {
   tool: string;
@@ -73,13 +74,16 @@ export async function executeToolCall(
       const zones = await prisma.deliveryZone.findMany({ where: { isActive: true } });
       const matchedZone = zones.find((z) =>
         args.destino?.toLowerCase().includes(z.name.toLowerCase())
-      ) || zones[0];
+      );
 
+      const fareConfig = await getRideFareConfig();
       const tarifa =
         args.tipo === "MOTOTAXI"
-          ? args.vehiculo === "TORITO"
-            ? (matchedZone?.baseRideCost || 4.0) + 1.0
-            : matchedZone?.baseRideCost || 4.0
+          ? calculateRideFare({
+              zoneFare: matchedZone?.baseRideCost,
+              vehicleType: args.vehiculo,
+              config: fareConfig,
+            }).fare
           : matchedZone?.baseDeliveryCost || 5.0;
 
       await logActivity("Cotización de tarifa", "assistant_groq", "success", {

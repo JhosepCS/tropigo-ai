@@ -18,6 +18,7 @@ import {
   Users,
   Sparkles,
   ShieldCheck,
+  Gift,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -81,6 +82,11 @@ export function Sidebar({
           name: "Clientes & Memoria",
           href: "/dashboard/clientes",
           icon: Users,
+        },
+        {
+          name: "Fidelidad & Sellos",
+          href: "/dashboard/fidelidad",
+          icon: Gift,
         },
       ],
     },

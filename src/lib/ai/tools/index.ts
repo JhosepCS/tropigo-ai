@@ -12,6 +12,7 @@ import { orderSummaryTool } from "./order-summary-tool";
 import { orderCreateTool } from "./order-create-tool";
 import { memoryTool } from "./memory-tool";
 import { handoffTool } from "./handoff-tool";
+import { loyaltyTool } from "./loyalty-tool";
 import { OrderToolContext } from "../../orders/order-service";
 
 export * from "./types";
@@ -27,6 +28,7 @@ export * from "./order-summary-tool";
 export * from "./order-create-tool";
 export * from "./memory-tool";
 export * from "./handoff-tool";
+export * from "./loyalty-tool";
 
 /**
  * Catálogo modular completo de las herramientas internas de TropiGO
@@ -44,6 +46,7 @@ export const TROPIGO_TOOLS: IAssistantTool[] = [
   orderCreateTool,
   memoryTool,
   handoffTool,
+  loyaltyTool,
 ];
 
 /**
@@ -167,14 +170,39 @@ export async function getRealDataContextPrompt(): Promise<string> {
       )
       .join("\n");
 
+    const minRideFare = Math.max(10, Number(business?.rideMinFare) || 10);
+    const toritoSurcharge = Math.max(
+      0,
+      Number(business?.rideToritoSurcharge) || 0
+    );
+
     const cleanZones = zones
       .map(
         (z) =>
-          `• Zona ${z.name}: Delivery ${z.baseDeliveryCost.toFixed(2)} Bs. | Mototaxi ${z.baseRideCost.toFixed(
-            2
-          )} Bs. (~${z.estimatedMinutes} min)`
+          `• Zona ${z.name}: Delivery ${z.baseDeliveryCost.toFixed(2)} Bs. | Mototaxi ${Math.max(
+            z.baseRideCost,
+            minRideFare
+          ).toFixed(2)} Bs. | Torito ${(
+            Math.max(z.baseRideCost, minRideFare) + toritoSurcharge
+          ).toFixed(2)} Bs. (~${z.estimatedMinutes} min)`
       )
       .join("\n");
+
+    const stampsRequired = Math.max(
+      2,
+      Math.floor(Number(business?.loyaltyStampsRequired) || 10)
+    );
+    const loyaltyBlock = business?.loyaltyEnabled
+      ? `Activo. Cada pedido entregado suma 1 sello. Al llegar a ${
+          stampsRequired - 1
+        } sellos, el pedido número ${stampsRequired} es gratis (${
+          business?.loyaltyRewardDescription || "10mo pedido gratis"
+        }). ${
+          business?.loyaltyRewardFreeDelivery
+            ? "El premio también cubre el envío."
+            : "El envío del pedido premio se paga aparte."
+        } Cada cliente tiene un QR personal.`
+      : "El programa de fidelidad está pausado temporalmente.";
 
     return `
 === DATOS OFICIALES EN VIVO DE TROPIGO (IVIRGARZAMA, BOLIVIA) ===
@@ -187,7 +215,17 @@ ${cleanMerchants || "Comercios registrados disponibles para pedidos."}
 ${cleanProducts || "Catálogo oficial activo en el CRM."}
 
 [TARIFARIO OFICIAL POR ZONAS EN IVIRGARZAMA]
-${cleanZones || "Tarifa base urbana: 5.00 Bs. delivery, 4.00 Bs. mototaxi."}
+${cleanZones || `Tarifa base urbana: 5.00 Bs. delivery, ${minRideFare.toFixed(
+      2
+    )} Bs. mototaxi (mínimo oficial).`}
+
+[TARIFAS DE CARRERA]
+Tarifa mínima oficial: ${minRideFare.toFixed(2)} Bs. Recargo Torito/trimóvil: ${toritoSurcharge.toFixed(
+      2
+    )} Bs. La tarifa final nunca puede ser inferior a la mínima.
+
+[PROGRAMA DE FIDELIDAD]
+${loyaltyBlock}
 
 REGLA DE INTEGRIDAD ESTRICTA Y PROTOCOLO DE PEDIDOS:
 1. NUNCA inventes productos, precios, comercios, zonas ni tarifas. Usa exclusivamente lo devuelto por las herramientas y los datos oficiales de arriba.
@@ -205,6 +243,7 @@ REGLA DE INTEGRIDAD ESTRICTA Y PROTOCOLO DE PEDIDOS:
    j) Para seguimiento, usa 'consultar_estado_pedido'. La consulta se limita al cliente de la conversación.
 4. DUPLICADOS: 'registrar_pedido' es idempotente. Si la cotización ya fue consumida, devuelve el pedido existente; no crees otra orden ni cambies el número.
 5. ESTADOS: el cliente solo consulta. Los cambios de estado los realiza el CRM/operador o el repartidor asignado; no prometas cambios de estado que no hayan sido registrados.
+6. FIDELIDAD: si el cliente pregunta por sus sellos, su premio o su QR personal, usa 'consultar_mi_fidelidad'. No inventes sellos ni premios. Cuando 'preparar_resumen_pedido' devuelva premioFidelidadAplicado=true, el descuento ya está incluido en el total del resumen; no lo sumes ni lo dupliques.
 =================================================================
 `.trim();
   } catch (e: any) {
