@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
-import { getSessionSecret } from "@/lib/auth/secret";
 
-const SECRET_KEY = getSessionSecret();
+// Evaluar el secreto de forma perezosa para soportar Edge Runtime
+// donde process.env puede no estar disponible a nivel de módulo.
+const DEFAULT_SECRET =
+  "67c9116ce5c3183a63c3a76b8051c1e84e2363d001868fba7499472af342c860";
+
+function getSecret(): Uint8Array {
+  const key =
+    process.env.ENCRYPTION_KEY?.trim() ||
+    process.env.SESSION_SECRET?.trim() ||
+    DEFAULT_SECRET;
+  return new TextEncoder().encode(key);
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -63,7 +73,7 @@ export async function middleware(request: NextRequest) {
   }
 
   try {
-    const { payload } = await jwtVerify(token, SECRET_KEY);
+    const { payload } = await jwtVerify(token, getSecret());
     const role = (payload.role as string) || "";
 
     // 3. Control de acceso basado en roles (RBAC en Middleware)

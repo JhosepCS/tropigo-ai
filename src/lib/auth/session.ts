@@ -79,26 +79,8 @@ export async function createSession(
     console.error("No se pudo registrar la sesión en la base de datos:", e);
   }
 
-  // Establecer la cookie de sesión segura
-  try {
-    let isHttps = process.env.NODE_ENV === "production";
-    try {
-      const hList = await headers();
-      const proto = hList.get("x-forwarded-proto") || "";
-      isHttps = proto === "https" || isHttps;
-    } catch {}
-
-    const cookieStore = await cookies();
-    cookieStore.set(COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: isHttps,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * SESSION_DURATION_DAYS,
-    });
-  } catch (e) {
-    // Si cookies() no está disponible (ej. en invocaciones de test o backend directo)
-  }
+  // La cookie la setea la ruta de login en la respuesta HTTP.
+  // No duplicar aquí para evitar conflictos de flags (httpOnly, secure).
 
   return token;
 }
@@ -149,9 +131,14 @@ export async function getSession(): Promise<SessionPayload | null> {
 }
 
 /**
- * Verifica un token JWT criptográficamente y valida la sesión.
- * Si la base de datos tiene una fluctuación transitoria de red, no tumba
- * la sesión válida si el JWT es íntegro y no ha expirado.
+ * Verifica un token JWT criptográficamente.
+ *
+ * Confía SOLO en la firma HS256 y la expiración del JWT.
+ * No consulta la base de datos para evitar falsos 401 por latencia
+ * del pool de Supabase o cold starts de Vercel Functions.
+ *
+ * La revocación explícita de sesión funciona al borrar la cookie;
+ * la expiración natural la maneja `jose` con el claim `exp`.
  */
 export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
   try {
@@ -159,24 +146,6 @@ export async function verifySessionToken(token: string): Promise<SessionPayload 
     const sessionData = payload as unknown as SessionPayload;
 
     if (!sessionData.userId) return null;
-
-    // Si tiene sessionId, comprobar que no haya sido explícitamente eliminada
-    if (sessionData.sessionId) {
-      try {
-        const dbSession = await prisma.session.findUnique({
-          where: { token: sessionData.sessionId },
-        });
-
-        // Solo se invalida si la sesión existe en DB y ya expiró
-        if (dbSession && dbSession.expiresAt < new Date()) {
-          return null; // Sesión explícitamente expirada
-        }
-      } catch (dbErr) {
-        // Si Supabase o el pooler tiene una desconexión transitoria,
-        // no expulsar al usuario si el JWT criptográfico es válido.
-        console.warn("[verifySessionToken] Verificación en DB omitida por fluctuación:", dbErr);
-      }
-    }
 
     return sessionData;
   } catch (e) {

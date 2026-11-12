@@ -37,12 +37,10 @@ export function LoginForm() {
         throw new Error(data.error || "Credenciales incorrectas o usuario no encontrado");
       }
 
-      // Guardar token en localStorage y cookie de respaldo cliente
+      // Guardar token en localStorage como respaldo para APIs externas
       if (data.token) {
         try {
           localStorage.setItem("tropigo_token", data.token);
-          document.cookie = `tropigo_session=${data.token}; path=/; max-age=604800; SameSite=Lax`;
-          document.cookie = `atiende_session=${data.token}; path=/; max-age=604800; SameSite=Lax`;
         } catch {}
       }
 

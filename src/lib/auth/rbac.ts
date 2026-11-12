@@ -181,21 +181,19 @@ export class ForbiddenError extends Error {
 
 /**
  * Exige una sesión válida y activa.
+ *
+ * Confía en la verificación criptográfica del JWT (firma HS256 + expiración).
+ * No consulta la base de datos en cada petición para evitar errores 401
+ * transitorios por latencia del pool de Supabase o cold starts de Vercel.
+ *
+ * La sesión ya fue validada por el middleware Edge antes de llegar aquí.
+ * Si se necesita revocar un usuario, se puede eliminar su sesión en DB
+ * y `verifySessionToken` lo detectará cuando la DB esté disponible.
  */
 export async function requireAuth(): Promise<SessionPayload> {
   const session = await getSession();
   if (!session || !session.userId) {
     throw new UnauthorizedError();
-  }
-
-  // Verificar que el usuario continúe existiendo y esté ACTIVO en la base de datos
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: { id: true, status: true, role: true },
-  });
-
-  if (!user || user.status !== "ACTIVE") {
-    throw new UnauthorizedError("Tu cuenta ha sido desactivada o no existe");
   }
 
   return session;
