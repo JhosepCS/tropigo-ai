@@ -14,6 +14,7 @@ import { memoryTool } from "./memory-tool";
 import { handoffTool } from "./handoff-tool";
 import { loyaltyTool } from "./loyalty-tool";
 import { loyaltyCodeTool } from "./loyalty-code-tool";
+import { paymentMethodsTool } from "./payments-tool";
 import { OrderToolContext } from "../../orders/order-service";
 
 export * from "./types";
@@ -31,6 +32,7 @@ export * from "./memory-tool";
 export * from "./handoff-tool";
 export * from "./loyalty-tool";
 export * from "./loyalty-code-tool";
+export * from "./payments-tool";
 
 /**
  * Catálogo modular completo de las herramientas internas de TropiGO
@@ -50,6 +52,7 @@ export const TROPIGO_TOOLS: IAssistantTool[] = [
   handoffTool,
   loyaltyTool,
   loyaltyCodeTool,
+  paymentMethodsTool,
 ];
 
 /**

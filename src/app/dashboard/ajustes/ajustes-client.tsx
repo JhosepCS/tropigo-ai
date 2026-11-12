@@ -22,9 +22,19 @@ import {
   Gift,
   ExternalLink,
   AlertCircle,
+  QrCode,
+  Wallet,
+  Upload,
+  Trash2,
+  CreditCard,
+  MapPinned,
 } from "lucide-react";
 import { WhatsAppMetaConnect } from "@/components/whatsapp-meta-connect";
 import { MaskedWhatsAppStatus } from "@/lib/whatsapp/meta-manager";
+import {
+  PaymentMethodConfig,
+  parsePaymentMethods,
+} from "@/lib/payments/types";
 
 interface AjustesClientProps {
   initialBusiness: any;
@@ -73,6 +83,28 @@ export function AjustesClient({
   const [loyaltyCountRides, setLoyaltyCountRides] = useState(
     initialBusiness?.loyaltyCountRides ?? true
   );
+  const [loyaltyDoubleStampsUntil, setLoyaltyDoubleStampsUntil] = useState(
+    initialBusiness?.loyaltyDoubleStampsUntil
+      ? new Date(initialBusiness.loyaltyDoubleStampsUntil)
+          .toISOString()
+          .slice(0, 10)
+      : ""
+  );
+
+  // 1.3 Delivery por distancia real
+  const [deliveryIncludedKm, setDeliveryIncludedKm] = useState(
+    Number(initialBusiness?.deliveryIncludedKm ?? 3)
+  );
+  const [deliveryPerKmFee, setDeliveryPerKmFee] = useState(
+    Number(initialBusiness?.deliveryPerKmFee ?? 0)
+  );
+
+  // 1.4 Métodos de pago (Altoke, Yape, ZAS, QR Simple, Tigo Money, etc.)
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodConfig[]>(
+    () => parsePaymentMethods(initialBusiness?.paymentMethodsJson)
+  );
+  const [paymentSaved, setPaymentSaved] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // 2. Marca de la Agencia
@@ -161,6 +193,9 @@ export function AjustesClient({
           loyaltyRewardFreeDelivery,
           loyaltyRewardDescription,
           loyaltyCountRides,
+          loyaltyDoubleStampsUntil: loyaltyDoubleStampsUntil || null,
+          deliveryIncludedKm,
+          deliveryPerKmFee,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -176,6 +211,61 @@ export function AjustesClient({
   };
 
   const isWpConnected = initialWhatsAppStatus?.status === "CONNECTED";
+
+  const updatePaymentMethod = (
+    id: string,
+    patch: Partial<PaymentMethodConfig>
+  ) => {
+    setPaymentMethods((current) =>
+      current.map((method) =>
+        method.id === id ? { ...method, ...patch } : method
+      )
+    );
+  };
+
+  const handleQrUpload = (id: string, file: File | null) => {
+    if (!file) return;
+    if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) {
+      setPaymentError("El QR debe ser una imagen PNG, JPG, WEBP o GIF.");
+      return;
+    }
+    if (file.size > 450_000) {
+      setPaymentError("El QR es muy pesado. Usa una imagen menor a 450 KB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      updatePaymentMethod(id, { qrImage: String(reader.result || "") });
+      setPaymentError(null);
+    };
+    reader.onerror = () => setPaymentError("No se pudo leer la imagen del QR.");
+    reader.readAsDataURL(file);
+  };
+
+  const handleSavePayments = async () => {
+    setPaymentError(null);
+    setPaymentSaved(false);
+    try {
+      const res = await fetch("/api/settings/payment-methods", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ methods: paymentMethods }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "No se pudieron guardar los métodos de pago.");
+      }
+      if (Array.isArray(data?.methods)) {
+        setPaymentMethods(data.methods);
+      }
+      setPaymentSaved(true);
+      setTimeout(() => setPaymentSaved(false), 2500);
+    } catch (error: any) {
+      setPaymentError(error?.message || "No se pudieron guardar los métodos de pago.");
+    }
+  };
+
+  const enabledPaymentCount = paymentMethods.filter((method) => method.enabled).length;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -394,7 +484,72 @@ export function AjustesClient({
             </div>
           </div>
 
-          {/* 4. Fidelidad */}
+          {/* 4. Delivery por distancia real */}
+          <div className="bg-white rounded-3xl border border-[#EAECF0] p-6 shadow-2xs space-y-4 text-xs">
+            <div className="flex items-center gap-2 pb-3 border-b border-[#EAECF0]">
+              <MapPinned className="w-4 h-4 text-emerald-600" />
+              <div>
+                <h3 className="font-semibold text-sm text-[#101828]">
+                  Delivery por distancia real
+                </h3>
+                <p className="text-[11px] text-[#667085]">
+                  Si el cliente comparte su ubicación GPS, TropiGO estima la
+                  distancia por ruta desde el comercio y puede cobrar un recargo
+                  por km adicional. Con recargo en 0 se mantiene la tarifa fija
+                  por zona.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="font-medium text-[#344054]">
+                  Kilómetros incluidos en la tarifa de zona
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  step={0.5}
+                  value={deliveryIncludedKm}
+                  onChange={(e) =>
+                    setDeliveryIncludedKm(Number(e.target.value) || 0)
+                  }
+                  className="w-full bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-3 py-2 text-[#101828]"
+                />
+                <p className="text-[10px] text-[#667085]">
+                  Ejemplo: 3 km incluidos. Solo se cobra el excedente.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-medium text-[#344054]">
+                  Recargo por km adicional (Bs.)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  step={0.5}
+                  value={deliveryPerKmFee}
+                  onChange={(e) =>
+                    setDeliveryPerKmFee(Number(e.target.value) || 0)
+                  }
+                  className="w-full bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-3 py-2 text-[#101828]"
+                />
+                <p className="text-[10px] text-[#667085]">
+                  0 Bs. = sin recargo por distancia. La tarifa de la zona no cambia.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-sky-50 border border-sky-200 px-3 py-2 text-[11px] text-sky-800">
+              La distancia se muestra siempre como <b>estimada por ruta</b>. Si no
+              hay GPS, se usa la zona y el tiempo configurado, sin inventar km.
+            </div>
+          </div>
+
+          {/* 5. Fidelidad */}
           <div className="bg-white rounded-3xl border border-[#EAECF0] p-6 shadow-2xs space-y-4 text-xs">
             <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#EAECF0]">
               <div className="flex items-center gap-2">
@@ -512,11 +667,244 @@ export function AjustesClient({
               </span>
             </label>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="font-medium text-[#344054]">
+                  Promoción de sellos dobles hasta
+                </label>
+                <input
+                  type="date"
+                  value={loyaltyDoubleStampsUntil}
+                  onChange={(e) => setLoyaltyDoubleStampsUntil(e.target.value)}
+                  className="w-full bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-3 py-2 text-[#101828]"
+                />
+                <p className="text-[10px] text-[#667085]">
+                  Déjalo vacío para desactivar. Mientras esté vigente, cada pedido
+                  entregado o carrera finalizada suma 2 sellos.
+                </p>
+              </div>
+              <div className="rounded-xl bg-[#F9FAFB] border border-[#EAECF0] px-3 py-3">
+                <p className="text-[10px] font-bold uppercase text-[#667085]">
+                  Niveles de fidelidad
+                </p>
+                <p className="mt-1 text-[11px] text-[#344054]">
+                  🥉 Bronce: 0-9 servicios · 🥈 Plata: 10-29 · 🥇 Oro: 30+
+                </p>
+                <p className="mt-1 text-[10px] text-[#667085]">
+                  Los niveles son informativos y se muestran en la tarjeta y en el
+                  contexto del asistente.
+                </p>
+              </div>
+            </div>
+
             <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-[11px] text-emerald-800">
               Tarjeta configurada: <b>{Math.max(2, loyaltyStampsRequired - 1)} sellos</b> para
               el premio. El pedido <b>número {Math.max(2, loyaltyStampsRequired)}</b> se
               aplica automáticamente como gratis al confirmar
               {loyaltyCountRides ? " (los pedidos y las carreras finalizadas suman sellos)" : " (solo pedidos entregados)"}.
+            </div>
+          </div>
+
+          {/* 6. Métodos de pago y QR */}
+          <div className="bg-white rounded-3xl border border-[#EAECF0] p-6 shadow-2xs space-y-4 text-xs">
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#EAECF0]">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-emerald-600" />
+                <div>
+                  <h3 className="font-semibold text-sm text-[#101828]">
+                    Pagos por QR y billeteras digitales
+                  </h3>
+                  <p className="text-[11px] text-[#667085]">
+                    Activa los métodos que acepta TropiGO y carga el QR o los datos
+                    de cuenta. El cliente paga desde el enlace público y reporta el
+                    pago; un operador lo verifica.
+                  </p>
+                </div>
+              </div>
+              <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
+                {enabledPaymentCount} activos
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {paymentMethods.map((method) => (
+                <div
+                  key={method.id}
+                  className={`rounded-2xl border p-3 space-y-3 ${
+                    method.enabled
+                      ? "border-emerald-200 bg-emerald-50/40"
+                      : "border-[#EAECF0] bg-[#F9FAFB]"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={method.enabled}
+                        onChange={(e) =>
+                          updatePaymentMethod(method.id, {
+                            enabled: e.target.checked,
+                          })
+                        }
+                        className="w-4 h-4 accent-emerald-600"
+                      />
+                      <span className="text-base">{method.emoji}</span>
+                      <span className="font-bold text-[#101828]">
+                        {method.label}
+                      </span>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold uppercase text-[#667085] border border-[#EAECF0]">
+                        {method.type === "CASH"
+                          ? "Efectivo"
+                          : method.type === "QR"
+                          ? "QR"
+                          : method.type === "BANK"
+                          ? "Banco"
+                          : "Billetera"}
+                      </span>
+                    </label>
+
+                    {method.qrImage ? (
+                      <button
+                        type="button"
+                        onClick={() => updatePaymentMethod(method.id, { qrImage: "" })}
+                        className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1 text-[10px] font-bold text-red-600"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Quitar QR
+                      </button>
+                    ) : (
+                      <label
+                        htmlFor={`qr-upload-${method.id}`}
+                        className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#D0D5DD] bg-white px-2 py-1 text-[10px] font-bold text-[#344054]"
+                      >
+                        <Upload className="w-3 h-3" />
+                        Subir QR
+                        <input
+                          id={`qr-upload-${method.id}`}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          className="hidden"
+                          onChange={(e) =>
+                            handleQrUpload(method.id, e.target.files?.[0] || null)
+                          }
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-[#667085]">
+                        Nombre visible
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={80}
+                        value={method.label}
+                        onChange={(e) =>
+                          updatePaymentMethod(method.id, {
+                            label: e.target.value,
+                          })
+                        }
+                        className="w-full rounded-xl border border-[#D0D5DD] bg-white px-2.5 py-1.5 text-[11px] text-[#101828]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-[#667085]">
+                        Titular
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={120}
+                        value={method.accountName}
+                        onChange={(e) =>
+                          updatePaymentMethod(method.id, {
+                            accountName: e.target.value,
+                          })
+                        }
+                        className="w-full rounded-xl border border-[#D0D5DD] bg-white px-2.5 py-1.5 text-[11px] text-[#101828]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-[#667085]">
+                        Cuenta / celular
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={80}
+                        value={method.accountNumber}
+                        onChange={(e) =>
+                          updatePaymentMethod(method.id, {
+                            accountNumber: e.target.value,
+                          })
+                        }
+                        className="w-full rounded-xl border border-[#D0D5DD] bg-white px-2.5 py-1.5 text-[11px] text-[#101828]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-[#667085]">
+                        Instrucciones
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={500}
+                        value={method.instructions}
+                        onChange={(e) =>
+                          updatePaymentMethod(method.id, {
+                            instructions: e.target.value,
+                          })
+                        }
+                        className="w-full rounded-xl border border-[#D0D5DD] bg-white px-2.5 py-1.5 text-[11px] text-[#101828]"
+                      />
+                    </div>
+                  </div>
+
+                  {method.qrImage && (
+                    <div className="flex items-center gap-3 rounded-xl border border-[#EAECF0] bg-white p-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={method.qrImage}
+                        alt={`QR de ${method.label}`}
+                        className="h-16 w-16 rounded-lg object-contain"
+                      />
+                      <div>
+                        <p className="text-[10px] font-bold text-emerald-700">
+                          QR cargado
+                        </p>
+                        <p className="text-[9px] text-[#667085]">
+                          Se muestra en la página pública de pago.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {paymentError && (
+              <div className="flex items-start gap-2 rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-[11px] text-red-700">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{paymentError}</span>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[10px] text-[#667085]">
+                Los QRs se guardan en la base de datos del negocio. No se envían a
+                servicios externos.
+              </p>
+              <button
+                type="button"
+                onClick={handleSavePayments}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#101828] px-4 py-2 text-xs font-bold text-white hover:bg-[#1D2939]"
+              >
+                {paymentSaved ? (
+                  <Check className="w-4 h-4" />
+                ) : (
+                  <Wallet className="w-4 h-4" />
+                )}
+                {paymentSaved ? "Métodos guardados" : "Guardar métodos de pago"}
+              </button>
             </div>
           </div>
 

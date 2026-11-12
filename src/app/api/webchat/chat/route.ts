@@ -8,7 +8,10 @@ import { getRealDataContextPrompt } from "@/lib/ai/tools";
 import { ensureConversationSession } from "@/lib/memory/conversation-summary";
 import { buildCustomerMemoryPrompt } from "@/lib/memory/customer-memory";
 import { decodeLoyaltyQrFromImage } from "@/lib/loyalty/qr-decode";
-import { buildLoyaltyCardPrompt } from "@/lib/loyalty/prompt";
+import {
+  buildLoyaltyCardPrompt,
+  buildCustomerLoyaltyPrompt,
+} from "@/lib/loyalty/prompt";
 import { extractLoyaltyCode } from "@/lib/loyalty/code";
 
 export const dynamic = "force-dynamic";
@@ -191,13 +194,16 @@ export async function POST(req: NextRequest) {
     // 3. Prompt completo + memoria + herramientas + motor Gemini
     // -----------------------------------------------------------------
     const assistantConfig = await getAssistantConfig();
-    const [realDataContext, memoryContext] = await Promise.all([
+    const [realDataContext, memoryContext, loyaltyContext] = await Promise.all([
       getRealDataContextPrompt(),
       buildCustomerMemoryPrompt(customer.id),
+      buildCustomerLoyaltyPrompt(customer.id),
     ]);
     const systemPrompt = buildSystemPrompt(
       assistantConfig,
-      [realDataContext, memoryContext].filter(Boolean).join("\n\n")
+      [realDataContext, memoryContext, loyaltyContext]
+        .filter(Boolean)
+        .join("\n\n")
     );
 
     const recentMessages = await prisma.message.findMany({

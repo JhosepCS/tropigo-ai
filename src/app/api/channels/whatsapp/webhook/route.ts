@@ -12,7 +12,10 @@ import { isSafeExplicitConfirmation } from "@/lib/orders/confirmation";
 import { buildCustomerMemoryPrompt } from "@/lib/memory/customer-memory";
 import { ensureConversationSession } from "@/lib/memory/conversation-summary";
 import { decodeLoyaltyQrFromImage } from "@/lib/loyalty/qr-decode";
-import { buildLoyaltyCardPrompt } from "@/lib/loyalty/prompt";
+import {
+  buildLoyaltyCardPrompt,
+  buildCustomerLoyaltyPrompt,
+} from "@/lib/loyalty/prompt";
 import { extractLoyaltyCode } from "@/lib/loyalty/code";
 
 export const dynamic = "force-dynamic";
@@ -508,13 +511,16 @@ export async function POST(req: NextRequest) {
         };
 
         const assistantConfig = await getAssistantConfig();
-        const [realDataContext, memoryContext] = await Promise.all([
+        const [realDataContext, memoryContext, loyaltyContext] = await Promise.all([
           getRealDataContextPrompt(),
           buildCustomerMemoryPrompt(customer.id),
+          buildCustomerLoyaltyPrompt(customer.id),
         ]);
         const systemPrompt = buildSystemPrompt(
           assistantConfig,
-          [realDataContext, memoryContext].filter(Boolean).join("\n\n")
+          [realDataContext, memoryContext, loyaltyContext]
+            .filter(Boolean)
+            .join("\n\n")
         );
 
         // Recuperar contexto reciente de la conversación (últimos 10 mensajes)

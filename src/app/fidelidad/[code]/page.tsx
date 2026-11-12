@@ -2,13 +2,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   BadgeCheck,
+  CalendarClock,
   Gift,
+  History,
   MapPin,
   MessageCircle,
   Phone,
   QrCode,
   Sparkles,
   Store,
+  TrendingUp,
 } from "lucide-react";
 import {
   buildLoyaltyQrDataUrl,
@@ -127,9 +130,14 @@ export default async function PublicLoyaltyCardPage({
                 <p className="text-lg font-black text-slate-900">
                   {card.displayName}
                 </p>
-                <p className="mt-0.5 font-mono text-[10px] text-slate-400">
-                  {card.code}
-                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-800">
+                    {card.levelEmoji} Nivel {card.levelLabel}
+                  </span>
+                  <span className="font-mono text-[10px] text-slate-400">
+                    {card.code}
+                  </span>
+                </div>
               </div>
               <img
                 src={qrDataUrl}
@@ -178,6 +186,29 @@ export default async function PublicLoyaltyCardPage({
                   <Gift className="h-4 w-4" />
                 </div>
               </div>
+              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      Math.round((card.stamps / Math.max(1, card.stampsNeeded)) * 100)
+                    )}%`,
+                  }}
+                />
+              </div>
+              {card.doubleStampsActive && (
+                <p className="mt-2 flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-800">
+                  <CalendarClock className="h-3 w-3" />
+                  Promoción activa: cada servicio suma 2 sellos
+                  {card.doubleStampsUntil
+                    ? ` hasta el ${new Date(card.doubleStampsUntil).toLocaleDateString(
+                        "es-BO"
+                      )}`
+                    : ""}
+                  .
+                </p>
+              )}
             </div>
 
             {card.rewardAvailable ? (
@@ -238,6 +269,47 @@ export default async function PublicLoyaltyCardPage({
                 </p>
               </div>
             </div>
+
+            {card.recentEvents.length > 0 && (
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <History className="h-3 w-3 text-emerald-600" />
+                  Historial reciente
+                </p>
+                <div className="mt-2 space-y-1.5">
+                  {card.recentEvents.map((event, index) => (
+                    <div
+                      key={`${event.createdAt}-${index}`}
+                      className="flex items-start justify-between gap-2 text-[10px]"
+                    >
+                      <div className="flex items-start gap-1.5">
+                        <TrendingUp className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" />
+                        <div>
+                          <p className="font-semibold text-slate-700">
+                            {event.description || event.type}
+                          </p>
+                          <p className="text-[9px] text-slate-400">
+                            {new Date(event.createdAt).toLocaleDateString("es-BO")}
+                          </p>
+                        </div>
+                      </div>
+                      {event.stampsDelta !== 0 && (
+                        <span
+                          className={`shrink-0 font-black ${
+                            event.stampsDelta > 0
+                              ? "text-emerald-600"
+                              : "text-amber-600"
+                          }`}
+                        >
+                          {event.stampsDelta > 0 ? "+" : ""}
+                          {event.stampsDelta}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {!card.settings.enabled && (
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] text-slate-500">

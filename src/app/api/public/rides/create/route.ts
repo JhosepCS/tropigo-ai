@@ -6,6 +6,7 @@ import {
   getRideFareConfig,
   normalizeVehicleType,
 } from "@/lib/rides/fare";
+import { getAppUrl } from "@/lib/app-url";
 
 export async function POST(req: NextRequest) {
   try {
@@ -113,6 +114,8 @@ export async function POST(req: NextRequest) {
       fareFormatted: `${trip.fareAmount.toFixed(2)} Bs.`,
       vehicleType: normalizedVehicle,
       destinationZone: destinationZone.zone?.name || null,
+      urlSeguimiento: `${getAppUrl()}/seguimiento/${trip.id}`,
+      urlPago: `${getAppUrl()}/pagar/${trip.id}`,
     });
   } catch (error: any) {
     console.error("Error al crear carrera de mototaxi:", error);

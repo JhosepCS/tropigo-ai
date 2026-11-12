@@ -60,6 +60,35 @@ function toRad(degrees: number): number {
 }
 
 /**
+ * Factor de corrección vial típico para Ivirgarzama. La distancia real por
+ * calles suele ser 25-35% mayor que la línea recta. Se usa 1.3 como estimación
+ * conservadora y se muestra siempre como "estimada".
+ */
+export const ROAD_DISTANCE_FACTOR = 1.3;
+
+export function estimarDistanciaRutaKm(
+  origen: GeoCoordinate,
+  destino: GeoCoordinate
+): number {
+  return Math.round(calcularDistanciaLineaRectaKm(origen, destino) * ROAD_DISTANCE_FACTOR * 10) / 10;
+}
+
+/**
+ * Tiempo estimado en mototaxi urbano. Velocidad promedio conservadora:
+ * 22 km/h. Nunca devuelve menos de 2 minutos.
+ */
+export function estimarTiempoMinutos(distanciaKm: number, velocidadKmH = 22): number {
+  if (!Number.isFinite(distanciaKm) || distanciaKm <= 0) return 2;
+  return Math.max(2, Math.round((distanciaKm / velocidadKmH) * 60));
+}
+
+export function formatoDistanciaKm(distanciaKm: number | null | undefined): string {
+  if (!Number.isFinite(Number(distanciaKm))) return "sin GPS";
+  const value = Number(distanciaKm);
+  return `${value.toFixed(value < 10 ? 1 : 0)} km`;
+}
+
+/**
  * Evalúa la distancia y tiempo de recorrido distinguiendo claramente:
  * 1. Distancia en línea recta (si hay coordenadas GPS).
  * 2. Recorrido real por carretera/calle (la distancia vial suele ser entre 20% y 40% mayor debido a la traza urbana).
@@ -82,19 +111,19 @@ export function evaluarDistanciaYRecorrido(params: {
     typeof destinoCoords.longitude === "number"
   ) {
     const dLineaRecta = calcularDistanciaLineaRectaKm(origenCoords, destinoCoords);
-    // Factor de ruta vial típico en la red de caminos del Trópico de Cochabamba (1.25x - 1.35x en carretera/calles)
-    const dCarreteraEstimada = Math.round(dLineaRecta * 1.3 * 10) / 10;
+    const dCarreteraEstimada = estimarDistanciaRutaKm(origenCoords, destinoCoords);
+    const eta = estimarTiempoMinutos(dCarreteraEstimada);
 
     return {
       distanciaLineaRectaKm: dLineaRecta,
       tipoCalculo: "linea_recta_gps",
       zonaNombre,
-      tiempoEstimadoMinutos: tiempoBaseMinutos,
+      tiempoEstimadoMinutos: Math.max(tiempoBaseMinutos, eta),
       explicacionVial:
-        `Distancia en línea recta (geodésica): ${dLineaRecta.toFixed(2)} km. ` +
-        `Recorrido por carretera/red vial estimado: ~${dCarreteraEstimada.toFixed(1)} km. ` +
-        `Tiempo de traslado estimado: ${tiempoBaseMinutos} min. ` +
-        `Se aplica la tarifa reglamentada de la zona '${zonaNombre}' para garantizar precio justo sin cobros arbitrarios.`,
+        `Distancia GPS en línea recta: ${dLineaRecta.toFixed(2)} km. ` +
+        `Recorrido real estimado por calles: ~${dCarreteraEstimada.toFixed(1)} km. ` +
+        `Tiempo de traslado estimado: ${Math.max(tiempoBaseMinutos, eta)} min. ` +
+        `Se aplica la tarifa reglamentada de la zona '${zonaNombre}' para garantizar un precio justo.`,
     };
   }
 

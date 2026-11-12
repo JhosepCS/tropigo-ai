@@ -30,6 +30,14 @@ para evolucionar a una app tipo Yango/PedidosYa en el Trópico de Cochabamba.
   - lectura de QR desde fotos con `jsqr` + `sharp`;
   - canje automático en la cotización y canje manual desde el CRM.
 - Tarifas de mototaxi configurables (mínimo 10 Bs.) y recargo de torito.
+- Delivery por distancia real: distancia estimada por ruta, ETA y recargo
+  opcional por km adicional.
+- Pagos digitales configurables: efectivo, QR Simple, Tigo Money, Altoke, Yape,
+  ZAS y transferencia. Página pública `/pagar/[id]` y reporte de pago.
+- Seguimiento en vivo `/seguimiento/[id]` con mapa de Google sin API key y GPS
+  del repartidor desde su panel.
+- Fidelidad mejorada: sellos dobles temporales, niveles Bronce/Plata/Oro,
+  historial reciente y contexto proactivo para la IA.
 - Modo QR no oficial con Baileys y worker para Render (opcional).
 
 ### Infraestructura
@@ -56,14 +64,25 @@ para evolucionar a una app tipo Yango/PedidosYa en el Trópico de Cochabamba.
    `loyaltyRewardFreeDelivery` esté activo.
 7. El backup completo va cifrado con contraseña. El código sin secretos puede
    compartirse por separado.
+8. Google Maps se integra con iframe embed sin API key para evitar costos.
+9. El recargo por distancia es opcional (`deliveryPerKmFee = 0` por defecto)
+   para no romper las tarifas fijas por zona.
+10. Los pagos digitales se verifican manualmente desde el CRM; el cliente solo
+    reporta el pago con su número de transacción.
 
 ## Estructura de datos importante
 
-- `BusinessProfile`: nombre, teléfono, tarifas, fidelidad, `loyaltyCountRides`.
+- `BusinessProfile`: nombre, teléfono, tarifas, fidelidad, `loyaltyCountRides`,
+  `loyaltyDoubleStampsUntil`, `paymentMethodsJson`, `deliveryIncludedKm`,
+  `deliveryPerKmFee`.
 - `Customer`: teléfono, nombre, `loyaltyCode`, `loyaltyStamps`,
   `loyaltyTotalEarned`, `loyaltyRewardsRedeemed`, `totalRides`.
 - `Order`: pedido, estado (`ENTREGADO`), `loyaltyRewardApplied`,
-  `loyaltyStampsAwarded`.
+  `loyaltyStampsAwarded`, `distanceKm`, `distanceSurcharge`.
+- `OrderQuote`: cotización, `distanceKm`, `distanceSurcharge`.
+- `Rider`: `currentLatitude`, `currentLongitude`, `lastLocationAt`.
+- `PaymentRecord`: `methodId`, `reference`, `reportedByCustomer`,
+  `verificationStatus`.
 - `RideTrip`: carrera, estado (`FINALIZADO`), `loyaltyStampsAwarded`.
 - `LoyaltyEvent`: historial de sellos, reservas, canjes y restauraciones.
   Tiene `orderId` y `rideId` para idempotencia.
@@ -84,11 +103,14 @@ para evolucionar a una app tipo Yango/PedidosYa en el Trópico de Cochabamba.
 ## Configuración desde el panel
 
 - **Ajustes → Datos Generales & Empresa:** tarifa mínima de mototaxi, tarifa
-  base, recargo torito, fidelidad (activo, sellos requeridos, texto del premio,
-  envío gratis, contar carreras).
+  base, recargo torito, delivery por distancia (km incluidos y recargo por km),
+  fidelidad (activo, sellos requeridos, texto del premio, envío gratis, contar
+  carreras, sellos dobles) y métodos de pago con QR/datos de cuenta.
 - **Zonas:** tarifas de delivery y mototaxi por zona.
 - **Canales:** credenciales de Meta Cloud API y tarjeta QR de Baileys.
-- **Fidelidad:** lista de clientes, tarjeta, QR, agregar sello y canjear premio.
+- **Fidelidad:** lista de clientes, tarjeta, QR, nivel, historial, agregar sello
+  y canjear premio.
+- **Repartidor:** pedidos asignados, mapa de Google y botón para compartir GPS.
 
 ## Producción
 
@@ -106,9 +128,10 @@ para evolucionar a una app tipo Yango/PedidosYa en el Trópico de Cochabamba.
 3. Comprar el chip nuevo y migrar el `Phone Number ID`.
 4. Opcional: crear el worker de Render para el modo QR no oficial.
 5. Probar en producción: login, fidelidad, QR, lectura de QR por WhatsApp,
-   consulta por código, SSE protegido y tarjeta pública.
-6. Evolucionar a la app final: repartidores en tiempo real, pagos QR/Tigo
-   Money, notificaciones, multi-ciudad.
+   consulta por código, SSE protegido, tarjeta pública, pagos y seguimiento.
+6. Cargar los QR reales de Altoke, Yape, ZAS, Tigo Money y bancos en Ajustes.
+7. Evolucionar a la app final: notificaciones push, multi-ciudad y más
+   integraciones de pago.
 
 ## Problemas conocidos y cuidados
 

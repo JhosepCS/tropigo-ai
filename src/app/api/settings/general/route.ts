@@ -44,11 +44,14 @@ export async function POST(req: NextRequest) {
       rideMinFare,
       baseRideFee,
       rideToritoSurcharge,
+      deliveryIncludedKm,
+      deliveryPerKmFee,
       loyaltyEnabled,
       loyaltyStampsRequired,
       loyaltyRewardFreeDelivery,
       loyaltyRewardDescription,
       loyaltyCountRides,
+      loyaltyDoubleStampsUntil,
     } = body;
 
     const biz = await prisma.businessProfile.findFirst();
@@ -88,6 +91,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Delivery por distancia: km incluidos y recargo opcional por km extra.
+    const requestedIncludedKm = optionalNumber(deliveryIncludedKm);
+    if (requestedIncludedKm !== null) {
+      businessData.deliveryIncludedKm = Math.min(
+        50,
+        Math.max(0, round2(requestedIncludedKm))
+      );
+    }
+
+    const requestedPerKmFee = optionalNumber(deliveryPerKmFee);
+    if (requestedPerKmFee !== null) {
+      businessData.deliveryPerKmFee = Math.min(
+        50,
+        Math.max(0, round2(requestedPerKmFee))
+      );
+    }
+
     const requestedLoyaltyEnabled = optionalBoolean(loyaltyEnabled);
     if (requestedLoyaltyEnabled !== null) {
       businessData.loyaltyEnabled = requestedLoyaltyEnabled;
@@ -109,6 +129,25 @@ export async function POST(req: NextRequest) {
     const requestedCountRides = optionalBoolean(loyaltyCountRides);
     if (requestedCountRides !== null) {
       businessData.loyaltyCountRides = requestedCountRides;
+    }
+
+    // Fecha límite de la promoción de sellos dobles. Cadena vacía la desactiva.
+    if (loyaltyDoubleStampsUntil !== undefined) {
+      if (
+        typeof loyaltyDoubleStampsUntil === "string" &&
+        loyaltyDoubleStampsUntil.trim()
+      ) {
+        const parsedDate = new Date(loyaltyDoubleStampsUntil);
+        if (Number.isNaN(parsedDate.getTime())) {
+          return NextResponse.json(
+            { error: "La fecha de sellos dobles no es válida." },
+            { status: 400 }
+          );
+        }
+        businessData.loyaltyDoubleStampsUntil = parsedDate;
+      } else {
+        businessData.loyaltyDoubleStampsUntil = null;
+      }
     }
 
     if (

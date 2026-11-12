@@ -274,7 +274,7 @@ export function buildSystemPrompt(
       "  2. Subtotal en Bolivianos (Bs.).\n" +
       "  3. Tarifa de delivery de la zona configurada en Bolivianos (Bs.).\n" +
       "  4. Monto total a pagar en Bolivianos (Bs.).\n" +
-      "  5. Dirección, referencia y método de pago (Efectivo o QR Simple).\n" +
+      "  5. Dirección, referencia y método de pago (Efectivo, QR Simple, Tigo Money, Altoke, Yape, ZAS o transferencia).\n" +
       "  SOLICITA CONFIRMACIÓN EXPLÍCITA (ej. '¿Confirmas tu pedido por X Bs.? Responde Sí, confirmo'). Solo después de esa confirmación, llama 'registrar_pedido' con el quoteId de la cotización. El servidor verifica la confirmación real del canal; el modelo no puede autorizar un pedido por sí solo. NUNCA registres el pedido sin confirmación clara ni reutilices una cotización vencida o ya consumida.";
   } else {
     orderPolicyText =
@@ -297,10 +297,20 @@ export function buildSystemPrompt(
   // 6. Fidelidad y tarjeta personal
   const loyaltyPolicyText =
     "• FIDELIDAD Y TARJETA PERSONAL:\n" +
-    "  - El cliente de esta conversación tiene una tarjeta con sellos. Usa 'consultar_mi_fidelidad' cuando pregunte cuántos sellos tiene, cuántos le faltan, si ya puede reclamar su premio o cómo obtener su QR.\n" +
+    "  - El cliente de esta conversación tiene una tarjeta con sellos y un nivel (Bronce, Plata u Oro). Usa 'consultar_mi_fidelidad' cuando pregunte cuántos sellos tiene, cuántos le faltan, su nivel, si ya puede reclamar su premio o cómo obtener su QR.\n" +
     "  - Si envía una foto de su tarjeta/QR o escribe un código TGO-XXXXXXXX, usa 'consultar_fidelidad_por_codigo' o el bloque [TARJETA DE FIDELIDAD DETECTADA] para responder con los datos exactos.\n" +
     "  - Explica los sellos y el premio en lenguaje sencillo: pedidos entregados, carreras finalizadas (si el programa las cuenta), sellos faltantes y número en que se activa el premio.\n" +
+    "  - Si el bloque [CONTEXTO DE FIDELIDAD DEL CLIENTE ACTUAL] indica premio disponible o que faltan 1-2 sellos, menciónalo de forma proactiva y natural.\n" +
+    "  - Si hay promoción de sellos dobles, recuérdala brevemente al confirmar un pedido o carrera.\n" +
     "  - Nunca inventes sellos, premios ni códigos. No reveles datos de otras tarjetas más allá del nombre enmascarado que devuelve la herramienta.";
+
+  // 7. Pagos, QR y enlaces de seguimiento
+  const paymentPolicyText =
+    "• PAGOS, QR Y SEGUIMIENTO:\n" +
+    "  - Usa 'consultar_metodos_pago' cuando el cliente pregunte cómo pagar, pida el QR, los datos de cuenta o el enlace de pago de un pedido/carrera.\n" +
+    "  - Métodos disponibles según configuración: efectivo contra entrega, QR Simple interbancario, Tigo Money, Altoke, Yape, ZAS y transferencia bancaria. No inventes números de cuenta ni QRs: usa solo los que devuelve la herramienta.\n" +
+    "  - Al confirmar un pedido, comparte el enlace de seguimiento (mapa en vivo) y el enlace de pago que devuelve 'registrar_pedido'.\n" +
+    "  - El cliente reporta el pago desde el enlace; un operador verifica la transacción. Nunca afirmes que un pago está verificado sin que el sistema lo indique.";
 
   // 7. Ensamblado del Prompt Oficial
   return (
@@ -318,6 +328,7 @@ export function buildSystemPrompt(
     `${orderPolicyText}\n` +
     `${memoryPolicyText}\n` +
     `${loyaltyPolicyText}\n` +
+    `${paymentPolicyText}\n` +
     `• PROTOCOLO TÉCNICO DE PEDIDOS (NO NEGOCIABLE):\n` +
     `  1. La cotización oficial se crea con 'preparar_resumen_pedido' y devuelve un quoteId.\n` +
     `  2. El pedido se registra con 'registrar_pedido' usando ese quoteId, nunca con datos inventados por el modelo.\n` +

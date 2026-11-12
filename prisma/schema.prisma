@@ -394,6 +394,9 @@ model Order {
   totalAmount          Float         @default(5.0)
   paymentMethod        String        @default("EFECTIVO") // EFECTIVO, QR_BANCO, TIGO_MONEY
   paymentStatus        String        @default("PENDIENTE") // PENDIENTE, PAGADO_VERIFICADO, RECHAZADO
+  // Distancia real estimada por ruta y recargo por km adicional.
+  distanceKm           Float?
+  distanceSurcharge    Float         @default(0.0)
   status               String        @default("RECIBIDO") // RECIBIDO, EN_PREPARACION, LISTO_RECOJO, ASIGNADO, EN_CAMINO, ENTREGADO, CANCELADO
   deliveryAddressText  String
   referencePoint       String?
@@ -442,6 +445,9 @@ model OrderQuote {
   loyaltyRewardApplied Boolean       @default(false)
   totalAmount          Float
   paymentMethod        String        @default("EFECTIVO")
+  // Distancia real estimada por ruta y recargo por km adicional.
+  distanceKm           Float?
+  distanceSurcharge    Float         @default(0.0)
   deliveryAddressText  String
   referencePoint       String?
   latitude             Float?
@@ -516,28 +522,29 @@ model OrderDiscount {
 // =================================================================
 
 model Rider {
-  id               String   @id @default(cuid())
-  userId           String?  @unique
-  user             User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id               String    @id @default(cuid())
+  userId           String?   @unique
+  user             User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   cityId           String?
-  city             City?    @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  city             City?     @relation(fields: [cityId], references: [id], onDelete: SetNull)
   name             String // Nombre para visualización ágil sin joins
-  phone            String   @unique // E.164
-  vehicleType      String   @default("MOTO") // MOTO, TORITO_TRIMOVIL, BICICLETA
+  phone            String    @unique // E.164
+  vehicleType      String    @default("MOTO") // MOTO, TORITO_TRIMOVIL, BICICLETA
   plateNumber      String // Placa o número de móvil
   vehicleModel     String? // "Honda CB125F" o "Torito RE"
   vehicleColor     String?
-  rating           Float    @default(5.0)
-  isActive         Boolean  @default(true)
-  isAvailable      Boolean  @default(true)
+  rating           Float     @default(5.0)
+  isActive         Boolean   @default(true)
+  isAvailable      Boolean   @default(true)
   currentLocation  String?
   currentLatitude  Float?
   currentLongitude Float?
-  totalDeliveries  Int      @default(0)
-  totalRides       Int      @default(0)
-  earnedBalance    Float    @default(0.0) // Saldo acumulado en Bs.
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  lastLocationAt   DateTime?
+  totalDeliveries  Int       @default(0)
+  totalRides       Int       @default(0)
+  earnedBalance    Float     @default(0.0) // Saldo acumulado en Bs.
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   orders      Order[]
   rideTrips   RideTrip[]
@@ -548,36 +555,36 @@ model Rider {
 }
 
 model RideTrip {
-  id                 String        @id @default(cuid())
-  tripNumber         String        @unique // Ej: "VIAJE-2041"
-  cityId             String?
-  city               City?         @relation(fields: [cityId], references: [id], onDelete: SetNull)
-  customerId         String
-  customer           Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  assignedRiderId    String?
-  assignedRider      Rider?        @relation(fields: [assignedRiderId], references: [id], onDelete: SetNull)
-  originZoneId       String?
-  originZone         DeliveryZone? @relation("OriginZone", fields: [originZoneId], references: [id], onDelete: SetNull)
-  destZoneId         String?
-  destZone           DeliveryZone? @relation("DestZone", fields: [destZoneId], references: [id], onDelete: SetNull)
-  vehicleType        String        @default("MOTO") // MOTO, TORITO_TRIMOVIL
-  originAddress      String // "Mercado Central"
-  destinationAddress String // "Sindicato San Salvador, Villa 14"
-  originLat          Float?
-  originLng          Float?
-  destLat            Float?
-  destLng            Float?
-  distanceKm         Float?
-  fareAmount         Float         @default(10.0) // Monto de la carrera en Bs. (mínimo 10 Bs.)
-  paymentMethod      String        @default("EFECTIVO") // EFECTIVO, QR_BANCO
-  paymentStatus      String        @default("PENDIENTE") // PENDIENTE, PAGADO_VERIFICADO
-  status             String        @default("SOLICITADO") // SOLICITADO, CONDUCTOR_ASIGNADO, EN_CURSO, FINALIZADO, CANCELADO
-  passengerNotes     String?
-  cancellationReason String?
+  id                   String        @id @default(cuid())
+  tripNumber           String        @unique // Ej: "VIAJE-2041"
+  cityId               String?
+  city                 City?         @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  customerId           String
+  customer             Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  assignedRiderId      String?
+  assignedRider        Rider?        @relation(fields: [assignedRiderId], references: [id], onDelete: SetNull)
+  originZoneId         String?
+  originZone           DeliveryZone? @relation("OriginZone", fields: [originZoneId], references: [id], onDelete: SetNull)
+  destZoneId           String?
+  destZone             DeliveryZone? @relation("DestZone", fields: [destZoneId], references: [id], onDelete: SetNull)
+  vehicleType          String        @default("MOTO") // MOTO, TORITO_TRIMOVIL
+  originAddress        String // "Mercado Central"
+  destinationAddress   String // "Sindicato San Salvador, Villa 14"
+  originLat            Float?
+  originLng            Float?
+  destLat              Float?
+  destLng              Float?
+  distanceKm           Float?
+  fareAmount           Float         @default(10.0) // Monto de la carrera en Bs. (mínimo 10 Bs.)
+  paymentMethod        String        @default("EFECTIVO") // EFECTIVO, QR_BANCO
+  paymentStatus        String        @default("PENDIENTE") // PENDIENTE, PAGADO_VERIFICADO
+  status               String        @default("SOLICITADO") // SOLICITADO, CONDUCTOR_ASIGNADO, EN_CURSO, FINALIZADO, CANCELADO
+  passengerNotes       String?
+  cancellationReason   String?
   // Evita sellar dos veces la misma carrera en la tarjeta de fidelidad.
-  loyaltyStampsAwarded Boolean     @default(false)
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  loyaltyStampsAwarded Boolean       @default(false)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
   statusHistory  RideStatusHistory[]
   paymentRecords PaymentRecord[]
@@ -765,6 +772,9 @@ model PaymentRecord {
   amount             Float // Monto en Bs.
   currency           String    @default("BOB")
   provider           String    @default("QR_SIMPLE") // QR_SIMPLE, EFECTIVO, TIGO_MONEY, MANUAL
+  methodId           String? // id del método configurado (altoke, yape, zas, etc.)
+  reference          String? // Nro. de transacción o nota del cliente
+  reportedByCustomer Boolean   @default(false)
   qrStringData       String? // Payload EMVCo
   receiptImageUrl    String? // Captura enviada por el cliente
   verificationStatus String    @default("PENDIENTE") // PENDIENTE, PAGADO_VERIFICADO, RECHAZADO
@@ -803,33 +813,42 @@ model RiderSettlement {
 // =================================================================
 
 model BusinessProfile {
-  id                        String   @id @default(cuid())
-  name                      String   @default("TropiGO Ivirgarzama")
-  activity                  String   @default("Plataforma de delivery, mandados y movilidad en mototaxi")
-  cityZone                  String   @default("Ivirgarzama, Trópico de Cochabamba, Bolivia")
-  address                   String   @default("Av. Mortensen esq. Mercado Central, Ivirgarzama")
-  phone                     String   @default("+59174389012")
-  website                   String   @default("https://tropigo.bo")
-  currency                  String   @default("BOB")
-  currencySymbol            String   @default("Bs.")
-  timezone                  String   @default("America/La_Paz")
-  paymentModes              String   @default("[\"EFECTIVO\", \"QR_BANCO\", \"TIGO_MONEY\"]")
+  id                        String    @id @default(cuid())
+  name                      String    @default("TropiGO Ivirgarzama")
+  activity                  String    @default("Plataforma de delivery, mandados y movilidad en mototaxi")
+  cityZone                  String    @default("Ivirgarzama, Trópico de Cochabamba, Bolivia")
+  address                   String    @default("Av. Mortensen esq. Mercado Central, Ivirgarzama")
+  phone                     String    @default("+59174389012")
+  website                   String    @default("https://tropigo.bo")
+  currency                  String    @default("BOB")
+  currencySymbol            String    @default("Bs.")
+  timezone                  String    @default("America/La_Paz")
+  paymentModes              String    @default("[\"EFECTIVO\", \"QR_BANCO\", \"TIGO_MONEY\"]")
   bankQrImage               String?
-  baseDeliveryFee           Float    @default(5.0)
-  baseRideFee               Float    @default(10.0)
+  // Métodos de pago configurables desde Ajustes (Altoke, Yape, ZAS, QR Simple,
+  // Tigo Money, transferencia, efectivo). Se guarda un JSON con los QR y datos.
+  paymentMethodsJson        String?
+  baseDeliveryFee           Float     @default(5.0)
+  // Delivery por distancia real: km incluidos y recargo por km adicional.
+  // deliveryPerKmFee = 0 desactiva el recargo (compatibilidad con zonas fijas).
+  deliveryIncludedKm        Float     @default(3.0)
+  deliveryPerKmFee          Float     @default(0.0)
+  baseRideFee               Float     @default(10.0)
   // Tarifas de carrera configurables desde el CRM. La tarifa mínima
   // absoluta del servicio es 10 Bs.; el recargo de torito se suma aparte.
-  rideMinFare               Float    @default(10.0)
-  rideToritoSurcharge       Float    @default(1.0)
+  rideMinFare               Float     @default(10.0)
+  rideToritoSurcharge       Float     @default(1.0)
   // Programa de fidelidad: el pedido número "loyaltyStampsRequired" es gratis.
-  loyaltyEnabled            Boolean  @default(true)
-  loyaltyStampsRequired     Int      @default(10)
-  loyaltyRewardFreeDelivery Boolean  @default(false)
-  loyaltyRewardDescription  String   @default("10mo pedido gratis")
+  loyaltyEnabled            Boolean   @default(true)
+  loyaltyStampsRequired     Int       @default(10)
+  loyaltyRewardFreeDelivery Boolean   @default(false)
+  loyaltyRewardDescription  String    @default("10mo pedido gratis")
   // Si está activo, una carrera de mototaxi FINALIZADA también suma un sello.
-  loyaltyCountRides         Boolean  @default(true)
-  assistantEnabled          Boolean  @default(true)
-  updatedAt                 DateTime @updatedAt
+  loyaltyCountRides         Boolean   @default(true)
+  // Promoción temporal: hasta esta fecha cada pedido/carrera suma 2 sellos.
+  loyaltyDoubleStampsUntil  DateTime?
+  assistantEnabled          Boolean   @default(true)
+  updatedAt                 DateTime  @updatedAt
 }
 
 model AgencyProfile {
@@ -951,20 +970,20 @@ model Appointment {
 // =================================================================
 
 model LoyaltyEvent {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   customerId  String
-  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   orderId     String?
-  order       Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  order       Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
   rideId      String?
   ride        RideTrip? @relation(fields: [rideId], references: [id], onDelete: SetNull)
   // EARNED, EARNED_RIDE, RESERVED, REDEEMED, RESTORED, MANUAL_STAMP, MANUAL_REDEEM, RESET
   type        String
-  stampsDelta Int      @default(0)
+  stampsDelta Int       @default(0)
   stampsAfter Int
   description String?
   createdBy   String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   // Evita sellar dos veces el mismo pedido/carrera o reservar dos veces el mismo premio.
   @@unique([customerId, orderId, type])

@@ -2,6 +2,11 @@ import { prisma } from "../../prisma";
 import { IAssistantTool } from "./types";
 import { findActiveZoneForQuery } from "../../orders/order-service";
 import { calculateRideFare, getRideFareConfig } from "../../rides/fare";
+import {
+  estimarDistanciaRutaKm,
+  estimarTiempoMinutos,
+} from "../../geo/distance";
+import { getEnabledPaymentMethods } from "../../payments/service";
 
 export const deliveryFeesTool: IAssistantTool = {
   name: "cotizar_tarifa",
@@ -29,6 +34,16 @@ export const deliveryFeesTool: IAssistantTool = {
         type: "string",
         description: "Restaurante o comercio de origen opcional para entregas de comida.",
       },
+      latitud: {
+        type: "number",
+        description:
+          "Latitud GPS del cliente, si la compartió por WhatsApp. Permite calcular distancia real estimada.",
+      },
+      longitud: {
+        type: "number",
+        description:
+          "Longitud GPS del cliente, si la compartió por WhatsApp. Permite calcular distancia real estimada.",
+      },
     },
     required: ["tipo", "destino"],
   },
@@ -37,6 +52,8 @@ export const deliveryFeesTool: IAssistantTool = {
     destino: string;
     vehiculo?: "MOTO" | "TORITO";
     comercio?: string;
+    latitud?: number;
+    longitud?: number;
   }) {
     try {
       if (!args.tipo || !args.destino || !args.destino.trim()) {
@@ -79,6 +96,40 @@ export const deliveryFeesTool: IAssistantTool = {
       let tarifaFinal: number;
       let tiempoEstimado: number;
       let detalleTarifa: Record<string, unknown> | null = null;
+      let distanciaKm: number | null = null;
+      let recargoDistancia = 0;
+
+      // Distancia real estimada si el cliente compartió GPS y se conoce el
+      // comercio de origen. Nunca se inventan coordenadas.
+      if (
+        typeof args.latitud === "number" &&
+        typeof args.longitud === "number" &&
+        args.comercio
+      ) {
+        const merchants = await prisma.merchant.findMany({
+          select: { name: true, latitude: true, longitude: true },
+        });
+        const normalized = args.comercio
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .trim();
+        const merchant = merchants.find((item) =>
+          item.name
+            .replace(/^\[DEMO\]\s*/i, "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase()
+            .includes(normalized)
+        );
+
+        if (merchant?.latitude != null && merchant?.longitude != null) {
+          distanciaKm = estimarDistanciaRutaKm(
+            { latitude: merchant.latitude, longitude: merchant.longitude },
+            { latitude: args.latitud, longitude: args.longitud }
+          );
+        }
+      }
 
       if (args.tipo === "MOTOTAXI") {
         const breakdown = calculateRideFare({
@@ -87,7 +138,12 @@ export const deliveryFeesTool: IAssistantTool = {
           config: fareConfig,
         });
         tarifaFinal = breakdown.fare;
-        tiempoEstimado = Math.max(10, zone.estimatedMinutes - 5);
+        tiempoEstimado = Math.max(
+          10,
+          distanciaKm != null
+            ? estimarTiempoMinutos(distanciaKm)
+            : zone.estimatedMinutes - 5
+        );
         detalleTarifa = {
           tarifaBaseZonaBs: breakdown.baseFare,
           tarifaMinimaBs: breakdown.minimumFare,
@@ -95,31 +151,45 @@ export const deliveryFeesTool: IAssistantTool = {
           minimoAplicado: breakdown.minimumApplied,
         };
       } else {
-        tarifaFinal = zone.baseDeliveryCost;
-        tiempoEstimado = zone.estimatedMinutes;
+        const distanceSettings = await prisma.businessProfile.findFirst({
+          select: { deliveryIncludedKm: true, deliveryPerKmFee: true },
+        });
+        const includedKm = Math.max(
+          0,
+          Number(distanceSettings?.deliveryIncludedKm ?? 3)
+        );
+        const perKmFee = Math.max(
+          0,
+          Number(distanceSettings?.deliveryPerKmFee ?? 0)
+        );
+        recargoDistancia =
+          distanciaKm != null
+            ? Math.round(
+                Math.max(0, distanciaKm - includedKm) * perKmFee * 100
+              ) / 100
+            : 0;
+        tarifaFinal = Math.round((zone.baseDeliveryCost + recargoDistancia) * 100) / 100;
+        tiempoEstimado =
+          distanciaKm != null
+            ? Math.max(zone.estimatedMinutes, estimarTiempoMinutos(distanciaKm))
+            : zone.estimatedMinutes;
+
+        detalleTarifa = {
+          tarifaBaseZonaBs: zone.baseDeliveryCost,
+          kmIncluidos: includedKm,
+          recargoPorKmBs: perKmFee,
+          recargoDistanciaBs: recargoDistancia,
+        };
       }
 
-      let paymentModes: string[] = [
-        "Efectivo contra entrega",
-        "QR Simple (cualquier banco boliviano o Tigo Money)",
-      ];
-      try {
-        const business = await prisma.businessProfile.findFirst();
-        if (business?.paymentModes) {
-          const parsed = JSON.parse(business.paymentModes);
-          if (Array.isArray(parsed)) {
-            paymentModes = parsed.map((p: string) =>
-              p === "EFECTIVO"
-                ? "Efectivo contra entrega"
-                : p === "QR_BANCO"
-                ? "QR Simple Interbancario"
-                : p === "TIGO_MONEY"
-                ? "Tigo Money"
-                : p
-            );
-          }
-        }
-      } catch {}
+      const enabledMethods = await getEnabledPaymentMethods();
+      const paymentModes = enabledMethods.map((method) =>
+        method.type === "CASH"
+          ? "Efectivo contra entrega"
+          : method.accountNumber
+          ? `${method.label} (${method.accountNumber})`
+          : method.label
+      );
 
       return {
         tipoServicio: args.tipo,
@@ -130,6 +200,8 @@ export const deliveryFeesTool: IAssistantTool = {
         tarifaBs: tarifaFinal,
         tarifaFormateada: `${tarifaFinal.toFixed(2)} Bs.`,
         detalleTarifa,
+        distanciaKm,
+        recargoDistanciaBs: recargoDistancia,
         tiempoEstimadoMinutos: tiempoEstimado,
         metodosPagoPermitidos: paymentModes,
         mensajeOficial:

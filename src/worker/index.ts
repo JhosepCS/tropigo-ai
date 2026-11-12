@@ -6,7 +6,10 @@ import { getRealDataContextPrompt } from "../lib/ai/tools";
 import { buildCustomerMemoryPrompt } from "../lib/memory/customer-memory";
 import { ensureConversationSession } from "../lib/memory/conversation-summary";
 import { decodeLoyaltyQrFromImage } from "../lib/loyalty/qr-decode";
-import { buildLoyaltyCardPrompt } from "../lib/loyalty/prompt";
+import {
+  buildLoyaltyCardPrompt,
+  buildCustomerLoyaltyPrompt,
+} from "../lib/loyalty/prompt";
 import { extractLoyaltyCode } from "../lib/loyalty/code";
 import { BaileysAdapter } from "../lib/whatsapp/baileys-adapter";
 import { MediaDownloader } from "../lib/whatsapp/media-downloader";
@@ -362,13 +365,16 @@ async function processBatch(
     } catch {}
 
     const assistantConfig = await getAssistantConfig();
-    const [realDataContext, memoryContext] = await Promise.all([
+    const [realDataContext, memoryContext, loyaltyContext] = await Promise.all([
       getRealDataContextPrompt(),
       buildCustomerMemoryPrompt(customer.id),
+      buildCustomerLoyaltyPrompt(customer.id),
     ]);
     const systemPrompt = buildSystemPrompt(
       assistantConfig,
-      [realDataContext, memoryContext].filter(Boolean).join("\n\n")
+      [realDataContext, memoryContext, loyaltyContext]
+        .filter(Boolean)
+        .join("\n\n")
     );
 
     const recentMessages = await prisma.message.findMany({

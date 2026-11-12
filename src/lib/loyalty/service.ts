@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import QRCode from "qrcode";
 import { prisma } from "../prisma";
 import { normalizeLoyaltyCode } from "./code";
+import { getAppUrl } from "../app-url";
 
 export const DEFAULT_STAMPS_REQUIRED = 10;
 export const MIN_STAMPS_REQUIRED = 2;
@@ -22,6 +23,21 @@ export interface LoyaltySettings {
   currencySymbol: string;
   appUrl: string;
   countRides: boolean;
+  /** Promoción de sellos dobles vigente hasta esta fecha (ISO) o null. */
+  doubleStampsUntil: string | null;
+  doubleStampsActive: boolean;
+  /** Sellos que suma cada pedido/carrera: 1 normal, 2 en promoción. */
+  stampsPerEvent: number;
+}
+
+export type LoyaltyLevel = "BRONCE" | "PLATA" | "ORO";
+
+export interface LoyaltyHistoryItem {
+  type: string;
+  description: string | null;
+  stampsDelta: number;
+  stampsAfter: number;
+  createdAt: string;
 }
 
 export interface LoyaltySummary {
@@ -44,6 +60,15 @@ export interface LoyaltySummary {
   qrUrl: string;
   programEnabled: boolean;
   rewardDescription: string;
+  level: LoyaltyLevel;
+  levelLabel: string;
+  levelEmoji: string;
+  nextLevelAt: number | null;
+  progressPercent: number;
+  stampsPerEvent: number;
+  doubleStampsActive: boolean;
+  doubleStampsUntil: string | null;
+  recentEvents: LoyaltyHistoryItem[];
 }
 
 export interface LoyaltyDiscount {
@@ -70,13 +95,7 @@ export function normalizeStampsRequired(value: unknown): number {
   return Math.min(MAX_STAMPS_REQUIRED, Math.max(MIN_STAMPS_REQUIRED, parsed));
 }
 
-export function getAppUrl(): string {
-  const configured =
-    process.env.APP_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    "https://tropigo-ai.vercel.app";
-  return configured.replace(/\/+$/, "");
-}
+export { getAppUrl };
 
 function generateCodeCandidate(): string {
   const bytes = crypto.randomBytes(8);
@@ -135,11 +154,19 @@ export async function getLoyaltySettings(
       loyaltyRewardFreeDelivery: true,
       loyaltyRewardDescription: true,
       loyaltyCountRides: true,
+      loyaltyDoubleStampsUntil: true,
     },
   });
 
   const stampsRequired = normalizeStampsRequired(
     business?.loyaltyStampsRequired
+  );
+
+  const doubleStampsUntil =
+    business?.loyaltyDoubleStampsUntil?.toISOString() || null;
+  const doubleStampsActive = Boolean(
+    business?.loyaltyDoubleStampsUntil &&
+      business.loyaltyDoubleStampsUntil.getTime() > Date.now()
   );
 
   return {
@@ -156,14 +183,37 @@ export async function getLoyaltySettings(
     currencySymbol: business?.currencySymbol || "Bs.",
     appUrl: getAppUrl(),
     countRides: business?.loyaltyCountRides ?? true,
+    doubleStampsUntil,
+    doubleStampsActive,
+    stampsPerEvent: doubleStampsActive ? 2 : 1,
   };
+}
+
+/**
+ * Nivel de fidelidad calculado con los servicios completados (pedidos
+ * entregados + carreras finalizadas). Es informativo y no altera el premio.
+ */
+export function getLoyaltyLevel(qualifyingEvents: number): {
+  level: LoyaltyLevel;
+  label: string;
+  emoji: string;
+  nextLevelAt: number | null;
+} {
+  const total = Math.max(0, Math.floor(qualifyingEvents));
+  if (total >= 30) {
+    return { level: "ORO", label: "Oro", emoji: "🥇", nextLevelAt: null };
+  }
+  if (total >= 10) {
+    return { level: "PLATA", label: "Plata", emoji: "🥈", nextLevelAt: 30 };
+  }
+  return { level: "BRONCE", label: "Bronce", emoji: "🥉", nextLevelAt: 10 };
 }
 
 export async function getLoyaltySummary(
   customerId: string,
   db: LoyaltyDb = prisma
 ): Promise<LoyaltySummary> {
-  const [customer, completedOrders, completedRides] = await Promise.all([
+  const [customer, completedOrders, completedRides, recentEvents] = await Promise.all([
     db.customer.findUnique({
       where: { id: customerId },
       select: {
@@ -182,6 +232,18 @@ export async function getLoyaltySummary(
     db.rideTrip.count({
       where: { customerId, status: "FINALIZADO" },
     }),
+    db.loyaltyEvent.findMany({
+      where: { customerId },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: {
+        type: true,
+        description: true,
+        stampsDelta: true,
+        stampsAfter: true,
+        createdAt: true,
+      },
+    }),
   ]);
 
   if (!customer) throw new Error("Cliente no encontrado.");
@@ -194,6 +256,11 @@ export async function getLoyaltySummary(
   const rewardAvailable = settings.enabled && stamps >= settings.stampsNeeded;
   const qualifyingEvents =
     completedOrders + (settings.countRides ? completedRides : 0);
+  const levelInfo = getLoyaltyLevel(qualifyingEvents);
+  const progressPercent = Math.min(
+    100,
+    Math.round((stamps / Math.max(1, settings.stampsNeeded)) * 100)
+  );
 
   return {
     customerId: customer.id,
@@ -214,6 +281,21 @@ export async function getLoyaltySummary(
     qrUrl: `${settings.appUrl}/fidelidad/${encodeURIComponent(code)}`,
     programEnabled: settings.enabled,
     rewardDescription: settings.rewardDescription,
+    level: levelInfo.level,
+    levelLabel: levelInfo.label,
+    levelEmoji: levelInfo.emoji,
+    nextLevelAt: levelInfo.nextLevelAt,
+    progressPercent,
+    stampsPerEvent: settings.stampsPerEvent,
+    doubleStampsActive: settings.doubleStampsActive,
+    doubleStampsUntil: settings.doubleStampsUntil,
+    recentEvents: recentEvents.map((event) => ({
+      type: event.type,
+      description: event.description,
+      stampsDelta: event.stampsDelta,
+      stampsAfter: event.stampsAfter,
+      createdAt: event.createdAt.toISOString(),
+    })),
   };
 }
 
@@ -380,13 +462,14 @@ export async function awardLoyaltyOnDelivery(
   if (!customer) return;
 
   const previousStamps = customer.loyaltyStamps;
-  const newStamps = Math.min(previousStamps + 1, settings.stampsNeeded);
+  const stampsToAdd = settings.stampsPerEvent;
+  const newStamps = Math.min(previousStamps + stampsToAdd, settings.stampsNeeded);
 
   await tx.customer.update({
     where: { id: order.customerId },
     data: {
       loyaltyStamps: newStamps,
-      loyaltyTotalEarned: { increment: 1 },
+      loyaltyTotalEarned: { increment: stampsToAdd },
     },
   });
 
@@ -400,7 +483,9 @@ export async function awardLoyaltyOnDelivery(
       description:
         newStamps >= settings.stampsNeeded
           ? `¡Tarjeta completa con el pedido ${order.orderNumber}! El próximo pedido es gratis.`
-          : `Sello ganado con el pedido ${order.orderNumber}`,
+          : `Sello${stampsToAdd > 1 ? "s dobles" : ""} ganado${
+              stampsToAdd > 1 ? "s" : ""
+            } con el pedido ${order.orderNumber}`,
     },
   });
 
@@ -474,13 +559,14 @@ export async function awardLoyaltyOnRideCompletionById(
       if (!customer) return;
 
       const previousStamps = customer.loyaltyStamps;
-      const newStamps = Math.min(previousStamps + 1, settings.stampsNeeded);
+      const stampsToAdd = settings.stampsPerEvent;
+      const newStamps = Math.min(previousStamps + stampsToAdd, settings.stampsNeeded);
 
       await tx.customer.update({
         where: { id: ride.customerId },
         data: {
           loyaltyStamps: newStamps,
-          loyaltyTotalEarned: { increment: 1 },
+          loyaltyTotalEarned: { increment: stampsToAdd },
         },
       });
 
@@ -494,7 +580,9 @@ export async function awardLoyaltyOnRideCompletionById(
           description:
             newStamps >= settings.stampsNeeded
               ? `¡Tarjeta completa con la carrera ${ride.tripNumber}! El próximo pedido es gratis.`
-              : `Sello ganado con la carrera ${ride.tripNumber}`,
+              : `Sello${stampsToAdd > 1 ? "s dobles" : ""} ganado${
+                  stampsToAdd > 1 ? "s" : ""
+                } con la carrera ${ride.tripNumber}`,
         },
       });
     },
@@ -701,13 +789,25 @@ export async function getLoyaltyCardByCode(code: string) {
 
   if (!customer) return null;
 
-  const [settings, completedOrders, completedRides] = await Promise.all([
+  const [settings, completedOrders, completedRides, recentEvents] = await Promise.all([
     getLoyaltySettings(),
     prisma.order.count({
       where: { customerId: customer.id, status: "ENTREGADO" },
     }),
     prisma.rideTrip.count({
       where: { customerId: customer.id, status: "FINALIZADO" },
+    }),
+    prisma.loyaltyEvent.findMany({
+      where: { customerId: customer.id },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: {
+        type: true,
+        description: true,
+        stampsDelta: true,
+        stampsAfter: true,
+        createdAt: true,
+      },
     }),
   ]);
 
@@ -716,6 +816,7 @@ export async function getLoyaltyCardByCode(code: string) {
   const rewardAvailable = settings.enabled && stamps >= settings.stampsNeeded;
   const qualifyingEvents =
     completedOrders + (settings.countRides ? completedRides : 0);
+  const levelInfo = getLoyaltyLevel(qualifyingEvents);
 
   return {
     code: customer.loyaltyCode || normalized,
@@ -734,6 +835,20 @@ export async function getLoyaltyCardByCode(code: string) {
     countRides: settings.countRides,
     nextRewardAtNumber: qualifyingEvents + missingForReward + 1,
     memberSince: customer.createdAt,
+    level: levelInfo.level,
+    levelLabel: levelInfo.label,
+    levelEmoji: levelInfo.emoji,
+    nextLevelAt: levelInfo.nextLevelAt,
+    stampsPerEvent: settings.stampsPerEvent,
+    doubleStampsActive: settings.doubleStampsActive,
+    doubleStampsUntil: settings.doubleStampsUntil,
+    recentEvents: recentEvents.map((event) => ({
+      type: event.type,
+      description: event.description,
+      stampsDelta: event.stampsDelta,
+      stampsAfter: event.stampsAfter,
+      createdAt: event.createdAt.toISOString(),
+    })),
     settings,
   };
 }

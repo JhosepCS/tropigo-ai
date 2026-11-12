@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
 import { OrderStatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,72 @@ export function RiderOrdersClient({
   const [activeOrders, setActiveOrders] = useState<any[]>(initialOrders);
   const [historyOrders, setHistoryOrders] = useState<any[]>(completedOrders);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [gpsEnabled, setGpsEnabled] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState<"idle" | "sharing" | "error">("idle");
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [lastGpsAt, setLastGpsAt] = useState<Date | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!gpsEnabled) {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      setGpsStatus("idle");
+      return;
+    }
+
+    if (!("geolocation" in navigator)) {
+      setGpsStatus("error");
+      setGpsError("Este dispositivo no tiene GPS disponible.");
+      setGpsEnabled(false);
+      return;
+    }
+
+    setGpsStatus("sharing");
+    setGpsError(null);
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      async (position) => {
+        try {
+          const res = await fetch("/api/repartidor/location", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data?.error || "No se pudo enviar la ubicación.");
+          }
+          setLastGpsAt(new Date());
+          setGpsStatus("sharing");
+        } catch (error: any) {
+          setGpsStatus("error");
+          setGpsError(error?.message || "No se pudo enviar la ubicación.");
+        }
+      },
+      (error) => {
+        setGpsStatus("error");
+        setGpsError(
+          error.code === error.PERMISSION_DENIED
+            ? "Permiso de ubicación denegado. Actívalo en el navegador."
+            : "No se pudo obtener tu ubicación GPS."
+        );
+      },
+      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 }
+    );
+
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+  }, [gpsEnabled]);
 
   const handleUpdateStatus = async (orderId: string, newStatus: string) => {
     setUpdatingId(orderId);
@@ -85,6 +151,44 @@ export function RiderOrdersClient({
           <p className="text-[11px] text-emerald-100">Tarifa de entrega urbana</p>
           <p className="text-base font-black">5.00 Bs. / pedido</p>
         </div>
+      </div>
+
+      {/* GPS en tiempo real */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className={`rounded-xl p-2 ${gpsEnabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+            <Navigation className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="text-xs font-black text-slate-900">
+              Compartir mi ubicación GPS
+            </p>
+            <p className="text-[11px] text-slate-500">
+              {gpsEnabled
+                ? gpsStatus === "error"
+                  ? gpsError || "No se pudo compartir la ubicación."
+                  : lastGpsAt
+                  ? `Compartiendo desde ${lastGpsAt.toLocaleTimeString("es-BO")}. El cliente ve el mapa en vivo.`
+                  : "Obteniendo tu ubicación..."
+                : "Actívalo durante el turno para que el cliente siga el reparto en el mapa."}
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setGpsError(null);
+            setGpsEnabled((current) => !current);
+          }}
+          className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
+            gpsEnabled
+              ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+              : "bg-emerald-600 text-white hover:bg-emerald-700"
+          }`}
+        >
+          {gpsEnabled ? "Detener GPS" : "Activar GPS"}
+        </button>
       </div>
 
       {/* Lista de Pedidos Asignados Activos */}

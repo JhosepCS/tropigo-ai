@@ -283,6 +283,14 @@ export function OrderBoard({
                               Ref: {order.referencePoint}
                             </p>
                           )}
+                          {order.distanceKm != null && (
+                            <p className="text-[10px] text-sky-700 bg-sky-50 px-2 py-0.5 rounded">
+                              📏 {Number(order.distanceKm).toFixed(1)} km estimados
+                              {order.distanceSurcharge > 0
+                                ? ` · recargo ${Number(order.distanceSurcharge).toFixed(2)} Bs.`
+                                : ""}
+                            </p>
+                          )}
                         </div>
 
                         {/* Lista de Ítems */}
@@ -344,6 +352,24 @@ export function OrderBoard({
 
                         {/* Acciones de la Tarjeta */}
                         <div className="flex items-center gap-1.5 pt-2">
+                          <a
+                            href={`/seguimiento/${order.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Ver seguimiento con mapa"
+                            className="p-1.5 border border-[#D0D5DD] rounded-lg text-emerald-700 hover:bg-emerald-50 transition-colors"
+                          >
+                            <Navigation className="w-4 h-4" />
+                          </a>
+                          <a
+                            href={`/pagar/${order.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Abrir página de pago"
+                            className="p-1.5 border border-[#D0D5DD] rounded-lg text-purple-700 hover:bg-purple-50 transition-colors"
+                          >
+                            <QrCode className="w-4 h-4" />
+                          </a>
                           <button
                             onClick={() => setSelectedOrderForPrint(order)}
                             title="Imprimir Comanda Térmica"

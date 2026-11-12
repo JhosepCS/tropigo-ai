@@ -1,7 +1,17 @@
 import crypto from "crypto";
 import { DeliveryZone, Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
-import { calcularDistanciaLineaRectaKm } from "../geo/distance";
+import {
+  calcularDistanciaLineaRectaKm,
+  estimarDistanciaRutaKm,
+  estimarTiempoMinutos,
+  formatoDistanciaKm,
+} from "../geo/distance";
+import { getAppUrl } from "../app-url";
+import {
+  normalizePaymentMethodCode,
+  paymentMethodLabel,
+} from "../payments/types";
 import {
   awardLoyaltyOnDelivery,
   getLoyaltyDiscountForQuote,
@@ -512,7 +522,36 @@ export async function createOrderQuote(input: CreateQuoteInput, context: OrderTo
       };
     }
 
-    const deliveryFee = round2(zone.baseDeliveryCost);
+    const deliveryFeeBase = round2(zone.baseDeliveryCost);
+
+    // -----------------------------------------------------------------
+    // Distancia real estimada por ruta (GPS del cliente + comercio).
+    // El recargo por km adicional es opcional: si deliveryPerKmFee = 0,
+    // se mantiene la tarifa fija por zona sin alterar precios existentes.
+    // -----------------------------------------------------------------
+    const distanceSettings = await prisma.businessProfile.findFirst({
+      select: { deliveryIncludedKm: true, deliveryPerKmFee: true },
+    });
+    const includedKm = Math.max(0, Number(distanceSettings?.deliveryIncludedKm ?? 3));
+    const perKmFee = Math.max(0, Number(distanceSettings?.deliveryPerKmFee ?? 0));
+
+    const hasGps =
+      typeof input.latitud === "number" &&
+      typeof input.longitud === "number" &&
+      merchant.latitude != null &&
+      merchant.longitude != null;
+
+    const distanceKm = hasGps
+      ? estimarDistanciaRutaKm(
+          { latitude: merchant.latitude as number, longitude: merchant.longitude as number },
+          { latitude: input.latitud as number, longitude: input.longitud as number }
+        )
+      : null;
+
+    const extraKm = distanceKm != null ? Math.max(0, distanceKm - includedKm) : 0;
+    const distanceSurcharge = round2(extraKm * perKmFee);
+    const deliveryFee = round2(deliveryFeeBase + distanceSurcharge);
+
     const loyaltyDiscount = await getLoyaltyDiscountForQuote(
       customer.id,
       subtotal,
@@ -522,33 +561,28 @@ export async function createOrderQuote(input: CreateQuoteInput, context: OrderTo
     const totalAmount = round2(
       Math.max(0, subtotal + deliveryFee - discountAmount)
     );
-    const paymentMethod = input.metodoPago === "QR_BANCO" ? "QR_BANCO" : "EFECTIVO";
+    const paymentMethod = normalizePaymentMethodCode(input.metodoPago);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
-    let distanciaInfo: Record<string, unknown> = {
-      distanciaLineaRectaKm: null,
-      tipoCalculo: "zonificacion_territorial",
-      zonaNombre: zone.name,
-      tiempoEstimadoMinutos: zone.estimatedMinutes,
-    };
+    const etaMinutos = distanceKm != null
+      ? Math.max(zone.estimatedMinutes, estimarTiempoMinutos(distanceKm))
+      : zone.estimatedMinutes;
 
-    if (
-      typeof input.latitud === "number" &&
-      typeof input.longitud === "number" &&
-      merchant.latitude != null &&
-      merchant.longitude != null
-    ) {
-      const distance = calcularDistanciaLineaRectaKm(
-        { latitude: merchant.latitude, longitude: merchant.longitude },
-        { latitude: input.latitud, longitude: input.longitud }
-      );
-      distanciaInfo = {
-        distanciaLineaRectaKm: distance,
-        tipoCalculo: "linea_recta_gps",
-        zonaNombre: zone.name,
-        tiempoEstimadoMinutos: zone.estimatedMinutes,
-      };
-    }
+    const distanciaInfo: Record<string, unknown> = {
+      distanciaKm: distanceKm,
+      distanciaLineaRectaKm: hasGps
+        ? calcularDistanciaLineaRectaKm(
+            { latitude: merchant.latitude as number, longitude: merchant.longitude as number },
+            { latitude: input.latitud as number, longitude: input.longitud as number }
+          )
+        : null,
+      tipoCalculo: hasGps ? "ruta_estimada_gps" : "zonificacion_territorial",
+      zonaNombre: zone.name,
+      kmIncluidos: includedKm,
+      recargoPorKmBs: perKmFee,
+      recargoDistanciaBs: distanceSurcharge,
+      tiempoEstimadoMinutos: etaMinutos,
+    };
 
     const itemsListText = snapshot
       .map(
@@ -567,16 +601,22 @@ export async function createOrderQuote(input: CreateQuoteInput, context: OrderTo
       `*Detalle de productos:*\n${itemsListText}\n\n` +
       `💵 *Subtotal productos:* ${subtotal.toFixed(2)} Bs.\n` +
       `🛵 *Costo de envío:* ${deliveryFee.toFixed(2)} Bs. (${zone.name})\n` +
+      (distanceSurcharge > 0
+        ? `📏 *Recargo por distancia:* ${distanceSurcharge.toFixed(2)} Bs. (${formatoDistanciaKm(
+            distanceKm
+          )}, incluidos ${includedKm.toFixed(1)} km)\n`
+        : "") +
+      (distanceKm != null
+        ? `📏 *Distancia estimada:* ${formatoDistanciaKm(distanceKm)} por ruta\n`
+        : "") +
       (discountAmount > 0
         ? `🎁 *Premio de fidelidad:* -${discountAmount.toFixed(2)} Bs. (${loyaltyDiscount.rewardDescription})\n`
         : "") +
       `📍 *Dirección de entrega:* ${input.direccionEntrega}${
         input.referencia ? ` (Ref: ${input.referencia})` : ""
       }\n` +
-      `⏱️ *Tiempo estimado:* ~${zone.estimatedMinutes} minutos\n` +
-      `💳 *Método de pago:* ${
-        paymentMethod === "QR_BANCO" ? "QR Simple Interbancario" : "Efectivo contra entrega"
-      }\n` +
+      `⏱️ *Tiempo estimado:* ~${etaMinutos} minutos\n` +
+      `💳 *Método de pago:* ${paymentMethodLabel(paymentMethod)}\n` +
       `💰 *TOTAL A PAGAR:* *${totalAmount.toFixed(2)} Bs.*\n\n` +
       `⚠️ *¿Confirmas tu pedido por ${totalAmount.toFixed(
         2
@@ -610,6 +650,8 @@ export async function createOrderQuote(input: CreateQuoteInput, context: OrderTo
         loyaltyRewardApplied: loyaltyDiscount.applied,
         totalAmount,
         paymentMethod,
+        distanceKm,
+        distanceSurcharge,
         deliveryAddressText: input.direccionEntrega.trim(),
         referencePoint: input.referencia?.trim() || null,
         latitude: typeof input.latitud === "number" ? input.latitud : null,
@@ -641,6 +683,8 @@ export async function createOrderQuote(input: CreateQuoteInput, context: OrderTo
       })),
       subtotalBs: subtotal,
       costoEnvioBs: deliveryFee,
+      recargoDistanciaBs: distanceSurcharge,
+      distanciaKm: distanceKm,
       descuentoFidelidadBs: discountAmount,
       premioFidelidadAplicado: loyaltyDiscount.applied,
       fidelidad: loyaltyDiscount.summary
@@ -980,6 +1024,8 @@ export async function confirmAndCreateOrder(
           totalAmount,
           paymentMethod: quote.paymentMethod,
           paymentStatus: "PENDIENTE",
+          distanceKm: quote.distanceKm,
+          distanceSurcharge: quote.distanceSurcharge,
           status: "RECIBIDO",
           deliveryAddressText: quote.deliveryAddressText,
           referencePoint: quote.referencePoint,
@@ -1066,20 +1112,36 @@ export async function confirmAndCreateOrder(
 
     const order = result.order;
     const merchantName = quote.merchant.name.replace(/^\[DEMO\]\s*/i, "");
+    const appUrl = getAppUrl();
+    const urlSeguimiento = `${appUrl}/seguimiento/${order.id}`;
+    const urlPago = `${appUrl}/pagar/${order.id}`;
+    const etaMinutos =
+      order.distanceKm != null
+        ? Math.max(
+            quote.deliveryZone.estimatedMinutes,
+            estimarTiempoMinutos(order.distanceKm)
+          )
+        : quote.deliveryZone.estimatedMinutes;
+
     const mensajeConfirmacion =
       `🎉 *¡TU PEDIDO HA SIDO CONFIRMADO CON ÉXITO!*\n\n` +
       `🆔 *Número de pedido:* *${order.orderNumber}*\n` +
       `🏪 *Comercio:* ${merchantName}\n` +
       `📦 *Estado:* Recibido (enviado a cocina)\n` +
-      `💰 *Total a pagar:* *${order.totalAmount.toFixed(2)} Bs.* (${
-        order.paymentMethod === "QR_BANCO" ? "QR Simple Interbancario" : "Efectivo contra entrega"
-      })\n` +
+      `💰 *Total a pagar:* *${order.totalAmount.toFixed(2)} Bs.* (${paymentMethodLabel(
+        order.paymentMethod
+      )})\n` +
       `📍 *Destino:* ${order.deliveryAddressText}${
         order.referencePoint ? ` (Ref: ${order.referencePoint})` : ""
       }\n` +
       `🛵 *Zona:* ${quote.deliveryZone.name}\n` +
-      `⏱️ *Tiempo estimado de entrega:* ~${quote.deliveryZone.estimatedMinutes} minutos\n\n` +
-      `Puedes consultar el avance de tu entrega escribiendo:\n` +
+      (order.distanceKm != null
+        ? `📏 *Distancia estimada:* ${formatoDistanciaKm(order.distanceKm)} por ruta\n`
+        : "") +
+      `⏱️ *Tiempo estimado de entrega:* ~${etaMinutos} minutos\n\n` +
+      `🗺️ *Sigue tu pedido en el mapa:*\n${urlSeguimiento}\n\n` +
+      `💳 *Paga con QR, Altoke, Yape, ZAS o efectivo:*\n${urlPago}\n\n` +
+      `También puedes escribir:\n` +
       `👉 *"¿Cómo va mi pedido ${order.orderNumber}?"*`;
 
     return {
@@ -1090,11 +1152,15 @@ export async function confirmAndCreateOrder(
       comercio: merchantName,
       subtotalBs: order.subtotal,
       costoEnvioBs: order.deliveryFee,
+      recargoDistanciaBs: order.distanceSurcharge,
+      distanciaKm: order.distanceKm,
       descuentoFidelidadBs: order.discountAmount,
       premioFidelidadAplicado: order.loyaltyRewardApplied,
       totalBs: order.totalAmount,
-      tiempoEstimadoMinutos: quote.deliveryZone.estimatedMinutes,
+      tiempoEstimadoMinutos: etaMinutos,
       zonaNombre: quote.deliveryZone.name,
+      urlSeguimiento,
+      urlPago,
       mensajeConfirmacion: result.duplicate
         ? `Tu pedido ${order.orderNumber} ya estaba registrado. No se creó un duplicado.`
         : mensajeConfirmacion,
@@ -1161,6 +1227,9 @@ export async function getOrderForCustomer(code: string, context: OrderToolContex
 
     const merchantName = order.merchant?.name.replace(/^\[DEMO\]\s*/i, "") || "Comercio de Ivirgarzama";
     const riderName = order.assignedRider?.name.replace(/^\[DEMO\]\s*/i, "") || "Por asignar";
+    const appUrl = getAppUrl();
+    const urlSeguimiento = `${appUrl}/seguimiento/${order.id}`;
+    const urlPago = `${appUrl}/pagar/${order.id}`;
 
     return {
       tipo: "DELIVERY",
@@ -1173,8 +1242,12 @@ export async function getOrderForCustomer(code: string, context: OrderToolContex
       metodoPago: order.paymentMethod,
       estadoPago: order.paymentStatus,
       direccionEntrega: order.deliveryAddressText,
+      distanciaKm: order.distanceKm,
+      recargoDistanciaBs: order.distanceSurcharge,
       repartidor: riderName,
       telefonoRepartidor: order.assignedRider?.phone || null,
+      urlSeguimiento,
+      urlPago,
       creadoEn: order.createdAt.toISOString(),
       historial: order.statusHistory.map((entry) => ({
         estado: entry.toStatus,
@@ -1183,7 +1256,8 @@ export async function getOrderForCustomer(code: string, context: OrderToolContex
       })),
       mensaje: `📦 Tu pedido ${order.orderNumber} (${merchantName}) se encuentra: *${
         statusTranslations[order.status] || order.status
-      }*. Total: ${order.totalAmount.toFixed(2)} Bs. Repartidor: ${riderName}.`,
+      }*. Total: ${order.totalAmount.toFixed(2)} Bs. Repartidor: ${riderName}. ` +
+        `🗺️ Seguimiento: ${urlSeguimiento} · 💳 Pago: ${urlPago}`,
     };
   } catch (error: any) {
     console.error("[OrderService:getOrderForCustomer] Error:", error);

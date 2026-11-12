@@ -36,6 +36,16 @@ con QR personal.
     tarjeta al mensaje.
 - Tarifas de mototaxi configurables desde **Ajustes** (mínimo absoluto 10 Bs.).
 - Delivery por zonas configurable desde **Zonas**.
+- Delivery por distancia real: si el cliente comparte GPS, se estima la ruta
+  (Haversine × 1.3), se muestra la distancia/ETA y se puede aplicar un recargo
+  por km adicional (`deliveryIncludedKm`, `deliveryPerKmFee`; 0 = sin recargo).
+- Pagos digitales configurables desde **Ajustes → Pagos**: efectivo, QR Simple,
+  Tigo Money, Altoke, Yape, ZAS y transferencia. El cliente paga en
+  `/pagar/[id]`, reporta el pago y un operador lo verifica.
+- Seguimiento en vivo en `/seguimiento/[id]` con mapa de Google sin API key.
+  El repartidor activa “Compartir mi ubicación GPS” en su panel.
+- Fidelidad mejorada: sellos dobles temporales, niveles Bronce/Plata/Oro,
+  historial reciente y contexto proactivo para la IA.
 - Webhook de Meta verificado. El canal está en `DISCONNECTED` hasta cargar las
   credenciales oficiales en **Canales**.
 - Worker de Render opcional para el modo QR no oficial.
@@ -72,6 +82,11 @@ src/lib/ai/agent.ts                             Orquestador de herramientas
 src/lib/ai/tools/index.ts                       Registro de herramientas + contexto vivo
 src/lib/ai/tools/loyalty-tool.ts                consultar_mi_fidelidad
 src/lib/ai/tools/loyalty-code-tool.ts           consultar_fidelidad_por_codigo
+src/lib/ai/tools/payments-tool.ts               consultar_metodos_pago
+src/lib/payments/types.ts                       Métodos de pago y normalización
+src/lib/payments/service.ts                     Lectura/guardado de métodos
+src/lib/tracking/service.ts                     Datos de seguimiento y mapa
+src/lib/app-url.ts                              URL pública para enlaces
 src/lib/ai/config-manager.ts                    System prompt
 src/lib/loyalty/service.ts                      Sellos, premios, QR, canje
 src/lib/loyalty/code.ts                         Normalización TGO-XXXXXXXX
@@ -80,9 +95,14 @@ src/lib/loyalty/prompt.ts                       Contexto de tarjeta para la IA
 src/lib/orders/order-service.ts                 Cotización, pedido y premio
 src/lib/rides/fare.ts                           Tarifas de mototaxi
 src/worker/index.ts                             Worker Baileys opcional
-src/app/dashboard/ajustes/                      Tarifas, fidelidad y empresa
+src/app/dashboard/ajustes/                      Tarifas, pagos, distancia y fidelidad
 src/app/dashboard/fidelidad/                    Tarjetas, QR, sellos y canje
 src/app/fidelidad/[code]/page.tsx               Tarjeta pública
+src/app/pagar/[id]/                             Página pública de pago con QR
+src/app/seguimiento/[id]/                       Mapa de seguimiento en vivo
+src/app/api/public/payments/report/             Reporte de pago del cliente
+src/app/api/repartidor/location/                GPS autenticado del repartidor
+src/app/api/public/tracking/[id]/               API de seguimiento privado
 prisma/schema.prisma                            Modelo de datos
 prisma/migrations/                              Migraciones (baseline + aditivas)
 docs/CONFIGURAR-META.md                         Guía de Meta
@@ -102,6 +122,11 @@ docs/CONFIGURAR-META.md                         Guía de Meta
   los sellos (`restoreLoyaltyOnCancellation`).
 - El QR codifica `https://TU_DOMINIO/fidelidad/TGO-XXXXXXXX`.
 - El nombre en la tarjeta pública y en la consulta por código va enmascarado.
+- Si `loyaltyDoubleStampsUntil` está vigente, cada pedido/carrera suma 2 sellos
+  (`stampsPerEvent = 2`), con tope en `stampsNeeded`.
+- Niveles informativos: Bronce (0-9 servicios), Plata (10-29), Oro (30+).
+- `getLoyaltySummary` y `getLoyaltyCardByCode` devuelven nivel, progreso,
+  sellos dobles e historial reciente; la IA recibe contexto proactivo.
 
 ## 6. WhatsApp oficial (Meta)
 
