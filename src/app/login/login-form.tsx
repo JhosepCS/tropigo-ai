@@ -37,20 +37,30 @@ export function LoginForm() {
         throw new Error(data.error || "Credenciales incorrectas o usuario no encontrado");
       }
 
+      // Guardar token en localStorage y cookie de respaldo cliente
+      if (data.token) {
+        try {
+          localStorage.setItem("tropigo_token", data.token);
+          document.cookie = `tropigo_session=${data.token}; path=/; max-age=604800; SameSite=Lax`;
+          document.cookie = `atiende_session=${data.token}; path=/; max-age=604800; SameSite=Lax`;
+        } catch {}
+      }
+
       const userRole = data.user?.role;
+      let targetUrl = "/dashboard";
 
       if (fromParam) {
-        router.push(fromParam);
+        targetUrl = fromParam;
       } else if (userRole === "RIDER" || userRole === "MOTOTAXISTA") {
-        router.push("/repartidor");
+        targetUrl = "/repartidor";
       } else if (userRole === "MERCHANT_OWNER") {
-        router.push("/comercio");
+        targetUrl = "/comercio";
       } else if (userRole === "CUSTOMER") {
-        router.push("/cuenta");
-      } else {
-        router.push("/dashboard");
+        targetUrl = "/cuenta";
       }
-      router.refresh();
+
+      // Usar window.location.href para forzar el envío de cookies limpias
+      window.location.href = targetUrl;
     } catch (err: any) {
       setError(err.message);
     } finally {

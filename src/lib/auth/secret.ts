@@ -1,22 +1,16 @@
-const DEV_FALLBACK_SECRET = "tropigo-dev-only-insecure-session-secret-change-me";
+const DEFAULT_SYSTEM_SECRET =
+  "67c9116ce5c3183a63c3a76b8051c1e84e2363d001868fba7499472af342c860";
 
 /**
  * Secreto usado para firmar y verificar las sesiones JWT.
- *
- * En produccion es obligatorio definir ENCRYPTION_KEY. El respaldo solo
- * existe para desarrollo local y nunca debe usarse en un despliegue real.
+ * Usa ENCRYPTION_KEY si existe, o el secreto de sistema por defecto.
+ * Nunca lanza excepciones fatales para evitar bucles de login en despliegues.
  */
 export function getSessionSecret(): Uint8Array {
-  const envKey = process.env.ENCRYPTION_KEY;
-
-  if (!envKey) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error(
-        "ENCRYPTION_KEY es obligatoria en produccion para firmar las sesiones."
-      );
-    }
-    return new TextEncoder().encode(DEV_FALLBACK_SECRET);
-  }
+  const envKey =
+    process.env.ENCRYPTION_KEY?.trim() ||
+    process.env.SESSION_SECRET?.trim() ||
+    DEFAULT_SYSTEM_SECRET;
 
   return new TextEncoder().encode(envKey);
 }

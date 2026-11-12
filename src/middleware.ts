@@ -43,9 +43,18 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const token =
+  let token =
     request.cookies.get("tropigo_session")?.value ||
     request.cookies.get("atiende_session")?.value;
+
+  if (!token) {
+    const authHeader = request.headers.get("authorization");
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.substring(7).trim();
+    } else {
+      token = request.headers.get("x-tropigo-token") || undefined;
+    }
+  }
 
   if (!token) {
     const loginUrl = new URL("/login", request.url);

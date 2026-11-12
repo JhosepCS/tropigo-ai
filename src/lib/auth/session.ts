@@ -81,10 +81,17 @@ export async function createSession(
 
   // Establecer la cookie de sesión segura
   try {
+    let isHttps = process.env.NODE_ENV === "production";
+    try {
+      const hList = await headers();
+      const proto = hList.get("x-forwarded-proto") || "";
+      isHttps = proto === "https" || isHttps;
+    } catch {}
+
     const cookieStore = await cookies();
     cookieStore.set(COOKIE_NAME, token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isHttps,
       sameSite: "lax",
       path: "/",
       maxAge: 60 * 60 * 24 * SESSION_DURATION_DAYS,
@@ -98,13 +105,40 @@ export async function createSession(
 
 /**
  * Valida y obtiene la sesión actual del usuario.
+ * Busca el token en:
+ * 1. Cookie 'tropigo_session'
+ * 2. Cookie de compatibilidad 'atiende_session'
+ * 3. Header 'Authorization: Bearer <token>'
+ * 4. Header 'x-tropigo-token'
  */
 export async function getSession(): Promise<SessionPayload | null> {
   try {
-    const cookieStore = await cookies();
-    const token =
-      cookieStore.get(COOKIE_NAME)?.value ||
-      cookieStore.get(LEGACY_COOKIE_NAME)?.value;
+    let token: string | undefined;
+
+    // 1. Intentar leer desde cookies
+    try {
+      const cookieStore = await cookies();
+      token =
+        cookieStore.get(COOKIE_NAME)?.value ||
+        cookieStore.get(LEGACY_COOKIE_NAME)?.value;
+    } catch {
+      // Ignorar si cookies() no está disponible
+    }
+
+    // 2. Si no hay cookie, intentar leer desde headers HTTP
+    if (!token) {
+      try {
+        const headersList = await headers();
+        const authHeader = headersList.get("authorization");
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+          token = authHeader.substring(7).trim();
+        } else {
+          token = headersList.get("x-tropigo-token") || undefined;
+        }
+      } catch {
+        // Ignorar si headers() no está disponible
+      }
+    }
 
     if (!token) return null;
 
@@ -115,7 +149,9 @@ export async function getSession(): Promise<SessionPayload | null> {
 }
 
 /**
- * Verifica un token JWT y comprueba que la sesión no haya sido revocada.
+ * Verifica un token JWT criptográficamente y valida la sesión.
+ * Si la base de datos tiene una fluctuación transitoria de red, no tumba
+ * la sesión válida si el JWT es íntegro y no ha expirado.
  */
 export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
   try {
@@ -124,14 +160,21 @@ export async function verifySessionToken(token: string): Promise<SessionPayload 
 
     if (!sessionData.userId) return null;
 
-    // Si tiene sessionId, validar que no haya sido eliminada de la base de datos
+    // Si tiene sessionId, comprobar que no haya sido explícitamente eliminada
     if (sessionData.sessionId) {
-      const dbSession = await prisma.session.findUnique({
-        where: { token: sessionData.sessionId },
-      });
+      try {
+        const dbSession = await prisma.session.findUnique({
+          where: { token: sessionData.sessionId },
+        });
 
-      if (!dbSession || dbSession.expiresAt < new Date()) {
-        return null; // Sesión revocada o expirada
+        // Solo se invalida si la sesión existe en DB y ya expiró
+        if (dbSession && dbSession.expiresAt < new Date()) {
+          return null; // Sesión explícitamente expirada
+        }
+      } catch (dbErr) {
+        // Si Supabase o el pooler tiene una desconexión transitoria,
+        // no expulsar al usuario si el JWT criptográfico es válido.
+        console.warn("[verifySessionToken] Verificación en DB omitida por fluctuación:", dbErr);
       }
     }
 

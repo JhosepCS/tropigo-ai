@@ -80,7 +80,8 @@ export async function POST(req: NextRequest) {
 
     // Setear cookie directamente en el header de respuesta para garantizar
     // que Vercel (Edge) y todos los navegadores la reciban correctamente.
-    const isProduction = process.env.NODE_ENV === "production";
+    const proto = req.headers.get("x-forwarded-proto") || "";
+    const isHttps = proto === "https" || req.url.startsWith("https://");
     const maxAge = 60 * 60 * 24 * SESSION_DURATION_DAYS;
 
     const response = NextResponse.json({
@@ -94,9 +95,28 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Cookie principal HttpOnly
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
-      secure: isProduction,
+      secure: isHttps,
+      sameSite: "lax",
+      path: "/",
+      maxAge,
+    });
+
+    // Cookie secundaria de compatibilidad
+    response.cookies.set("atiende_session", token, {
+      httpOnly: true,
+      secure: isHttps,
+      sameSite: "lax",
+      path: "/",
+      maxAge,
+    });
+
+    // Cookie informativa para el cliente JS
+    response.cookies.set("tropigo_logged_in", "true", {
+      httpOnly: false,
+      secure: isHttps,
       sameSite: "lax",
       path: "/",
       maxAge,
