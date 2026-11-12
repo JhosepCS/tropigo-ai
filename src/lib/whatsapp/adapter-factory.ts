@@ -35,6 +35,9 @@ export class WhatsAppAdapterFactory {
       },
       async markAsRead() {},
       async sendPresenceTyping() {},
+      async sendImage(to, _imageUrl, _caption) {
+        return fallbackSend(to, "[imagen]");
+      },
     };
   }
 }

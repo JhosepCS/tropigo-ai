@@ -96,7 +96,19 @@ export function AjustesClient({
     Number(initialBusiness?.deliveryIncludedKm ?? 3)
   );
   const [deliveryPerKmFee, setDeliveryPerKmFee] = useState(
-    Number(initialBusiness?.deliveryPerKmFee ?? 0)
+    Number(initialBusiness?.deliveryPerKmFee ?? 2)
+  );
+  const [deliveryCenterName, setDeliveryCenterName] = useState(
+    initialBusiness?.deliveryCenterName || "Plaza Principal de Ivirgarzama"
+  );
+  const [deliveryCenterLatitude, setDeliveryCenterLatitude] = useState(
+    Number(initialBusiness?.deliveryCenterLatitude ?? -17.0315)
+  );
+  const [deliveryCenterLongitude, setDeliveryCenterLongitude] = useState(
+    Number(initialBusiness?.deliveryCenterLongitude ?? -64.8615)
+  );
+  const [autoAssignRiders, setAutoAssignRiders] = useState(
+    initialBusiness?.autoAssignRiders ?? true
   );
 
   // 1.4 Métodos de pago (Altoke, Yape, ZAS, QR Simple, Tigo Money, etc.)
@@ -196,6 +208,10 @@ export function AjustesClient({
           loyaltyDoubleStampsUntil: loyaltyDoubleStampsUntil || null,
           deliveryIncludedKm,
           deliveryPerKmFee,
+          deliveryCenterName,
+          deliveryCenterLatitude,
+          deliveryCenterLongitude,
+          autoAssignRiders,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -493,15 +509,62 @@ export function AjustesClient({
                   Delivery por distancia real
                 </h3>
                 <p className="text-[11px] text-[#667085]">
-                  Si el cliente comparte su ubicación GPS, TropiGO estima la
-                  distancia por ruta desde el comercio y puede cobrar un recargo
-                  por km adicional. Con recargo en 0 se mantiene la tarifa fija
-                  por zona.
+                  El delivery se cobra por la zona del cliente más un recargo
+                  por km desde la Plaza Principal de Ivirgarzama: a mayor
+                  distancia, mayor cobro. Si el cliente comparte su ubicación
+                  GPS, TropiGO calcula la distancia por ruta.
                 </p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="font-medium text-[#344054]">
+                  Nombre del centro de reparto
+                </label>
+                <input
+                  type="text"
+                  value={deliveryCenterName}
+                  onChange={(e) => setDeliveryCenterName(e.target.value)}
+                  className="w-full bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-3 py-2 text-[#101828]"
+                  placeholder="Plaza Principal de Ivirgarzama"
+                />
+                <p className="text-[10px] text-[#667085]">
+                  Referencia visible para los clientes al explicar el cobro.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-medium text-[#344054]">
+                  Coordenadas del centro (latitud, longitud)
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={deliveryCenterLatitude}
+                    onChange={(e) =>
+                      setDeliveryCenterLatitude(Number(e.target.value) || 0)
+                    }
+                    className="w-full bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-3 py-2 text-[#101828]"
+                    placeholder="-17.0315"
+                  />
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={deliveryCenterLongitude}
+                    onChange={(e) =>
+                      setDeliveryCenterLongitude(Number(e.target.value) || 0)
+                    }
+                    className="w-full bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-3 py-2 text-[#101828]"
+                    placeholder="-64.8615"
+                  />
+                </div>
+                <p className="text-[10px] text-[#667085]">
+                  Por defecto: Plaza Principal de Ivirgarzama.
+                </p>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="font-medium text-[#344054]">
                   Kilómetros incluidos en la tarifa de zona
@@ -518,7 +581,7 @@ export function AjustesClient({
                   className="w-full bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-3 py-2 text-[#101828]"
                 />
                 <p className="text-[10px] text-[#667085]">
-                  Ejemplo: 3 km incluidos. Solo se cobra el excedente.
+                  Ejemplo: 2 km incluidos. Solo se cobra el excedente.
                 </p>
               </div>
 
@@ -542,6 +605,24 @@ export function AjustesClient({
                 </p>
               </div>
             </div>
+
+            <label className="flex items-start gap-3 rounded-xl border border-[#EAECF0] bg-[#F9FAFB] px-3 py-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoAssignRiders}
+                onChange={(e) => setAutoAssignRiders(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-emerald-600"
+              />
+              <span>
+                <span className="block font-semibold text-[#344054]">
+                  Asignar repartidor automáticamente al estar LISTO_RECOJO
+                </span>
+                <span className="block text-[10px] text-[#667085]">
+                  Se elige el rider activo y disponible con menos entregas. Si
+                  no hay ninguno, el pedido queda listo para asignación manual.
+                </span>
+              </span>
+            </label>
 
             <div className="rounded-xl bg-sky-50 border border-sky-200 px-3 py-2 text-[11px] text-sky-800">
               La distancia se muestra siempre como <b>estimada por ruta</b>. Si no

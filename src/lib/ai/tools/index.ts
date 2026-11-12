@@ -15,6 +15,8 @@ import { handoffTool } from "./handoff-tool";
 import { loyaltyTool } from "./loyalty-tool";
 import { loyaltyCodeTool } from "./loyalty-code-tool";
 import { paymentMethodsTool } from "./payments-tool";
+import { paymentStatusTool } from "./payment-status-tool";
+import { locationRequestTool } from "./location-request-tool";
 import { OrderToolContext } from "../../orders/order-service";
 
 export * from "./types";
@@ -33,6 +35,8 @@ export * from "./handoff-tool";
 export * from "./loyalty-tool";
 export * from "./loyalty-code-tool";
 export * from "./payments-tool";
+export * from "./payment-status-tool";
+export * from "./location-request-tool";
 
 /**
  * Catálogo modular completo de las herramientas internas de TropiGO
@@ -53,6 +57,8 @@ export const TROPIGO_TOOLS: IAssistantTool[] = [
   loyaltyTool,
   loyaltyCodeTool,
   paymentMethodsTool,
+  paymentStatusTool,
+  locationRequestTool,
 ];
 
 /**
@@ -230,6 +236,18 @@ ${cleanZones || `Tarifa base urbana: 5.00 Bs. delivery, ${minRideFare.toFixed(
       2
     )} Bs. mototaxi (mínimo oficial).`}
 
+[CENTRO DE DISTANCIA PARA DELIVERY]
+Centro oficial: ${
+      business?.deliveryCenterName || "Plaza Principal de Ivirgarzama"
+    } (lat ${Number(business?.deliveryCenterLatitude ?? -17.0315).toFixed(
+      4
+    )}, lng ${Number(business?.deliveryCenterLongitude ?? -64.8615).toFixed(4)}).
+Km incluidos en la tarifa de zona: ${Number(
+      business?.deliveryIncludedKm ?? 2
+    ).toFixed(1)}. Recargo por km adicional: ${Number(
+      business?.deliveryPerKmFee ?? 2
+    ).toFixed(2)} Bs. El delivery se cobra por zona + distancia desde la Plaza Principal: a mayor distancia, mayor recargo. Si no hay GPS ni zona, no inventes la distancia.
+
 [TARIFAS DE CARRERA]
 Tarifa mínima oficial: ${minRideFare.toFixed(2)} Bs. Recargo Torito/trimóvil: ${toritoSurcharge.toFixed(
       2
@@ -240,7 +258,7 @@ ${loyaltyBlock}
 
 REGLA DE INTEGRIDAD ESTRICTA Y PROTOCOLO DE PEDIDOS:
 1. NUNCA inventes productos, precios, comercios, zonas ni tarifas. Usa exclusivamente lo devuelto por las herramientas y los datos oficiales de arriba.
-2. NUNCA inventes distancias de recorrido por carretera. Si hay GPS, solo puedes informar la distancia en línea recta calculada; la tarifa se rige por la zona configurada.
+2. NUNCA inventes distancias ni tarifas. El delivery se cobra por la zona configurada más el recargo por distancia desde la Plaza Principal. Si el cliente comparte GPS, pásalo a 'preparar_resumen_pedido' o 'cotizar_tarifa'; si no hay GPS, usa la zona/barrio y no inventes kilómetros.
 3. FLUJO DE PEDIDOS DE DELIVERY (OBLIGATORIO PASO A PASO):
    a) El canal ya identifica al cliente por su WhatsApp. No le pidas teléfono ni nombre si ya están en el contexto.
    b) Consulta productos/menús con 'consultar_catalogo' o 'consultar_precios_disponibilidad'.
@@ -255,6 +273,9 @@ REGLA DE INTEGRIDAD ESTRICTA Y PROTOCOLO DE PEDIDOS:
 4. DUPLICADOS: 'registrar_pedido' es idempotente. Si la cotización ya fue consumida, devuelve el pedido existente; no crees otra orden ni cambies el número.
 5. ESTADOS: el cliente solo consulta. Los cambios de estado los realiza el CRM/operador o el repartidor asignado; no prometas cambios de estado que no hayan sido registrados.
 6. FIDELIDAD: si el cliente pregunta por sus sellos, su premio o su QR personal, usa 'consultar_mi_fidelidad'. Si envía una foto de su QR/tarjeta o escribe un código TGO-XXXXXXXX, usa 'consultar_fidelidad_por_codigo' o los datos del bloque [TARJETA DE FIDELIDAD DETECTADA]. Explica siempre: sellos actuales, sellos faltantes, si el premio está disponible y en qué número de pedido/carrera se activa. No inventes sellos ni premios. Cuando 'preparar_resumen_pedido' devuelva premioFidelidadAplicado=true, el descuento ya está incluido en el total del resumen; no lo sumes ni lo dupliques.
+7. UBICACIÓN: si el cliente pide delivery y no hay GPS ni barrio claro, usa 'solicitar_ubicacion' para enviar el botón nativo de ubicación. Si ya compartió ubicación, el sistema la guarda en su perfil y la reutiliza; no se la pidas otra vez salvo que indique otra dirección.
+8. PAGOS Y COMPROBANTES: si el cliente envía una foto de un comprobante, el sistema la analiza y registra el pago (verificado o pendiente). Usa 'consultar_mis_pagos' para responder por el estado exacto. Nunca afirmes que un pago está verificado si el bloque [COMPROBANTE DE PAGO PROCESADO] no dice PAGO VERIFICADO. El QR personal del repartidor aparece en el enlace /pagar del pedido cuando hay rider asignado.
+9. RIDERS: no asignes repartidores manualmente. El sistema asigna automáticamente al pasar el pedido a LISTO_RECOJO si hay un rider disponible. Puedes informar el nombre del repartidor cuando 'consultar_estado_pedido' lo devuelva.
 =================================================================
 `.trim();
   } catch (e: any) {

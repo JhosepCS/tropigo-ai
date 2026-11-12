@@ -186,6 +186,21 @@ export class MetaCloudApiAdapter implements IWhatsAppProvider {
     return Promise.resolve();
   }
 
+  async sendImage(to: string, imageUrl: string, caption?: string): Promise<string> {
+    const recipient = this.cleanPhone(to);
+    const response = await this.request("messages", {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: recipient,
+      type: "image",
+      image: {
+        link: imageUrl,
+        ...(caption ? { caption } : {}),
+      },
+    });
+    return response.messages?.[0]?.id || "meta_sent";
+  }
+
   /**
    * Valida la firma criptográfica HMAC-SHA256 del Webhook de Meta
    */

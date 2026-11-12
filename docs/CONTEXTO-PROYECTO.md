@@ -30,8 +30,23 @@ para evolucionar a una app tipo Yango/PedidosYa en el Trópico de Cochabamba.
   - lectura de QR desde fotos con `jsqr` + `sharp`;
   - canje automático en la cotización y canje manual desde el CRM.
 - Tarifas de mototaxi configurables (mínimo 10 Bs.) y recargo de torito.
-- Delivery por distancia real: distancia estimada por ruta, ETA y recargo
-  opcional por km adicional.
+- Delivery por zona + distancia desde la **Plaza Principal de Ivirgarzama**:
+  la tarifa de la zona se suma a un recargo por km adicional (2 km incluidos
+  y 2 Bs/km por defecto, configurable). Si el cliente comparte GPS normal o en
+  tiempo real, se estima la ruta y el ETA; la última ubicación queda guardada
+  en su perfil para no pedirla de nuevo.
+- Comprobantes de pago por foto: Gemini Vision extrae monto, billetera,
+  referencia y titular. El pago se verifica automáticamente solo si el monto y
+  el titular/cuenta coinciden; en caso contrario queda `PENDIENTE` para que un
+  operador lo revise.
+- QR personal de cobro del repartidor: se carga en **Repartidores** y aparece
+  en `/pagar/[id]` cuando el pedido tiene rider asignado. El cliente puede
+  pagar por cualquier billetera y enviar la foto del comprobante.
+- Asignación automática de repartidor al pasar un pedido a `LISTO_RECOJO`
+  (activable en Ajustes); elige el rider activo y disponible con menos
+  entregas. Si no hay ninguno, el pedido queda para asignación manual.
+- Herramientas IA nuevas: `consultar_mis_pagos` y `solicitar_ubicacion`
+  (botón nativo de ubicación de WhatsApp).
 - Pagos digitales configurables: efectivo, QR Simple, Tigo Money, Altoke, Yape,
   ZAS y transferencia. Página pública `/pagar/[id]` y reporte de pago.
 - Seguimiento en vivo `/seguimiento/[id]` con mapa de Google sin API key y GPS
@@ -65,24 +80,35 @@ para evolucionar a una app tipo Yango/PedidosYa en el Trópico de Cochabamba.
 7. El backup completo va cifrado con contraseña. El código sin secretos puede
    compartirse por separado.
 8. Google Maps se integra con iframe embed sin API key para evitar costos.
-9. El recargo por distancia es opcional (`deliveryPerKmFee = 0` por defecto)
-   para no romper las tarifas fijas por zona.
-10. Los pagos digitales se verifican manualmente desde el CRM; el cliente solo
-    reporta el pago con su número de transacción.
+9. El delivery se cobra por zona + distancia desde la Plaza Principal. Por
+   defecto: 2 km incluidos y 2 Bs/km adicional. Se configura desde Ajustes; el
+   centro (nombre y coordenadas) también es editable.
+10. Los pagos digitales se verifican automáticamente solo si el comprobante
+    coincide en monto y titular/cuenta; el resto queda pendiente para revisión
+    manual desde el CRM. No se integran APIs de billeteras.
+11. El QR personal del repartidor se muestra en el enlace de pago del pedido;
+    el cliente puede pagar por cualquier billetera y enviar la foto del
+    comprobante por WhatsApp.
+12. La asignación de riders es automática al pasar a `LISTO_RECOJO` si
+    `autoAssignRiders` está activo; se mantiene la asignación manual como
+    respaldo.
 
 ## Estructura de datos importante
 
 - `BusinessProfile`: nombre, teléfono, tarifas, fidelidad, `loyaltyCountRides`,
   `loyaltyDoubleStampsUntil`, `paymentMethodsJson`, `deliveryIncludedKm`,
-  `deliveryPerKmFee`.
+  `deliveryPerKmFee`, `deliveryCenterName`, `deliveryCenterLatitude`,
+  `deliveryCenterLongitude`, `autoAssignRiders`.
 - `Customer`: teléfono, nombre, `loyaltyCode`, `loyaltyStamps`,
-  `loyaltyTotalEarned`, `loyaltyRewardsRedeemed`, `totalRides`.
+  `loyaltyTotalEarned`, `loyaltyRewardsRedeemed`, `totalRides`,
+  `savedLatitude`, `savedLongitude`, `lastLocationLabel`.
 - `Order`: pedido, estado (`ENTREGADO`), `loyaltyRewardApplied`,
   `loyaltyStampsAwarded`, `distanceKm`, `distanceSurcharge`.
 - `OrderQuote`: cotización, `distanceKm`, `distanceSurcharge`.
-- `Rider`: `currentLatitude`, `currentLongitude`, `lastLocationAt`.
-- `PaymentRecord`: `methodId`, `reference`, `reportedByCustomer`,
-  `verificationStatus`.
+- `Rider`: `currentLatitude`, `currentLongitude`, `lastLocationAt`,
+  `paymentQrJson` (QR personal de cobro).
+- `PaymentRecord`: `methodId` (incluye `rider-qr`), `reference`,
+  `reportedByCustomer`, `verificationStatus`, `receiptAnalysisJson`.
 - `RideTrip`: carrera, estado (`FINALIZADO`), `loyaltyStampsAwarded`.
 - `LoyaltyEvent`: historial de sellos, reservas, canjes y restauraciones.
   Tiene `orderId` y `rideId` para idempotencia.
@@ -103,13 +129,16 @@ para evolucionar a una app tipo Yango/PedidosYa en el Trópico de Cochabamba.
 ## Configuración desde el panel
 
 - **Ajustes → Datos Generales & Empresa:** tarifa mínima de mototaxi, tarifa
-  base, recargo torito, delivery por distancia (km incluidos y recargo por km),
-  fidelidad (activo, sellos requeridos, texto del premio, envío gratis, contar
-  carreras, sellos dobles) y métodos de pago con QR/datos de cuenta.
+  base, recargo torito, delivery por distancia (centro de reparto, km incluidos
+  y recargo por km), asignación automática de riders, fidelidad (activo, sellos
+  requeridos, texto del premio, envío gratis, contar carreras, sellos dobles) y
+  métodos de pago con QR/datos de cuenta.
 - **Zonas:** tarifas de delivery y mototaxi por zona.
 - **Canales:** credenciales de Meta Cloud API y tarjeta QR de Baileys.
 - **Fidelidad:** lista de clientes, tarjeta, QR, nivel, historial, agregar sello
   y canjear premio.
+- **Repartidores:** QR personal de cobro por rider (billetera, titular, número,
+  imagen del QR) y estado de disponibilidad.
 - **Repartidor:** pedidos asignados, mapa de Google y botón para compartir GPS.
 
 ## Producción
@@ -128,9 +157,13 @@ para evolucionar a una app tipo Yango/PedidosYa en el Trópico de Cochabamba.
 3. Comprar el chip nuevo y migrar el `Phone Number ID`.
 4. Opcional: crear el worker de Render para el modo QR no oficial.
 5. Probar en producción: login, fidelidad, QR, lectura de QR por WhatsApp,
-   consulta por código, SSE protegido, tarjeta pública, pagos y seguimiento.
-6. Cargar los QR reales de Altoke, Yape, ZAS, Tigo Money y bancos en Ajustes.
-7. Evolucionar a la app final: notificaciones push, multi-ciudad y más
+   consulta por código, SSE protegido, tarjeta pública, pagos, comprobantes,
+   QR del rider y seguimiento.
+6. Cargar los QR reales de Altoke, Yape, ZAS, Tigo Money y bancos en Ajustes, y
+   el QR personal de cobro de cada rider en **Repartidores**.
+7. Confirmar con el negocio la tarifa exacta por km (hoy 2 km incluidos y
+   2 Bs/km) y las coordenadas reales de la Plaza Principal.
+8. Evolucionar a la app final: notificaciones push, multi-ciudad y más
    integraciones de pago.
 
 ## Problemas conocidos y cuidados
@@ -138,6 +171,15 @@ para evolucionar a una app tipo Yango/PedidosYa en el Trópico de Cochabamba.
 - El baseline `prisma/migrations/20261110000000_init` contiene bytes nulos y
   falla en Prisma Dev local; en Supabase ya está aplicado. No recrear la base
   desde cero sin revisar ese archivo.
+- Las migraciones `20261112150000_customer_ai_distance_payments` y
+  `20261112170000_fix_delivery_center_defaults` ya están aplicadas en Supabase.
+  No volver a ejecutarlas a mano.
+- La verificación automática de comprobantes es conservadora: exige monto y
+  titular/cuenta coincidentes. Si el cliente paga desde una cuenta de un
+  tercero, el pago quedará pendiente para revisión manual.
+- Las ubicaciones en tiempo real de WhatsApp llegan como varios mensajes
+  seguidos; el webhook guarda todas, pero responde solo a la primera de una
+  ráfaga de 90 segundos para no repetir mensajes.
 - No ejecutar `prisma migrate reset` ni `npm run db:seed` sobre datos reales.
 - `APP_URL` en `.env` local es `http://localhost:3000`; en Vercel debe ser la
   URL pública para que los QR apunten bien.

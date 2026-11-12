@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { runAgentChat } from "@/lib/ai/agent";
-import { analyzeImage, transcribeAudio } from "@/lib/ai/multimodal";
+import { analyzeImage, transcribeAudio, analyzePaymentReceipt, ReceiptAnalysis } from "@/lib/ai/multimodal";
 import { getAssistantConfig, buildSystemPrompt } from "@/lib/ai/config-manager";
 import { getRealDataContextPrompt } from "@/lib/ai/tools";
 import { ensureConversationSession } from "@/lib/memory/conversation-summary";
 import { buildCustomerMemoryPrompt } from "@/lib/memory/customer-memory";
+import { buildCustomerLocationPrompt } from "@/lib/geo/delivery-center";
 import { decodeLoyaltyQrFromImage } from "@/lib/loyalty/qr-decode";
+import {
+  buildReceiptPromptBlock,
+  registerReceiptPayment,
+} from "@/lib/payments/receipt-service";
 import {
   buildLoyaltyCardPrompt,
   buildCustomerLoyaltyPrompt,
@@ -62,6 +67,7 @@ export async function POST(req: NextRequest) {
     let mediaType = "text";
     let transcription: string | null = null;
     let mediaError: string | null = null;
+    let receiptAnalysis: ReceiptAnalysis | null = null;
 
     if (mediaBase64) {
       const buffer = Buffer.from(mediaBase64, "base64");
@@ -82,6 +88,15 @@ export async function POST(req: NextRequest) {
           ? await buildLoyaltyCardPrompt(decodedQr.code)
           : null;
         const analysis = await analyzeImage(buffer, mediaMimeType, message || mediaName);
+
+        const receiptHints =
+          /comprobante|pago|transferencia|tigo|yape|zas|altoke|qr|monto|banco|referencia/i;
+        if (
+          receiptHints.test(`${message || ""} ${mediaName || ""} ${analysis.text || ""}`)
+        ) {
+          receiptAnalysis = await analyzePaymentReceipt(buffer, mediaMimeType);
+        }
+
         if (analysis.text) {
           userText = [
             message,
@@ -155,6 +170,25 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (receiptAnalysis?.isReceipt) {
+      try {
+        const receiptResult = await registerReceiptPayment({
+          customerId: customer.id,
+          analysis: receiptAnalysis,
+          caption: mediaName || null,
+        });
+        const receiptBlock = buildReceiptPromptBlock(receiptResult);
+        if (receiptBlock) {
+          userText = `${userText}\n\n${receiptBlock}`;
+        }
+      } catch (receiptError: any) {
+        console.error(
+          "[Webchat] No se pudo registrar el comprobante:",
+          receiptError?.message || receiptError
+        );
+      }
+    }
+
     const conversation = await ensureConversationSession(
       customer.id,
       "WEBCHAT",
@@ -194,14 +228,15 @@ export async function POST(req: NextRequest) {
     // 3. Prompt completo + memoria + herramientas + motor Gemini
     // -----------------------------------------------------------------
     const assistantConfig = await getAssistantConfig();
-    const [realDataContext, memoryContext, loyaltyContext] = await Promise.all([
+    const [realDataContext, memoryContext, loyaltyContext, locationContext] = await Promise.all([
       getRealDataContextPrompt(),
       buildCustomerMemoryPrompt(customer.id),
       buildCustomerLoyaltyPrompt(customer.id),
+      buildCustomerLocationPrompt(customer.id),
     ]);
     const systemPrompt = buildSystemPrompt(
       assistantConfig,
-      [realDataContext, memoryContext, loyaltyContext]
+      [realDataContext, memoryContext, loyaltyContext, locationContext]
         .filter(Boolean)
         .join("\n\n")
     );

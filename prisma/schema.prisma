@@ -135,6 +135,9 @@ model Customer {
   referencePoint         String?
   savedLatitude          Float?
   savedLongitude         Float?
+  // Última referencia textual obtenida al compartir ubicación (para que la IA
+  // entienda el barrio/lugar sin pedir coordenadas de nuevo).
+  lastLocationLabel      String?
   totalOrders            Int      @default(0)
   totalRides             Int      @default(0)
   notes                  String?
@@ -540,6 +543,9 @@ model Rider {
   currentLatitude  Float?
   currentLongitude Float?
   lastLocationAt   DateTime?
+  // QR personal de cobro del repartidor (Tigo Money, Yape, ZAS, Altoke, banco).
+  // Se guarda un JSON con label, accountName, accountNumber, qrImage e instructions.
+  paymentQrJson    String?
   totalDeliveries  Int       @default(0)
   totalRides       Int       @default(0)
   earnedBalance    Float     @default(0.0) // Saldo acumulado en Bs.
@@ -777,6 +783,9 @@ model PaymentRecord {
   reportedByCustomer Boolean   @default(false)
   qrStringData       String? // Payload EMVCo
   receiptImageUrl    String? // Captura enviada por el cliente
+  // Datos extraídos del comprobante por visión artificial (monto, billetera,
+  // referencia, titular, confianza) para auditoría y verificación.
+  receiptAnalysisJson String?
   verificationStatus String    @default("PENDIENTE") // PENDIENTE, PAGADO_VERIFICADO, RECHAZADO
   verifiedByUserId   String?
   verifiedByUser     User?     @relation("PaymentVerifier", fields: [verifiedByUserId], references: [id], onDelete: SetNull)
@@ -831,8 +840,15 @@ model BusinessProfile {
   baseDeliveryFee           Float     @default(5.0)
   // Delivery por distancia real: km incluidos y recargo por km adicional.
   // deliveryPerKmFee = 0 desactiva el recargo (compatibilidad con zonas fijas).
-  deliveryIncludedKm        Float     @default(3.0)
-  deliveryPerKmFee          Float     @default(0.0)
+  deliveryIncludedKm        Float     @default(2.0)
+  deliveryPerKmFee          Float     @default(2.0)
+  // Centro de referencia para cobrar delivery por distancia. Por defecto, la
+  // Plaza Principal de Ivirgarzama: a mayor distancia, mayor recargo.
+  deliveryCenterName        String    @default("Plaza Principal de Ivirgarzama")
+  deliveryCenterLatitude    Float     @default(-17.0315)
+  deliveryCenterLongitude   Float     @default(-64.8615)
+  // Asignación automática del repartidor disponible cuando el pedido está listo.
+  autoAssignRiders          Boolean   @default(true)
   baseRideFee               Float     @default(10.0)
   // Tarifas de carrera configurables desde el CRM. La tarifa mínima
   // absoluta del servicio es 10 Bs.; el recargo de torito se suma aparte.

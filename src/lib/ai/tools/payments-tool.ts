@@ -1,6 +1,7 @@
 import { prisma } from "../../prisma";
 import { getEnabledPaymentMethods } from "../../payments/service";
 import { getAppUrl } from "../../app-url";
+import { parseRiderPaymentQr } from "../../payments/rider";
 import { IAssistantTool } from "./types";
 
 const ADMIN_ROLES = ["SUPERADMIN", "ADMIN", "OPERATOR"];
@@ -83,9 +84,13 @@ export const paymentMethodsTool: IAssistantTool = {
               status: true,
               totalAmount: true,
               paymentStatus: true,
+              assignedRider: {
+                select: { name: true, paymentQrJson: true },
+              },
             },
           });
           if (order) {
+            const riderQr = parseRiderPaymentQr(order.assignedRider?.paymentQrJson);
             orderLink = {
               tipo: "DELIVERY",
               codigo: order.orderNumber,
@@ -94,6 +99,16 @@ export const paymentMethodsTool: IAssistantTool = {
               estadoPago: order.paymentStatus,
               urlPago: `${appUrl}/pagar/${order.id}`,
               urlSeguimiento: `${appUrl}/seguimiento/${order.id}`,
+              repartidor: order.assignedRider?.name?.replace(/^\[DEMO\]\s*/i, "") || null,
+              qrRepartidor: riderQr
+                ? {
+                    billetera: riderQr.label,
+                    titular: riderQr.accountName || null,
+                    cuenta: riderQr.accountNumber || null,
+                    tieneQr: Boolean(riderQr.qrImage),
+                    instrucciones: riderQr.instructions || null,
+                  }
+                : null,
             };
           }
         }
@@ -102,6 +117,51 @@ export const paymentMethodsTool: IAssistantTool = {
           return {
             metodos: methods.map(publicMethod),
             error: `No encontramos el código ${codigo}. Verifica el código del pedido o carrera.`,
+          };
+        }
+      } else if (context?.customerId) {
+        // Sin código: se busca el pedido más reciente del cliente para darle
+        // directamente su enlace de pago y, si existe, el QR del repartidor.
+        const order = await prisma.order.findFirst({
+          where: {
+            customerId: context.customerId,
+            status: { not: "CANCELADO" },
+            createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+          },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            totalAmount: true,
+            paymentStatus: true,
+            assignedRider: {
+              select: { name: true, paymentQrJson: true },
+            },
+          },
+        });
+
+        if (order) {
+          const riderQr = parseRiderPaymentQr(order.assignedRider?.paymentQrJson);
+          orderLink = {
+            tipo: "DELIVERY",
+            codigo: order.orderNumber,
+            estado: order.status,
+            totalBs: order.totalAmount,
+            estadoPago: order.paymentStatus,
+            urlPago: `${appUrl}/pagar/${order.id}`,
+            urlSeguimiento: `${appUrl}/seguimiento/${order.id}`,
+            repartidor:
+              order.assignedRider?.name?.replace(/^\[DEMO\]\s*/i, "") || null,
+            qrRepartidor: riderQr
+              ? {
+                  billetera: riderQr.label,
+                  titular: riderQr.accountName || null,
+                  cuenta: riderQr.accountNumber || null,
+                  tieneQr: Boolean(riderQr.qrImage),
+                  instrucciones: riderQr.instructions || null,
+                }
+              : null,
           };
         }
       }

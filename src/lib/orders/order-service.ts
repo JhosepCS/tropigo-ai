@@ -2,12 +2,11 @@ import crypto from "crypto";
 import { DeliveryZone, Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import {
-  calcularDistanciaLineaRectaKm,
-  estimarDistanciaRutaKm,
   estimarTiempoMinutos,
   formatoDistanciaKm,
 } from "../geo/distance";
 import { getAppUrl } from "../app-url";
+import { calcularDeliveryDesdeCentro } from "../geo/delivery-center";
 import {
   normalizePaymentMethodCode,
   paymentMethodLabel,
@@ -19,6 +18,7 @@ import {
   reserveLoyaltyReward,
   restoreLoyaltyOnCancellation,
 } from "../loyalty/service";
+import { createOrderCalendarEvent } from "../calendar/google-calendar";
 
 // =================================================================
 // TIPOS PÚBLICOS
@@ -275,11 +275,25 @@ export async function isMerchantOpenNow(merchant: {
 async function resolveCustomer(
   context: OrderToolContext,
   phone?: string
-): Promise<{ id: string; phone: string; name: string | null } | null> {
+): Promise<{
+  id: string;
+  phone: string;
+  name: string | null;
+  savedLatitude: number | null;
+  savedLongitude: number | null;
+  lastLocationLabel: string | null;
+} | null> {
   if (context.customerId) {
     return prisma.customer.findUnique({
       where: { id: context.customerId },
-      select: { id: true, phone: true, name: true },
+      select: {
+        id: true,
+        phone: true,
+        name: true,
+        savedLatitude: true,
+        savedLongitude: true,
+        lastLocationLabel: true,
+      },
     });
   }
 
@@ -292,7 +306,14 @@ async function resolveCustomer(
     where: {
       OR: [{ phone }, { phone: rawDigits }, { phone: e164 }],
     },
-    select: { id: true, phone: true, name: true },
+    select: {
+      id: true,
+      phone: true,
+      name: true,
+      savedLatitude: true,
+      savedLongitude: true,
+      lastLocationLabel: true,
+    },
   });
 
   if (!customer) {
@@ -301,7 +322,14 @@ async function resolveCustomer(
         phone: e164,
         name: `Cliente WhatsApp (+${rawDigits})`,
       },
-      select: { id: true, phone: true, name: true },
+      select: {
+        id: true,
+        phone: true,
+        name: true,
+        savedLatitude: true,
+        savedLongitude: true,
+        lastLocationLabel: true,
+      },
     });
   }
 
@@ -525,32 +553,43 @@ export async function createOrderQuote(input: CreateQuoteInput, context: OrderTo
     const deliveryFeeBase = round2(zone.baseDeliveryCost);
 
     // -----------------------------------------------------------------
-    // Distancia real estimada por ruta (GPS del cliente + comercio).
-    // El recargo por km adicional es opcional: si deliveryPerKmFee = 0,
-    // se mantiene la tarifa fija por zona sin alterar precios existentes.
+    // Distancia real estimada desde el centro de Ivirgarzama (Plaza
+    // Principal) hasta el cliente. Si el cliente no compartió GPS, se usa
+    // la última ubicación guardada en su perfil. Sin coordenadas no se
+    // inventan kilómetros: se mantiene la tarifa de la zona.
     // -----------------------------------------------------------------
-    const distanceSettings = await prisma.businessProfile.findFirst({
-      select: { deliveryIncludedKm: true, deliveryPerKmFee: true },
+    const deliveryDistance = await calcularDeliveryDesdeCentro({
+      latitud: input.latitud,
+      longitud: input.longitud,
+      customerId: customer.id,
     });
-    const includedKm = Math.max(0, Number(distanceSettings?.deliveryIncludedKm ?? 3));
-    const perKmFee = Math.max(0, Number(distanceSettings?.deliveryPerKmFee ?? 0));
 
-    const hasGps =
-      typeof input.latitud === "number" &&
-      typeof input.longitud === "number" &&
-      merchant.latitude != null &&
-      merchant.longitude != null;
-
-    const distanceKm = hasGps
-      ? estimarDistanciaRutaKm(
-          { latitude: merchant.latitude as number, longitude: merchant.longitude as number },
-          { latitude: input.latitud as number, longitude: input.longitud as number }
-        )
-      : null;
-
-    const extraKm = distanceKm != null ? Math.max(0, distanceKm - includedKm) : 0;
-    const distanceSurcharge = round2(extraKm * perKmFee);
+    const distanceKm = deliveryDistance?.distanceKm ?? null;
+    const distanceSurcharge = deliveryDistance?.surcharge ?? 0;
     const deliveryFee = round2(deliveryFeeBase + distanceSurcharge);
+    const includedKm = deliveryDistance?.includedKm ?? 2;
+    const perKmFee = deliveryDistance?.perKmFee ?? 0;
+    const centroNombre =
+      deliveryDistance?.centerName ?? "Plaza Principal de Ivirgarzama";
+
+    // Si el cliente compartió una ubicación nueva, se guarda en su perfil
+    // para no pedírsela otra vez en el siguiente mensaje.
+    if (
+      typeof input.latitud === "number" &&
+      Number.isFinite(input.latitud) &&
+      typeof input.longitud === "number" &&
+      Number.isFinite(input.longitud)
+    ) {
+      await prisma.customer
+        .update({
+          where: { id: customer.id },
+          data: {
+            savedLatitude: input.latitud,
+            savedLongitude: input.longitud,
+          },
+        })
+        .catch(() => {});
+    }
 
     const loyaltyDiscount = await getLoyaltyDiscountForQuote(
       customer.id,
@@ -570,13 +609,12 @@ export async function createOrderQuote(input: CreateQuoteInput, context: OrderTo
 
     const distanciaInfo: Record<string, unknown> = {
       distanciaKm: distanceKm,
-      distanciaLineaRectaKm: hasGps
-        ? calcularDistanciaLineaRectaKm(
-            { latitude: merchant.latitude as number, longitude: merchant.longitude as number },
-            { latitude: input.latitud as number, longitude: input.longitud as number }
-          )
-        : null,
-      tipoCalculo: hasGps ? "ruta_estimada_gps" : "zonificacion_territorial",
+      distanciaLineaRectaKm: deliveryDistance?.straightKm ?? null,
+      tipoCalculo: distanceKm != null ? "ruta_estimada_gps" : "zonificacion_territorial",
+      origenCalculo: deliveryDistance?.source ?? null,
+      centroNombre,
+      centroLatitud: deliveryDistance?.center.latitude ?? null,
+      centroLongitud: deliveryDistance?.center.longitude ?? null,
       zonaNombre: zone.name,
       kmIncluidos: includedKm,
       recargoPorKmBs: perKmFee,
@@ -602,12 +640,12 @@ export async function createOrderQuote(input: CreateQuoteInput, context: OrderTo
       `💵 *Subtotal productos:* ${subtotal.toFixed(2)} Bs.\n` +
       `🛵 *Costo de envío:* ${deliveryFee.toFixed(2)} Bs. (${zone.name})\n` +
       (distanceSurcharge > 0
-        ? `📏 *Recargo por distancia:* ${distanceSurcharge.toFixed(2)} Bs. (${formatoDistanciaKm(
+        ? `📏 *Recargo por distancia desde ${centroNombre}:* ${distanceSurcharge.toFixed(2)} Bs. (${formatoDistanciaKm(
             distanceKm
           )}, incluidos ${includedKm.toFixed(1)} km)\n`
         : "") +
       (distanceKm != null
-        ? `📏 *Distancia estimada:* ${formatoDistanciaKm(distanceKm)} por ruta\n`
+        ? `📏 *Distancia desde ${centroNombre}:* ${formatoDistanciaKm(distanceKm)} por ruta\n`
         : "") +
       (discountAmount > 0
         ? `🎁 *Premio de fidelidad:* -${discountAmount.toFixed(2)} Bs. (${loyaltyDiscount.rewardDescription})\n`
@@ -1144,6 +1182,17 @@ export async function confirmAndCreateOrder(
       `También puedes escribir:\n` +
       `👉 *"¿Cómo va mi pedido ${order.orderNumber}?"*`;
 
+    // Sincronizar con Google Calendar de forma opcional y no bloqueante
+    createOrderCalendarEvent({
+      orderNumber: order.orderNumber,
+      customerName: quote.customer?.name || "Cliente",
+      customerPhone: quote.customer?.phone,
+      address: order.deliveryAddressText,
+      total: order.totalAmount,
+      items: recalculated.items.map((it: { quantity: number; productName: string }) => `${it.quantity}x ${it.productName}`).join(", "),
+      estimatedDeliveryMinutes: etaMinutos,
+    }).catch(() => {});
+
     return {
       exitoso: true,
       duplicado: result.duplicate,
@@ -1445,7 +1494,59 @@ export async function transitionOrderStatus(input: {
     return orderUpdated;
   }, { timeout: 20000, maxWait: 10000 });
 
+  // Asignación automática de repartidor cuando el pedido queda listo.
+  // Es best-effort: si no hay rider disponible, el pedido permanece en
+  // LISTO_RECOJO y el operador puede asignarlo manualmente.
+  if (input.nextStatus === "LISTO_RECOJO") {
+    await tryAutoAssignRider(order.id).catch((error) => {
+      console.warn(
+        `[OrderService] No se pudo auto-asignar rider al pedido ${order.orderNumber}:`,
+        error?.message || error
+      );
+    });
+  }
+
   return updated;
+}
+
+/**
+ * Asigna el repartidor disponible con menos entregas al pedido LISTO_RECOJO.
+ * Solo actúa si BusinessProfile.autoAssignRiders está activo.
+ */
+async function tryAutoAssignRider(orderId: string): Promise<void> {
+  const business = await prisma.businessProfile.findFirst({
+    select: { autoAssignRiders: true },
+  });
+  if (business && business.autoAssignRiders === false) return;
+
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { id: true, status: true, assignedRiderId: true },
+  });
+  if (!order || order.status !== "LISTO_RECOJO" || order.assignedRiderId) return;
+
+  const rider = await prisma.rider.findFirst({
+    where: { isActive: true, isAvailable: true },
+    orderBy: [{ totalDeliveries: "asc" }, { createdAt: "asc" }],
+    select: { id: true },
+  });
+  if (!rider) return;
+
+  const actor = await prisma.user.findFirst({
+    where: {
+      role: { in: ["SUPERADMIN", "ADMIN", "OPERATOR"] },
+      status: "ACTIVE",
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  if (!actor) return;
+
+  await assignRiderToOrder({
+    orderId,
+    riderId: rider.id,
+    actorUserId: actor.id,
+  });
 }
 
 export async function assignRiderToOrder(input: {

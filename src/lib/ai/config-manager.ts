@@ -272,7 +272,7 @@ export function buildSystemPrompt(
       "• CONFIRMACIÓN OBLIGATORIA DE PEDIDOS: ANTES de registrar cualquier pedido, usa 'preparar_resumen_pedido' para generar una cotización oficial y presenta al cliente el resumen con:\n" +
       "  1. Plato(s) o producto(s), variantes/opciones y comercio.\n" +
       "  2. Subtotal en Bolivianos (Bs.).\n" +
-      "  3. Tarifa de delivery de la zona configurada en Bolivianos (Bs.).\n" +
+      "  3. Tarifa de delivery: zona configurada más el recargo por distancia desde la Plaza Principal, en Bolivianos (Bs.).\n" +
       "  4. Monto total a pagar en Bolivianos (Bs.).\n" +
       "  5. Dirección, referencia y método de pago (Efectivo, QR Simple, Tigo Money, Altoke, Yape, ZAS o transferencia).\n" +
       "  SOLICITA CONFIRMACIÓN EXPLÍCITA (ej. '¿Confirmas tu pedido por X Bs.? Responde Sí, confirmo'). Solo después de esa confirmación, llama 'registrar_pedido' con el quoteId de la cotización. El servidor verifica la confirmación real del canal; el modelo no puede autorizar un pedido por sí solo. NUNCA registres el pedido sin confirmación clara ni reutilices una cotización vencida o ya consumida.";
@@ -310,7 +310,19 @@ export function buildSystemPrompt(
     "  - Usa 'consultar_metodos_pago' cuando el cliente pregunte cómo pagar, pida el QR, los datos de cuenta o el enlace de pago de un pedido/carrera.\n" +
     "  - Métodos disponibles según configuración: efectivo contra entrega, QR Simple interbancario, Tigo Money, Altoke, Yape, ZAS y transferencia bancaria. No inventes números de cuenta ni QRs: usa solo los que devuelve la herramienta.\n" +
     "  - Al confirmar un pedido, comparte el enlace de seguimiento (mapa en vivo) y el enlace de pago que devuelve 'registrar_pedido'.\n" +
+    "  - Si el pedido tiene un repartidor asignado con QR personal de cobro, el enlace de pago muestra también ese QR. El cliente puede pagar por cualquier billetera y enviar la foto del comprobante.\n" +
+    "  - Cuando el cliente envíe una foto de comprobante, el sistema la analiza y registra el pago. Si el bloque [COMPROBANTE DE PAGO PROCESADO] dice PAGO VERIFICADO, confírmalo; si dice PENDIENTE, explica que un operador lo revisará. Nunca afirmes un pago verificado por tu cuenta.\n" +
+    "  - Usa 'consultar_mis_pagos' para responder por el estado exacto de un pago o comprobante.\n" +
     "  - El cliente reporta el pago desde el enlace; un operador verifica la transacción. Nunca afirmes que un pago está verificado sin que el sistema lo indique.";
+
+  // 8. Ubicación, distancia y asignación de repartidores
+  const locationPolicyText =
+    "• UBICACIÓN, DISTANCIA Y REPARTIDORES:\n" +
+    "  - El centro de reparto de Ivirgarzama es la Plaza Principal. El delivery se cobra por la zona configurada más un recargo por km desde la plaza: a mayor distancia, mayor cobro.\n" +
+    "  - Si el cliente comparte su ubicación GPS (normal o en tiempo real), el sistema la guarda en su perfil. Pasa latitud/longitud a 'preparar_resumen_pedido' o 'cotizar_tarifa' para calcular el recargo. No pidas la ubicación otra vez si ya está en el contexto [UBICACIÓN GUARDADA DEL CLIENTE].\n" +
+    "  - Si el cliente pide delivery y no compartió GPS ni indicó un barrio claro, usa 'solicitar_ubicacion' para enviar el botón nativo de ubicación de WhatsApp. Como alternativa, pide el nombre del barrio y una referencia.\n" +
+    "  - Nunca inventes coordenadas, distancias ni recargos. Si no hay GPS, usa la tarifa de la zona y el tiempo configurado.\n" +
+    "  - No asignes repartidores manualmente ni prometas un rider específico. El sistema asigna automáticamente un repartidor disponible cuando el pedido pasa a LISTO_RECOJO. Puedes informar el nombre cuando 'consultar_estado_pedido' lo devuelva.";
 
   // 7. Ensamblado del Prompt Oficial
   return (
@@ -329,6 +341,7 @@ export function buildSystemPrompt(
     `${memoryPolicyText}\n` +
     `${loyaltyPolicyText}\n` +
     `${paymentPolicyText}\n` +
+    `${locationPolicyText}\n` +
     `• PROTOCOLO TÉCNICO DE PEDIDOS (NO NEGOCIABLE):\n` +
     `  1. La cotización oficial se crea con 'preparar_resumen_pedido' y devuelve un quoteId.\n` +
     `  2. El pedido se registra con 'registrar_pedido' usando ese quoteId, nunca con datos inventados por el modelo.\n` +

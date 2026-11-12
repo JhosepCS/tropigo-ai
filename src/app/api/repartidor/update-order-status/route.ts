@@ -9,6 +9,7 @@ import {
   OrderTransitionError,
   transitionOrderStatus,
 } from "@/lib/orders/order-service";
+import { sendOrderStatusNotification } from "@/lib/whatsapp/notifications";
 
 /**
  * POST /api/repartidor/update-order-status
@@ -33,6 +34,9 @@ export async function POST(req: NextRequest) {
       actorUserId: session.userId,
       comment: comment || "Actualización desde la app del repartidor",
     });
+
+    // Notificar al cliente por WhatsApp en background
+    sendOrderStatusNotification(order, status).catch(() => {});
 
     return NextResponse.json({ success: true, order });
   } catch (err: any) {

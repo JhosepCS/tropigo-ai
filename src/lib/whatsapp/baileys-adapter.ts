@@ -97,6 +97,17 @@ export class BaileysAdapter implements IWhatsAppProvider {
     }
   }
 
+  async sendImage(to: string, imageUrl: string, caption?: string): Promise<string> {
+    if (!this.sock) throw new Error("Socket de Baileys no conectado");
+    const jid = this.formatJid(to);
+    // Baileys acepta imageMessage con url o buffer
+    const sent = await this.sock.sendMessage(jid, {
+      image: { url: imageUrl },
+      caption: caption || "",
+    });
+    return sent?.key?.id || "baileys_sent";
+  }
+
   /**
    * Normaliza un mensaje entrante de Baileys a la estructura unificada IncomingWhatsAppMessage
    */

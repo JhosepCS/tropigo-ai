@@ -1,11 +1,11 @@
 import { prisma } from "../../prisma";
 import { IAssistantTool } from "./types";
-import { findActiveZoneForQuery } from "../../orders/order-service";
+import { findActiveZoneForQuery, OrderToolContext } from "../../orders/order-service";
 import { calculateRideFare, getRideFareConfig } from "../../rides/fare";
 import {
-  estimarDistanciaRutaKm,
   estimarTiempoMinutos,
 } from "../../geo/distance";
+import { calcularDeliveryDesdeCentro } from "../../geo/delivery-center";
 import { getEnabledPaymentMethods } from "../../payments/service";
 
 export const deliveryFeesTool: IAssistantTool = {
@@ -47,14 +47,17 @@ export const deliveryFeesTool: IAssistantTool = {
     },
     required: ["tipo", "destino"],
   },
-  async execute(args: {
-    tipo: "DELIVERY" | "MOTOTAXI";
-    destino: string;
-    vehiculo?: "MOTO" | "TORITO";
-    comercio?: string;
-    latitud?: number;
-    longitud?: number;
-  }) {
+  async execute(
+    args: {
+      tipo: "DELIVERY" | "MOTOTAXI";
+      destino: string;
+      vehiculo?: "MOTO" | "TORITO";
+      comercio?: string;
+      latitud?: number;
+      longitud?: number;
+    },
+    context?: OrderToolContext
+  ) {
     try {
       if (!args.tipo || !args.destino || !args.destino.trim()) {
         return {
@@ -98,14 +101,40 @@ export const deliveryFeesTool: IAssistantTool = {
       let detalleTarifa: Record<string, unknown> | null = null;
       let distanciaKm: number | null = null;
       let recargoDistancia = 0;
+      let centroNombre = "Plaza Principal de Ivirgarzama";
+      let kmIncluidos = 2;
+      let recargoPorKm = 0;
+      let tipoDistancia: "real por Google Maps" | "estimada línea recta × 1.3" =
+        "estimada línea recta × 1.3";
 
-      // Distancia real estimada si el cliente compartió GPS y se conoce el
-      // comercio de origen. Nunca se inventan coordenadas.
-      if (
+      // Distancia real estimada desde la Plaza Principal de Ivirgarzama hasta
+      // la ubicación del cliente. Si no compartió GPS en este mensaje, se usa
+      // la última ubicación guardada en su perfil. Nunca se inventan datos.
+      if (args.tipo === "DELIVERY") {
+        const deliveryDistance = await calcularDeliveryDesdeCentro({
+          latitud: args.latitud,
+          longitud: args.longitud,
+          customerId: context?.customerId,
+        });
+
+        if (deliveryDistance) {
+          distanciaKm = deliveryDistance.distanceKm;
+          recargoDistancia = deliveryDistance.surcharge;
+          centroNombre = deliveryDistance.centerName;
+          kmIncluidos = deliveryDistance.includedKm;
+          recargoPorKm = deliveryDistance.perKmFee;
+          tipoDistancia =
+            deliveryDistance.tipoDistancia === "real_maps"
+              ? "real por Google Maps"
+              : "estimada línea recta × 1.3";
+        }
+      } else if (
         typeof args.latitud === "number" &&
         typeof args.longitud === "number" &&
         args.comercio
       ) {
+        // Para mototaxi (fuera del alcance actual) se conserva el ETA desde el
+        // comercio si hay coordenadas configuradas.
         const merchants = await prisma.merchant.findMany({
           select: { name: true, latitude: true, longitude: true },
         });
@@ -124,6 +153,7 @@ export const deliveryFeesTool: IAssistantTool = {
         );
 
         if (merchant?.latitude != null && merchant?.longitude != null) {
+          const { estimarDistanciaRutaKm } = await import("../../geo/distance");
           distanciaKm = estimarDistanciaRutaKm(
             { latitude: merchant.latitude, longitude: merchant.longitude },
             { latitude: args.latitud, longitude: args.longitud }
@@ -151,23 +181,6 @@ export const deliveryFeesTool: IAssistantTool = {
           minimoAplicado: breakdown.minimumApplied,
         };
       } else {
-        const distanceSettings = await prisma.businessProfile.findFirst({
-          select: { deliveryIncludedKm: true, deliveryPerKmFee: true },
-        });
-        const includedKm = Math.max(
-          0,
-          Number(distanceSettings?.deliveryIncludedKm ?? 3)
-        );
-        const perKmFee = Math.max(
-          0,
-          Number(distanceSettings?.deliveryPerKmFee ?? 0)
-        );
-        recargoDistancia =
-          distanciaKm != null
-            ? Math.round(
-                Math.max(0, distanciaKm - includedKm) * perKmFee * 100
-              ) / 100
-            : 0;
         tarifaFinal = Math.round((zone.baseDeliveryCost + recargoDistancia) * 100) / 100;
         tiempoEstimado =
           distanciaKm != null
@@ -176,8 +189,9 @@ export const deliveryFeesTool: IAssistantTool = {
 
         detalleTarifa = {
           tarifaBaseZonaBs: zone.baseDeliveryCost,
-          kmIncluidos: includedKm,
-          recargoPorKmBs: perKmFee,
+          centroDistancia: centroNombre,
+          kmIncluidos,
+          recargoPorKmBs: recargoPorKm,
           recargoDistanciaBs: recargoDistancia,
         };
       }
@@ -201,6 +215,8 @@ export const deliveryFeesTool: IAssistantTool = {
         tarifaFormateada: `${tarifaFinal.toFixed(2)} Bs.`,
         detalleTarifa,
         distanciaKm,
+        tipoDistancia: distanciaKm != null ? tipoDistancia : undefined,
+        centroDistancia: args.tipo === "DELIVERY" ? centroNombre : null,
         recargoDistanciaBs: recargoDistancia,
         tiempoEstimadoMinutos: tiempoEstimado,
         metodosPagoPermitidos: paymentModes,
@@ -211,7 +227,13 @@ export const deliveryFeesTool: IAssistantTool = {
               )} Bs. (${args.vehiculo === "TORITO" ? "Torito Trimóvil" : "Moto individual"}). Tiempo aprox.: ${tiempoEstimado} min.`
             : `📦 Tarifa oficial de delivery hacia ${args.destino} (${zone.name}): ${tarifaFinal.toFixed(
                 2
-              )} Bs. Tiempo estimado de entrega: ${tiempoEstimado} min.`,
+              )} Bs.` +
+              (distanciaKm != null
+                ? ` Distancia desde ${centroNombre}: ${distanciaKm.toFixed(
+                    1
+                  )} km por ruta.`
+                : "") +
+              ` Tiempo estimado de entrega: ${tiempoEstimado} min.`,
       };
     } catch (err: any) {
       console.error("[Tool: cotizar_tarifa] Error:", err);

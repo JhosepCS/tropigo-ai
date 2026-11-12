@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getPaymentMethodById } from "@/lib/payments/service";
 import { isCashMethod, paymentMethodCode } from "@/lib/payments/types";
+import {
+  parseRiderPaymentQr,
+  RiderPaymentQr,
+  RIDER_QR_METHOD_ID,
+  walletToPaymentCode,
+} from "@/lib/payments/rider";
 
 export const dynamic = "force-dynamic";
 
@@ -39,13 +45,71 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const method = await getPaymentMethodById(methodId);
-    if (!method || !method.enabled) {
+    const isRiderQr = methodId === RIDER_QR_METHOD_ID;
+    let riderQr: RiderPaymentQr | null = null;
+    let method: {
+      id: string;
+      label: string;
+      type: "CASH" | "QR" | "WALLET" | "BANK";
+      accountName: string;
+      accountNumber: string;
+      instructions: string;
+    } | null = null;
+
+    if (isRiderQr) {
+      if (!orderId) {
+        return NextResponse.json(
+          { error: "El QR del repartidor solo aplica a pedidos." },
+          { status: 400 }
+        );
+      }
+      const orderWithRider = await prisma.order.findUnique({
+        where: { id: orderId },
+        select: {
+          assignedRider: { select: { name: true, paymentQrJson: true } },
+        },
+      });
+      riderQr = parseRiderPaymentQr(orderWithRider?.assignedRider?.paymentQrJson);
+      if (!riderQr) {
+        return NextResponse.json(
+          { error: "El repartidor todavía no cargó su QR de cobro." },
+          { status: 400 }
+        );
+      }
+      method = {
+        id: RIDER_QR_METHOD_ID,
+        label: riderQr.label || "QR del repartidor",
+        type: riderQr.type,
+        accountName: riderQr.accountName,
+        accountNumber: riderQr.accountNumber,
+        instructions: riderQr.instructions,
+      };
+    } else {
+      const storedMethod = await getPaymentMethodById(methodId);
+      if (!storedMethod || !storedMethod.enabled) {
+        return NextResponse.json(
+          { error: "El método de pago ya no está disponible." },
+          { status: 400 }
+        );
+      }
+      method = storedMethod;
+    }
+
+    if (!method) {
       return NextResponse.json(
-        { error: "El método de pago ya no está disponible." },
+        { error: "Método de pago no disponible." },
         { status: 400 }
       );
     }
+
+    const methodCode = isRiderQr
+      ? walletToPaymentCode(riderQr?.label)
+      : paymentMethodCode(method);
+    const methodProvider = isRiderQr
+      ? walletToPaymentCode(riderQr?.label)
+      : isCashMethod(method)
+      ? "EFECTIVO"
+      : method.type;
 
     const reportKey = `${orderId || tripId}:${method.id}`;
     const lastReport = recentReports.get(reportKey) || 0;
@@ -94,7 +158,7 @@ export async function POST(req: NextRequest) {
           data: {
             orderId: order.id,
             amount: order.totalAmount,
-            provider: isCashMethod(method) ? "EFECTIVO" : method.type,
+            provider: methodProvider,
             methodId: method.id,
             reference: reference || null,
             reportedByCustomer: true,
@@ -104,7 +168,7 @@ export async function POST(req: NextRequest) {
         prisma.order.update({
           where: { id: order.id },
           data: {
-            paymentMethod: paymentMethodCode(method),
+            paymentMethod: methodCode,
             paymentStatus: "PENDIENTE",
           },
         }),
@@ -171,7 +235,7 @@ export async function POST(req: NextRequest) {
         data: {
           rideTripId: trip.id,
           amount: trip.fareAmount,
-          provider: isCashMethod(method) ? "EFECTIVO" : method.type,
+          provider: methodProvider,
           methodId: method.id,
           reference: reference || null,
           reportedByCustomer: true,
@@ -181,7 +245,7 @@ export async function POST(req: NextRequest) {
       prisma.rideTrip.update({
         where: { id: trip.id },
         data: {
-          paymentMethod: paymentMethodCode(method),
+          paymentMethod: methodCode,
           paymentStatus: "PENDIENTE",
         },
       }),

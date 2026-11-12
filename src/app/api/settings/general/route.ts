@@ -46,6 +46,10 @@ export async function POST(req: NextRequest) {
       rideToritoSurcharge,
       deliveryIncludedKm,
       deliveryPerKmFee,
+      deliveryCenterName,
+      deliveryCenterLatitude,
+      deliveryCenterLongitude,
+      autoAssignRiders,
       loyaltyEnabled,
       loyaltyStampsRequired,
       loyaltyRewardFreeDelivery,
@@ -106,6 +110,38 @@ export async function POST(req: NextRequest) {
         50,
         Math.max(0, round2(requestedPerKmFee))
       );
+    }
+
+    // Centro de distancia para el delivery (por defecto, Plaza Principal).
+    if (typeof deliveryCenterName === "string" && deliveryCenterName.trim()) {
+      businessData.deliveryCenterName = deliveryCenterName.trim().slice(0, 120);
+    }
+
+    const requestedCenterLat = optionalNumber(deliveryCenterLatitude);
+    if (requestedCenterLat !== null) {
+      if (requestedCenterLat < -90 || requestedCenterLat > 90) {
+        return NextResponse.json(
+          { error: "La latitud del centro debe estar entre -90 y 90." },
+          { status: 400 }
+        );
+      }
+      businessData.deliveryCenterLatitude = requestedCenterLat;
+    }
+
+    const requestedCenterLng = optionalNumber(deliveryCenterLongitude);
+    if (requestedCenterLng !== null) {
+      if (requestedCenterLng < -180 || requestedCenterLng > 180) {
+        return NextResponse.json(
+          { error: "La longitud del centro debe estar entre -180 y 180." },
+          { status: 400 }
+        );
+      }
+      businessData.deliveryCenterLongitude = requestedCenterLng;
+    }
+
+    const requestedAutoAssign = optionalBoolean(autoAssignRiders);
+    if (requestedAutoAssign !== null) {
+      businessData.autoAssignRiders = requestedAutoAssign;
     }
 
     const requestedLoyaltyEnabled = optionalBoolean(loyaltyEnabled);

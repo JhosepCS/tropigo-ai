@@ -1,11 +1,17 @@
 import { prisma } from "../lib/prisma";
 import { runAgentChat } from "../lib/ai/agent";
-import { analyzeImage, transcribeAudio } from "../lib/ai/multimodal";
+import { analyzeImage, transcribeAudio, analyzePaymentReceipt, ReceiptAnalysis } from "../lib/ai/multimodal";
 import { getAssistantConfig, buildSystemPrompt } from "../lib/ai/config-manager";
 import { getRealDataContextPrompt } from "../lib/ai/tools";
 import { buildCustomerMemoryPrompt } from "../lib/memory/customer-memory";
 import { ensureConversationSession } from "../lib/memory/conversation-summary";
+import { buildCustomerLocationPrompt } from "../lib/geo/delivery-center";
+import { reverseGeocode } from "../lib/geo/reverse-geocode";
 import { decodeLoyaltyQrFromImage } from "../lib/loyalty/qr-decode";
+import {
+  buildReceiptPromptBlock,
+  registerReceiptPayment,
+} from "../lib/payments/receipt-service";
 import {
   buildLoyaltyCardPrompt,
   buildCustomerLoyaltyPrompt,
@@ -224,6 +230,8 @@ async function buildUserContent(sock: any, items: BatchItem[]) {
   let mediaType = "text";
   let transcription: string | null = null;
   let location: { latitude: number; longitude: number } | null = null;
+  let locationLabel: string | null = null;
+  const receiptAnalyses: ReceiptAnalysis[] = [];
 
   for (const item of items) {
     if (item.kind === "text") {
@@ -236,9 +244,16 @@ async function buildUserContent(sock: any, items: BatchItem[]) {
         latitude: item.location.latitude,
         longitude: item.location.longitude,
       };
+      locationLabel =
+        item.location.address?.trim() ||
+        (await reverseGeocode(
+          item.location.latitude,
+          item.location.longitude
+        )) ||
+        null;
       parts.push(
         `[Ubicación GPS compartida: Lat ${item.location.latitude}, Lng ${item.location.longitude}` +
-          `${item.location.address ? ` - ${item.location.address}` : ""}]`
+          `${locationLabel ? ` - ${locationLabel}` : ""}]`
       );
       continue;
     }
@@ -278,6 +293,15 @@ async function buildUserContent(sock: any, items: BatchItem[]) {
           ? await buildLoyaltyCardPrompt(decodedQr.code)
           : null;
         const result = await analyzeImage(media.buffer, media.mimeType, item.text);
+        const receiptHints =
+          /comprobante|pago|transferencia|tigo|yape|zas|altoke|qr|monto|banco|referencia/i;
+        if (
+          receiptHints.test(`${item.text || ""} ${result.text || ""}`)
+        ) {
+          receiptAnalyses.push(
+            await analyzePaymentReceipt(media.buffer, media.mimeType)
+          );
+        }
         if (result.text) {
           parts.push(
             `${item.text ? `El cliente escribió: "${item.text}".\n` : ""}` +
@@ -300,6 +324,8 @@ async function buildUserContent(sock: any, items: BatchItem[]) {
     mediaType,
     transcription,
     location,
+    locationLabel,
+    receiptAnalyses,
   };
 }
 
@@ -324,12 +350,40 @@ async function processBatch(
       return;
     }
 
-    let { content, mediaType, transcription, location } = await buildUserContent(
-      sock,
-      items
-    );
+    let { content, mediaType, transcription, location, locationLabel, receiptAnalyses } =
+      await buildUserContent(sock, items);
 
     if (!content) return;
+
+    if (location) {
+      await prisma.customer.update({
+        where: { id: customer.id },
+        data: {
+          savedLatitude: location.latitude,
+          savedLongitude: location.longitude,
+          ...(locationLabel ? { lastLocationLabel: locationLabel } : {}),
+        },
+      });
+    }
+
+    for (const analysis of receiptAnalyses) {
+      if (!analysis.isReceipt) continue;
+      try {
+        const receiptResult = await registerReceiptPayment({
+          customerId: customer.id,
+          analysis,
+        });
+        const receiptBlock = buildReceiptPromptBlock(receiptResult);
+        if (receiptBlock) {
+          content = `${content}\n\n${receiptBlock}`;
+        }
+      } catch (receiptError: any) {
+        console.error(
+          "[Worker] No se pudo registrar el comprobante:",
+          receiptError?.message || receiptError
+        );
+      }
+    }
 
     const typedLoyaltyCode = extractLoyaltyCode(content);
     if (typedLoyaltyCode && !content.includes("[TARJETA DE FIDELIDAD DETECTADA")) {
@@ -365,14 +419,15 @@ async function processBatch(
     } catch {}
 
     const assistantConfig = await getAssistantConfig();
-    const [realDataContext, memoryContext, loyaltyContext] = await Promise.all([
+    const [realDataContext, memoryContext, loyaltyContext, locationContext] = await Promise.all([
       getRealDataContextPrompt(),
       buildCustomerMemoryPrompt(customer.id),
       buildCustomerLoyaltyPrompt(customer.id),
+      buildCustomerLocationPrompt(customer.id),
     ]);
     const systemPrompt = buildSystemPrompt(
       assistantConfig,
-      [realDataContext, memoryContext, loyaltyContext]
+      [realDataContext, memoryContext, loyaltyContext, locationContext]
         .filter(Boolean)
         .join("\n\n")
     );

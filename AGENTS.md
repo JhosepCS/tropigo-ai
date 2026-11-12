@@ -36,9 +36,20 @@ con QR personal.
     tarjeta al mensaje.
 - Tarifas de mototaxi configurables desde **Ajustes** (mínimo absoluto 10 Bs.).
 - Delivery por zonas configurable desde **Zonas**.
-- Delivery por distancia real: si el cliente comparte GPS, se estima la ruta
-  (Haversine × 1.3), se muestra la distancia/ETA y se puede aplicar un recargo
-  por km adicional (`deliveryIncludedKm`, `deliveryPerKmFee`; 0 = sin recargo).
+- Delivery por zona + distancia desde la **Plaza Principal de Ivirgarzama**:
+  la tarifa de la zona se suma a un recargo por km adicional (2 km incluidos y
+  2 Bs/km por defecto, configurable). Si el cliente comparte GPS normal o en
+  tiempo real, se estima la ruta y el ETA. La última ubicación GPS se guarda en
+  `Customer.savedLatitude/savedLongitude` + `lastLocationLabel` y la IA la
+  reutiliza sin volver a pedirla.
+- Comprobantes de pago por foto: Gemini Vision extrae monto, billetera,
+  referencia y titular. El pago se verifica automáticamente solo si el monto y
+  el titular/cuenta coinciden; si no, queda `PENDIENTE` para revisión manual.
+- QR personal de cobro del repartidor en `Rider.paymentQrJson`, visible en
+  `/pagar/[id]` cuando el pedido tiene rider asignado.
+- Asignación automática de rider al pasar un pedido a `LISTO_RECOJO` si
+  `BusinessProfile.autoAssignRiders` está activo. Se elige el rider activo y
+  disponible con menos entregas; la asignación manual sigue disponible.
 - Pagos digitales configurables desde **Ajustes → Pagos**: efectivo, QR Simple,
   Tigo Money, Altoke, Yape, ZAS y transferencia. El cliente paga en
   `/pagar/[id]`, reporta el pago y un operador lo verifica.
@@ -83,9 +94,18 @@ src/lib/ai/tools/index.ts                       Registro de herramientas + conte
 src/lib/ai/tools/loyalty-tool.ts                consultar_mi_fidelidad
 src/lib/ai/tools/loyalty-code-tool.ts           consultar_fidelidad_por_codigo
 src/lib/ai/tools/payments-tool.ts               consultar_metodos_pago
+src/lib/ai/tools/payment-status-tool.ts         consultar_mis_pagos
+src/lib/ai/tools/location-request-tool.ts       solicitar_ubicacion
 src/lib/payments/types.ts                       Métodos de pago y normalización
 src/lib/payments/service.ts                     Lectura/guardado de métodos
+src/lib/payments/rider.ts                       QR personal de cobro del rider
+src/lib/payments/receipt-service.ts             Registro/verificación de comprobantes
+src/lib/geo/delivery-center.ts                  Centro, distancia y ubicación guardada
+src/lib/geo/maps-distance.ts                    Distancia real por carretera (Google Maps API)
+src/lib/geo/reverse-geocode.ts                  Dirección aproximada (Nominatim)
+src/lib/calendar/google-calendar.ts             Agendamiento automático en Google Calendar
 src/lib/tracking/service.ts                     Datos de seguimiento y mapa
+src/lib/whatsapp/notifications.ts               Notificaciones automáticas por WhatsApp al cliente
 src/lib/app-url.ts                              URL pública para enlaces
 src/lib/ai/config-manager.ts                    System prompt
 src/lib/loyalty/service.ts                      Sellos, premios, QR, canje
@@ -96,6 +116,8 @@ src/lib/orders/order-service.ts                 Cotización, pedido y premio
 src/lib/rides/fare.ts                           Tarifas de mototaxi
 src/worker/index.ts                             Worker Baileys opcional
 src/app/dashboard/ajustes/                      Tarifas, pagos, distancia y fidelidad
+src/app/dashboard/repartidores/                 Riders + QR personal de cobro
+src/app/api/admin/riders/[id]/payment-qr/       Guardar QR de cobro del rider
 src/app/dashboard/fidelidad/                    Tarjetas, QR, sellos y canje
 src/app/fidelidad/[code]/page.tsx               Tarjeta pública
 src/app/pagar/[id]/                             Página pública de pago con QR
@@ -157,6 +179,8 @@ Git. Las variables principales:
 - `WHATSAPP_PROVIDER` (`META_CLOUD_API` recomendado; `BAILEYS_QR` solo pruebas).
 - `META_PHONE_NUMBER_ID`, `META_WABA_ID`, `META_SYSTEM_TOKEN`,
   `META_WEBHOOK_VERIFY_TOKEN`, `META_APP_SECRET`.
+- `GOOGLE_MAPS_API_KEY` (opcional; distancia real por carretera con Google Maps).
+- `GOOGLE_CALENDAR_ID`, `GOOGLE_SERVICE_ACCOUNT_JSON` (opcional; agendamiento automático en Google Calendar).
 
 ## 8. Backup y restauración
 
@@ -194,8 +218,11 @@ que cambiar el número de WhatsApp cuando Meta lo entregue.
 1. Crear la app de Meta en la otra laptop y cargar credenciales.
 2. Probar el número de prueba con `+591 57770679`.
 3. Comprar el chip nuevo y migrar el `Phone Number ID`.
-4. Evaluar Render solo si se quiere el modo QR no oficial.
-5. Evolucionar el demo a la app final tipo Yango/PedidosYa:
+4. Cargar los QR reales de pago del negocio y el QR personal de cada rider.
+5. Confirmar la tarifa por km (hoy 2 km incluidos y 2 Bs/km) y las coordenadas
+   reales de la Plaza Principal.
+6. Evaluar Render solo si se quiere el modo QR no oficial.
+7. Evolucionar el demo a la app final tipo Yango/PedidosYa:
    - repartidores y seguimiento en tiempo real,
    - pagos QR/Tigo Money,
    - notificaciones push,

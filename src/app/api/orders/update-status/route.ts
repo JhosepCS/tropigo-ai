@@ -9,6 +9,7 @@ import {
   OrderTransitionError,
   transitionOrderStatus,
 } from "@/lib/orders/order-service";
+import { sendOrderStatusNotification } from "@/lib/whatsapp/notifications";
 
 /**
  * POST /api/orders/update-status
@@ -37,6 +38,9 @@ export async function POST(req: NextRequest) {
       actorUserId: session.userId,
       comment,
     });
+
+    // Notificar al cliente por WhatsApp en background (best-effort, no bloquea)
+    sendOrderStatusNotification(updated, status).catch(() => {});
 
     return NextResponse.json({ success: true, order: updated });
   } catch (error: any) {

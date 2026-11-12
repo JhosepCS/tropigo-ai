@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { createSession } from "@/lib/auth/session";
 
+const SESSION_DURATION_DAYS = 7;
+const COOKIE_NAME = "tropigo_session";
+
 export async function POST(req: NextRequest) {
   try {
     const { email, password } = await req.json();
@@ -75,7 +78,12 @@ export async function POST(req: NextRequest) {
       { ipAddress, userAgent }
     );
 
-    return NextResponse.json({
+    // Setear cookie directamente en el header de respuesta para garantizar
+    // que Vercel (Edge) y todos los navegadores la reciban correctamente.
+    const isProduction = process.env.NODE_ENV === "production";
+    const maxAge = 60 * 60 * 24 * SESSION_DURATION_DAYS;
+
+    const response = NextResponse.json({
       success: true,
       token,
       user: {
@@ -85,6 +93,16 @@ export async function POST(req: NextRequest) {
         role: user.role,
       },
     });
+
+    response.cookies.set(COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: "lax",
+      path: "/",
+      maxAge,
+    });
+
+    return response;
   } catch (error: any) {
     console.error("Error en login:", error);
     return NextResponse.json({ error: error.message || "Error interno del servidor" }, { status: 500 });

@@ -87,4 +87,9 @@ export interface IWhatsAppProvider {
    * Muestra el indicador de presencia «escribiendo...» al usuario
    */
   sendPresenceTyping(to: string): Promise<void>;
+
+  /**
+   * Envía una imagen al usuario (URL pública o data URL https)
+   */
+  sendImage(to: string, imageUrl: string, caption?: string): Promise<string>;
 }

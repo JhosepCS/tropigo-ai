@@ -22,7 +22,11 @@ Asistente inteligente de **delivery, mandados y mototaxi** para Ivirgarzama (Tr�
 | Recordar clientes | Memoria estructurada por cliente (`CustomerMemoryFact`) + resúmenes de conversaciones. Nunca se mezcla entre clientes. |
 | Derivar a humano | Herramienta `pasar_a_humano` + estado `HUMAN_TAKEOVER`. |
 | Aislar el webchat | Cada sesión del navegador tiene su propio `Customer` y su propia conversación. |
-| Distancia real | Si el cliente comparte GPS, calcula distancia estimada por ruta, ETA y un recargo opcional por km adicional. |
+| Distancia real | El delivery se cobra por la zona del cliente **más un recargo por km desde la Plaza Principal de Ivirgarzama**. Si el cliente comparte GPS (normal o en tiempo real), se estima la ruta, el ETA y el recargo configurable. |
+| Ubicación persistente | La última ubicación GPS del cliente se guarda en su perfil y la IA la reutiliza para cotizar sin volver a pedirla. |
+| Comprobantes de pago | Si el cliente envía la foto de un comprobante (Tigo Money, Yape, ZAS, Altoke, QR bancario, etc.), Gemini Vision extrae monto, billetera, referencia y titular. Se verifica automáticamente solo si monto y titular coinciden; si no, queda pendiente para revisión manual. |
+| QR del repartidor | El rider puede cargar su QR personal de cobro en **Repartidores**. Cuando tiene un pedido asignado, el QR aparece en `/pagar/[id]` para que el cliente pague y envíe el comprobante. |
+| Asignación de riders | Al pasar un pedido a `LISTO_RECOJO`, el sistema asigna automáticamente el rider activo y disponible con menos entregas (configurable en Ajustes). |
 | Pagos digitales | QR Simple, Tigo Money, Altoke, Yape, ZAS, transferencia y efectivo. El cliente paga desde `/pagar/[id]` y reporta el pago; el operador verifica. |
 | Seguimiento en vivo | `/seguimiento/[id]` muestra mapa de Google, repartidor, ETA e historial. El repartidor comparte GPS desde su panel. |
 | Fidelidad mejorada | Sellos por pedido/carrera, sellos dobles temporales, niveles Bronce/Plata/Oro e historial reciente. |

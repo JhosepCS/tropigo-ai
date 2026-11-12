@@ -116,6 +116,137 @@ async function callGemini(
 }
 
 /**
+ * Resultado estructurado del análisis de un comprobante de pago.
+ * Se usa para registrar el pago y decidir una verificación automática
+ * conservadora. Nunca reemplaza la revisión manual cuando hay dudas.
+ */
+export interface ReceiptAnalysis {
+  isReceipt: boolean;
+  amount: number | null;
+  currency: string;
+  wallet: string;
+  reference: string;
+  recipientName: string;
+  senderName: string;
+  dateText: string;
+  confidence: number;
+  summary: string;
+  rawText: string;
+  error?: string;
+}
+
+function parseJsonObject(text: string): any | null {
+  const cleaned = String(text || "")
+    .replace(/```json/gi, "```")
+    .replace(/```/g, "")
+    .trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    return JSON.parse(cleaned.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+function cleanReceiptString(value: unknown, maxLength = 160): string {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, maxLength);
+}
+
+/**
+ * Analiza una foto de comprobante de pago (Tigo Money, Yape, ZAS, Altoke, QR
+ * bancario, transferencia, etc.) y devuelve datos estructurados.
+ */
+export async function analyzePaymentReceipt(
+  buffer: Buffer,
+  mimeType: string,
+  expectedAmount?: number | null
+): Promise<ReceiptAnalysis> {
+  const empty: ReceiptAnalysis = {
+    isReceipt: false,
+    amount: null,
+    currency: "BOB",
+    wallet: "",
+    reference: "",
+    recipientName: "",
+    senderName: "",
+    dateText: "",
+    confidence: 0,
+    summary: "",
+    rawText: "",
+  };
+
+  if (!buffer || buffer.length === 0) {
+    return { ...empty, error: "La imagen llegó vacía." };
+  }
+
+  const keys = await getProviderKeys();
+  if (!keys.geminiKey) {
+    return { ...empty, error: "GEMINI_API_KEY no configurada para leer comprobantes." };
+  }
+
+  const prompt =
+    "Eres el módulo de verificación de pagos de TropiGO (Ivirgarzama, Bolivia). " +
+    "Analiza la imagen y determina si es un comprobante de pago o transferencia de una billetera digital o banco " +
+    "(Tigo Money, Yape, ZAS, Altoke, QR Simple, BNB, BCP, Mercantil, Banco Unión, etc.). " +
+    "Extrae únicamente datos visibles; no inventes nada. Responde SOLO con un objeto JSON válido, sin texto adicional, con esta forma:\n" +
+    '{"esComprobante":true,"monto":30.00,"moneda":"BOB","billetera":"Yape","referencia":"123456","titularDestino":"Nombre que recibe","titularOrigen":"Nombre que paga","fecha":"2026-11-12 14:30","confianza":0.9,"resumen":"Comprobante de Yape por Bs 30 a nombre de..."}\n' +
+    "Reglas: monto debe ser número o null; confianza entre 0 y 1; si la imagen no es un comprobante usa esComprobante=false y confianza baja. " +
+    "Si el texto está borroso, refleja solo lo que puedas leer y baja la confianza." +
+    (expectedAmount != null && Number.isFinite(expectedAmount)
+      ? ` El monto esperado del pedido es ${Number(expectedAmount).toFixed(2)} Bs.`
+      : "");
+
+  const result = await callGemini(
+    [
+      { text: prompt },
+      {
+        inlineData: {
+          mimeType: normalizeMimeType(mimeType),
+          data: buffer.toString("base64"),
+        },
+      },
+    ],
+    keys.geminiKey,
+    { maxTokens: 500, temperature: 0.05 }
+  );
+
+  if (!result.text) {
+    return { ...empty, error: result.error || "No se pudo leer el comprobante." };
+  }
+
+  const parsed = parseJsonObject(result.text);
+  if (!parsed) {
+    return {
+      ...empty,
+      rawText: result.text.slice(0, 1500),
+      error: "El comprobante no devolvió datos estructurados.",
+    };
+  }
+
+  const amountValue = Number(parsed.monto);
+  const confidenceValue = Number(parsed.confianza);
+
+  return {
+    isReceipt: parsed.esComprobante === true,
+    amount: Number.isFinite(amountValue) && amountValue > 0 ? amountValue : null,
+    currency: cleanReceiptString(parsed.moneda, 8) || "BOB",
+    wallet: cleanReceiptString(parsed.billetera, 80),
+    reference: cleanReceiptString(parsed.referencia, 120),
+    recipientName: cleanReceiptString(parsed.titularDestino, 120),
+    senderName: cleanReceiptString(parsed.titularOrigen, 120),
+    dateText: cleanReceiptString(parsed.fecha, 60),
+    confidence: Number.isFinite(confidenceValue)
+      ? Math.max(0, Math.min(1, confidenceValue))
+      : 0,
+    summary: cleanReceiptString(parsed.resumen, 400),
+    rawText: result.text.slice(0, 1500),
+  };
+}
+
+/**
  * Analiza una imagen (foto de menú, comprobante, producto, dirección, etc.)
  * usando Gemini. Devuelve una descripción útil para el asistente.
  */

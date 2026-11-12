@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getMetaWhatsAppConfig } from "@/lib/whatsapp/meta-manager";
 import { MetaCloudApiAdapter } from "@/lib/whatsapp/meta-cloud-adapter";
 import { runAgentChat } from "@/lib/ai/agent";
-import { analyzeImage, transcribeAudio } from "@/lib/ai/multimodal";
+import { analyzeImage, transcribeAudio, analyzePaymentReceipt, ReceiptAnalysis } from "@/lib/ai/multimodal";
 import { getAssistantConfig, buildSystemPrompt } from "@/lib/ai/config-manager";
 import { getRealDataContextPrompt } from "@/lib/ai/tools";
 import { prisma } from "@/lib/prisma";
@@ -11,7 +11,13 @@ import { confirmAndCreateOrder } from "@/lib/orders/order-service";
 import { isSafeExplicitConfirmation } from "@/lib/orders/confirmation";
 import { buildCustomerMemoryPrompt } from "@/lib/memory/customer-memory";
 import { ensureConversationSession } from "@/lib/memory/conversation-summary";
+import { buildCustomerLocationPrompt } from "@/lib/geo/delivery-center";
+import { reverseGeocode } from "@/lib/geo/reverse-geocode";
 import { decodeLoyaltyQrFromImage } from "@/lib/loyalty/qr-decode";
+import {
+  buildReceiptPromptBlock,
+  registerReceiptPayment,
+} from "@/lib/payments/receipt-service";
 import {
   buildLoyaltyCardPrompt,
   buildCustomerLoyaltyPrompt,
@@ -48,17 +54,34 @@ function cleanupWamidCache() {
 async function resolveIncomingText(
   msg: IncomingWhatsAppMessage,
   adapter: MetaCloudApiAdapter | null
-): Promise<{ text: string; mediaType: string; mediaId?: string; mediaError?: string }> {
+): Promise<{
+  text: string;
+  mediaType: string;
+  mediaId?: string;
+  mediaError?: string;
+  locationLabel?: string | null;
+  receiptAnalysis?: ReceiptAnalysis | null;
+}> {
   let text = (msg.text || "").trim();
   const mediaId = msg.imageMediaId || msg.audioMediaId || msg.documentMediaId;
   let mediaError: string | undefined;
+  let locationLabel: string | null = null;
+  let receiptAnalysis: ReceiptAnalysis | null = null;
 
   if (msg.type === "location" && msg.location) {
+    locationLabel =
+      msg.location.address?.trim() ||
+      (await reverseGeocode(msg.location.latitude, msg.location.longitude)) ||
+      null;
+
     return {
       text:
         `[Ubicación GPS compartida por el cliente: Lat ${msg.location.latitude}, ` +
-        `Lng ${msg.location.longitude}${msg.location.address ? ` - ${msg.location.address}` : ""}]`,
+        `Lng ${msg.location.longitude}${
+          locationLabel ? ` - ${locationLabel}` : ""
+        }]`,
       mediaType: "location",
+      locationLabel,
     };
   }
 
@@ -73,6 +96,19 @@ async function resolveIncomingText(
           : null;
         const analysis = await analyzeImage(media.buffer, media.mimeType, caption);
 
+        // Si el texto detectado sugiere un comprobante de pago, se hace un
+        // segundo análisis estructurado (monto, billetera, titular).
+        const receiptHints =
+          /comprobante|pago|transferencia|tigo|yape|zas|altoke|qr|monto|banco|referencia/i;
+        if (
+          receiptHints.test(`${caption || ""} ${analysis.text || ""}`)
+        ) {
+          receiptAnalysis = await analyzePaymentReceipt(
+            media.buffer,
+            media.mimeType
+          );
+        }
+
         if (analysis.text) {
           text = [
             caption
@@ -85,14 +121,18 @@ async function resolveIncomingText(
             .join("\n\n");
         } else {
           mediaError = analysis.error;
-          text = [
-            caption
-              ? `El cliente envió una foto con el texto "${caption}", pero la imagen no se pudo analizar. Pídele que describa lo que necesita.`
-              : "El cliente envió una foto que no se pudo analizar. Discúlpate y pídele que describa lo que necesita.",
-            loyaltyBlock,
-          ]
-            .filter(Boolean)
-            .join("\n\n");
+          text = receiptAnalysis?.isReceipt
+            ? caption
+              ? `El cliente envió una foto de un comprobante de pago y escribió: "${caption}".`
+              : "El cliente envió una foto de un comprobante de pago."
+            : [
+                caption
+                  ? `El cliente envió una foto con el texto "${caption}", pero la imagen no se pudo analizar. Pídele que describa lo que necesita.`
+                  : "El cliente envió una foto que no se pudo analizar. Discúlpate y pídele que describa lo que necesita.",
+                loyaltyBlock,
+              ]
+                .filter(Boolean)
+                .join("\n\n");
         }
       } catch (error: any) {
         mediaError = error?.message || String(error);
@@ -149,7 +189,7 @@ async function resolveIncomingText(
     text = "[Mensaje recibido por WhatsApp]";
   }
 
-  return { text, mediaType: msg.type, mediaId, mediaError };
+  return { text, mediaType: msg.type, mediaId, mediaError, locationLabel, receiptAnalysis };
 }
 
 /**
@@ -274,7 +314,7 @@ export async function POST(req: NextRequest) {
 
       // Visión y transcripción: convierte fotos/audios en texto comprensible.
       const resolved = await resolveIncomingText(msg, metaAdapter);
-      const userText = resolved.text;
+      let userText = resolved.text;
 
       // -------------------------------------------------------------
       // 2. IDENTIFICACIÓN Y REGISTRO DEL CLIENTE POR TELÉFONO
@@ -302,6 +342,43 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      // La ubicación compartida se guarda en el perfil del cliente para que la
+      // IA pueda calcular el delivery sin volver a pedirla.
+      if (msg.type === "location" && msg.location) {
+        customer = await prisma.customer.update({
+          where: { id: customer.id },
+          data: {
+            savedLatitude: msg.location.latitude,
+            savedLongitude: msg.location.longitude,
+            ...(resolved.locationLabel
+              ? { lastLocationLabel: resolved.locationLabel }
+              : {}),
+          },
+        });
+      }
+
+      // Si el cliente envió una foto de comprobante, se registra el pago y se
+      // añade el resultado al contexto para que la IA responda con exactitud.
+      if (resolved.receiptAnalysis?.isReceipt) {
+        try {
+          const receiptResult = await registerReceiptPayment({
+            customerId: customer.id,
+            analysis: resolved.receiptAnalysis,
+            mediaId: resolved.mediaId,
+            caption: msg.mediaCaption || null,
+          });
+          const receiptBlock = buildReceiptPromptBlock(receiptResult);
+          if (receiptBlock) {
+            userText = `${userText}\n\n${receiptBlock}`;
+          }
+        } catch (receiptError: any) {
+          console.error(
+            "[Meta Webhook] No se pudo registrar el comprobante:",
+            receiptError?.message || receiptError
+          );
+        }
+      }
+
       // -------------------------------------------------------------
       // 3. CONVERSACIÓN Y REGISTRO DE MENSAJE ENTRANTE EN BD
       // -------------------------------------------------------------
@@ -309,6 +386,18 @@ export async function POST(req: NextRequest) {
       // anterior se resume, se cierra y se abre una nueva sesión. La
       // memoria estructurada y los resúmenes se conservan por cliente.
       const conversation = await ensureConversationSession(customer.id, "WHATSAPP");
+
+      // Las ubicaciones en tiempo real llegan como varios mensajes seguidos.
+      // Se guarda cada actualización en el perfil, pero solo se responde a la
+      // primera de una ráfaga para no llenar el chat de respuestas repetidas.
+      const previousCustomerMessage =
+        msg.type === "location"
+          ? await prisma.message.findFirst({
+              where: { conversationId: conversation.id, sender: "CUSTOMER" },
+              orderBy: { createdAt: "desc" },
+              select: { mediaType: true, createdAt: true },
+            })
+          : null;
 
       // Guardar mensaje entrante del cliente con su identificador wamid
       await prisma.message.create({
@@ -329,6 +418,15 @@ export async function POST(req: NextRequest) {
           }),
         },
       });
+
+      if (
+        msg.type === "location" &&
+        previousCustomerMessage?.mediaType === "location" &&
+        Date.now() - previousCustomerMessage.createdAt.getTime() < 90_000
+      ) {
+        recentWamids.set(msg.id, { timestamp: Date.now(), state: "COMPLETED" });
+        continue;
+      }
 
       await prisma.conversation.update({
         where: { id: conversation.id },
@@ -511,14 +609,15 @@ export async function POST(req: NextRequest) {
         };
 
         const assistantConfig = await getAssistantConfig();
-        const [realDataContext, memoryContext, loyaltyContext] = await Promise.all([
+        const [realDataContext, memoryContext, loyaltyContext, locationContext] = await Promise.all([
           getRealDataContextPrompt(),
           buildCustomerMemoryPrompt(customer.id),
           buildCustomerLoyaltyPrompt(customer.id),
+          buildCustomerLocationPrompt(customer.id),
         ]);
         const systemPrompt = buildSystemPrompt(
           assistantConfig,
-          [realDataContext, memoryContext, loyaltyContext]
+          [realDataContext, memoryContext, loyaltyContext, locationContext]
             .filter(Boolean)
             .join("\n\n")
         );
@@ -569,8 +668,18 @@ export async function POST(req: NextRequest) {
           aiResponse.content?.trim() ||
           "¡Hola! He recibido tu mensaje en TropiGO Ivirgarzama. En un momento te atendemos.";
 
-        // Enviar respuesta por WhatsApp oficial de Meta
-        const outboundWamid = await metaAdapter.sendMessage(customerPhone, replyText);
+        // Enviar respuesta por WhatsApp oficial de Meta. Si la IA pidió la
+        // ubicación, se usa el botón nativo de compartir ubicación.
+        const wantsLocation = Boolean(
+          aiResponse.toolCalls?.some(
+            (call) => call.tool === "solicitar_ubicacion"
+          )
+        );
+        const outboundWamid = wantsLocation
+          ? await metaAdapter
+              .sendLocationRequest(customerPhone, replyText)
+              .catch(() => metaAdapter.sendMessage(customerPhone, replyText))
+          : await metaAdapter.sendMessage(customerPhone, replyText);
 
         // Guardar mensaje saliente del asistente con su wamid, herramientas usadas y estado inicial SENT
         await prisma.message.create({
