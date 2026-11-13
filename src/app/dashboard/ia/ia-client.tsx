@@ -35,6 +35,13 @@ import {
 } from "lucide-react";
 import { AIProviderStatus, ConnectionTestResult, VERIFIED_MODELS_CATALOG } from "@/lib/ai/types";
 import { AssistantIdentityConfig } from "@/lib/ai/config-manager";
+import {
+  DEFAULT_CEREBRAS_MODEL,
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_GROQ_MODEL,
+  DEFAULT_OPENROUTER_MODEL,
+  DEFAULT_SIMULATOR_MODEL,
+} from "@/lib/ai/model-defaults";
 
 interface IAClientProps {
   initialProviders: AIProviderStatus[];
@@ -951,11 +958,11 @@ export function IAClient({ initialProviders, initialAssistantConfig }: IAClientP
                   value={config.activeProvider}
                   onChange={(e) => {
                     const newProvider = e.target.value;
-                    let defaultModel = "llama-3.3-70b-versatile";
-                    if (newProvider === "GEMINI") defaultModel = "gemini-1.5-flash";
-                    if (newProvider === "OPENROUTER") defaultModel = "meta-llama/llama-3.3-70b-instruct:free";
-                    if (newProvider === "CEREBRAS") defaultModel = "llama3.1-70b";
-                    if (newProvider === "LOCAL") defaultModel = "local-ivirgarzama-v1";
+                    let defaultModel = DEFAULT_GROQ_MODEL;
+                    if (newProvider === "GEMINI") defaultModel = DEFAULT_GEMINI_MODEL;
+                    if (newProvider === "OPENROUTER") defaultModel = DEFAULT_OPENROUTER_MODEL;
+                    if (newProvider === "CEREBRAS") defaultModel = DEFAULT_CEREBRAS_MODEL;
+                    if (newProvider === "LOCAL") defaultModel = DEFAULT_SIMULATOR_MODEL;
 
                     setConfig({
                       ...config,
@@ -965,8 +972,8 @@ export function IAClient({ initialProviders, initialAssistantConfig }: IAClientP
                   }}
                   className="w-full bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-3.5 py-2.5 text-xs text-[#101828] font-bold focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 >
-                  <option value="GROQ">Groq Cloud (Llama 3.3 70B & 8B) - Recomendado</option>
-                  <option value="GEMINI">Google Gemini (1.5 Flash & 8B)</option>
+                  <option value="GROQ">Groq Cloud (GPT-OSS 120B & 20B) - Recomendado</option>
+                  <option value="GEMINI">Google Gemini (3.x Flash Lite)</option>
                   <option value="OPENROUTER">OpenRouter (Capa Libre :free)</option>
                   <option value="CEREBRAS">Cerebras Cloud (Developer Trial)</option>
                   <option value="LOCAL">Simulador Local Ivirgarzama (Sin Internet/0 Bs.)</option>

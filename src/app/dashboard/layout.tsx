@@ -1,5 +1,6 @@
 import { Sidebar } from "@/components/sidebar";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth/session";
 import { MasterAssistantSwitch } from "./master-switch";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [business, agency, wpChannel, webChannel, pendingOrders, pendingHuman] =
+  const [business, agency, wpChannel, webChannel, pendingOrders, pendingHuman, session] =
     await Promise.all([
       prisma.businessProfile.findFirst(),
       prisma.agencyProfile.findFirst(),
@@ -17,6 +18,7 @@ export default async function DashboardLayout({
       prisma.channel.findUnique({ where: { type: "webchat" } }),
       prisma.order.count({ where: { status: "RECIBIDO" } }),
       prisma.conversation.count({ where: { status: "HUMAN_TAKEOVER" } }),
+      getSession(),
     ]);
 
   const isWpConnected = wpChannel?.status === "connected";
@@ -28,6 +30,8 @@ export default async function DashboardLayout({
         businessName={business?.name || "TropiGO Ivirgarzama"}
         pendingOrdersCount={pendingOrders}
         unreadCount={pendingHuman}
+        userName={session?.name || "Operador Central"}
+        userRole={session?.role || "ADMIN"}
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">

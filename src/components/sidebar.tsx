@@ -25,6 +25,8 @@ interface SidebarProps {
   pendingOrdersCount?: number;
   unreadCount?: number;
   businessName?: string;
+  userName?: string;
+  userRole?: string;
 }
 
 interface NavItem {
@@ -45,9 +47,28 @@ export function Sidebar({
   pendingOrdersCount = 1,
   unreadCount = 2,
   businessName = "TropiGO Ivirgarzama",
+  userName = "Operador Central",
+  userRole = "ADMIN",
 }: SidebarProps) {
   const pathname = usePathname();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem("tropigo_token");
+      localStorage.removeItem("tropigo_logged_in");
+    } catch {}
+    window.location.href = "/api/auth/logout";
+  };
+
+  const userInitials =
+    userName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase() || "IV";
 
   // Cerrar el drawer al cambiar de ruta
   useEffect(() => {
@@ -260,25 +281,26 @@ export function Sidebar({
         <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-[#EAECF0] shadow-2xs">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center shrink-0">
-              IV
+              {userInitials}
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold text-[#101828] truncate">
-                Operador Central
+                {userName}
               </p>
               <p className="text-[10px] text-emerald-600 font-semibold truncate flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-                Ivirgarzama (Online)
+                {userRole} · Ivirgarzama
               </p>
             </div>
           </div>
-          <Link
-            href="/api/auth/logout"
+          <button
+            type="button"
+            onClick={handleLogout}
             title="Cerrar sesión"
             className="text-[#98A2B3] hover:text-[#475467] p-1.5 rounded-lg hover:bg-[#F2F4F7]"
           >
             <LogOut className="w-4 h-4" />
-          </Link>
+          </button>
         </div>
       </div>
     </>

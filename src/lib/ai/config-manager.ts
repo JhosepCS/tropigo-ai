@@ -1,4 +1,12 @@
 import { prisma } from "../prisma";
+import {
+  DEFAULT_CEREBRAS_MODEL,
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_GROQ_MODEL,
+  DEFAULT_OPENROUTER_MODEL,
+  defaultModelForProvider,
+  normalizeProviderModel,
+} from "./model-defaults";
 
 export interface AssistantIdentityConfig {
   id?: string;
@@ -42,16 +50,37 @@ export const DEFAULT_ASSISTANT_CONFIG: AssistantIdentityConfig = {
   handoffRules: ["queja", "reclamo", "pide hablar con alguien", "no sabe la respuesta", "urgencia", "audio ininteligible"],
   customHandoffRule: "Pausar respuestas y transferir de inmediato si el cliente manifiesta inconformidad con un pedido previo o solicita hablar con una persona.",
   activeProvider: "GEMINI",
-  activeModel: "gemini-3.1-flash-lite",
+  activeModel: DEFAULT_GEMINI_MODEL,
   fallbackProviders: ["GEMINI", "LOCAL"],
   providerModels: {
-    groq: "llama-3.3-70b-versatile",
-    gemini: "gemini-3.1-flash-lite",
-    cerebras: "llama3.1-70b",
-    openrouter: "meta-llama/llama-3.3-70b-instruct:free",
+    groq: DEFAULT_GROQ_MODEL,
+    gemini: DEFAULT_GEMINI_MODEL,
+    cerebras: DEFAULT_CEREBRAS_MODEL,
+    openrouter: DEFAULT_OPENROUTER_MODEL,
   },
   safeMode: false,
 };
+
+/**
+ * Limpia los modelos guardados en la base de datos: si un proveedor cambió o
+ * retiró un modelo, se reemplaza por el vigente sin obligar al operador a
+ * volver a configurar el CRM.
+ */
+function normalizeProviderModels(
+  input: Record<string, string> | undefined | null
+): Record<string, string> {
+  const merged: Record<string, string> = {
+    ...DEFAULT_ASSISTANT_CONFIG.providerModels,
+    ...(input || {}),
+  };
+
+  for (const provider of Object.keys(merged)) {
+    const normalized = normalizeProviderModel(provider, merged[provider]);
+    merged[provider] = normalized || defaultModelForProvider(provider);
+  }
+
+  return merged;
+}
 
 /**
  * Obtiene la configuración actual del asistente desde Supabase.
@@ -102,6 +131,11 @@ export async function getAssistantConfig(): Promise<AssistantIdentityConfig> {
       }
     } catch {}
 
+    const activeProvider = record.activeProvider || DEFAULT_ASSISTANT_CONFIG.activeProvider;
+    const activeModel =
+      normalizeProviderModel(activeProvider, record.activeModel) ||
+      defaultModelForProvider(activeProvider);
+
     return {
       id: record.id,
       name: record.name || DEFAULT_ASSISTANT_CONFIG.name,
@@ -117,10 +151,10 @@ export async function getAssistantConfig(): Promise<AssistantIdentityConfig> {
       orderPolicy: extraData.orderPolicy || DEFAULT_ASSISTANT_CONFIG.orderPolicy,
       handoffRules: parsedHandoff,
       customHandoffRule: record.customHandoffRule || DEFAULT_ASSISTANT_CONFIG.customHandoffRule,
-      activeProvider: record.activeProvider || "GEMINI",
-      activeModel: record.activeModel || "gemini-3.1-flash-lite",
+      activeProvider,
+      activeModel,
       fallbackProviders: extraData.fallbackProviders || DEFAULT_ASSISTANT_CONFIG.fallbackProviders,
-      providerModels: extraData.providerModels || DEFAULT_ASSISTANT_CONFIG.providerModels,
+      providerModels: normalizeProviderModels(extraData.providerModels),
       safeMode: record.safeMode ?? false,
       updatedAt: record.updatedAt?.toISOString(),
     };
@@ -143,6 +177,13 @@ export async function saveAssistantConfig(
     ...input,
   };
 
+  // Nunca guardar identificadores retirados: se traducen al modelo vigente.
+  merged.activeProvider = merged.activeProvider || DEFAULT_ASSISTANT_CONFIG.activeProvider;
+  merged.activeModel =
+    normalizeProviderModel(merged.activeProvider, merged.activeModel) ||
+    defaultModelForProvider(merged.activeProvider);
+  merged.providerModels = normalizeProviderModels(merged.providerModels);
+
   const extraData = {
     description: merged.description,
     languageStyle: merged.languageStyle,
@@ -150,7 +191,7 @@ export async function saveAssistantConfig(
     quotePolicy: merged.quotePolicy,
     orderPolicy: merged.orderPolicy,
     fallbackProviders: merged.fallbackProviders || DEFAULT_ASSISTANT_CONFIG.fallbackProviders,
-    providerModels: merged.providerModels || DEFAULT_ASSISTANT_CONFIG.providerModels,
+    providerModels: merged.providerModels,
   };
 
   const existing = await prisma.assistantConfig.findFirst();
@@ -169,8 +210,8 @@ export async function saveAssistantConfig(
         handoffRules: JSON.stringify(merged.handoffRules),
         customHandoffRule: merged.customHandoffRule ? merged.customHandoffRule.trim() : null,
         operatingHoursJson: JSON.stringify(extraData),
-        activeProvider: merged.activeProvider || "GEMINI",
-        activeModel: merged.activeModel || "gemini-3.1-flash-lite",
+        activeProvider: merged.activeProvider,
+        activeModel: merged.activeModel,
         safeMode: merged.safeMode ?? false,
       },
     });
@@ -186,8 +227,8 @@ export async function saveAssistantConfig(
         handoffRules: JSON.stringify(merged.handoffRules),
         customHandoffRule: merged.customHandoffRule ? merged.customHandoffRule.trim() : null,
         operatingHoursJson: JSON.stringify(extraData),
-        activeProvider: merged.activeProvider || "GEMINI",
-        activeModel: merged.activeModel || "gemini-3.1-flash-lite",
+        activeProvider: merged.activeProvider,
+        activeModel: merged.activeModel,
         safeMode: merged.safeMode ?? false,
       },
     });

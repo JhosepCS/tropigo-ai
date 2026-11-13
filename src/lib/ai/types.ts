@@ -89,16 +89,25 @@ export const VERIFIED_MODELS_CATALOG: Record<
 > = {
   groq: [
     {
-      id: "llama-3.3-70b-versatile",
-      name: "Llama 3.3 70B Versatile (Recomendado)",
+      id: "openai/gpt-oss-120b",
+      name: "GPT-OSS 120B (Recomendado)",
       isFree: true,
-      description: "Modelo principal ultra-rápido, 128k contexto. 30 RPM / 1,000 RPD gratis.",
+      description:
+        "Modelo vigente de Groq con soporte de herramientas y 131k de contexto. Reemplaza al retirado Llama 3.3 70B.",
     },
     {
-      id: "llama-3.1-8b-instant",
-      name: "Llama 3.1 8B Instant",
+      id: "openai/gpt-oss-20b",
+      name: "GPT-OSS 20B",
       isFree: true,
-      description: "Latencia mínima extrema para respuestas de catálogo y tarifas rápidas.",
+      description:
+        "Variante compacta de latencia mínima para respuestas rápidas de catálogo y tarifas.",
+    },
+    {
+      id: "qwen/qwen3.8-27b",
+      name: "Qwen 3.8 27B",
+      isFree: true,
+      description:
+        "Alternativa vigente en Groq con buen razonamiento en español y soporte de herramientas.",
     },
   ],
   gemini: [
@@ -144,22 +153,25 @@ export const VERIFIED_MODELS_CATALOG: Record<
   ],
   openrouter: [
     {
-      id: "meta-llama/llama-3.3-70b-instruct:free",
-      name: "Llama 3.3 70B Instruct (:free)",
+      id: "openrouter/free",
+      name: "OpenRouter Free Router (Recomendado)",
       isFree: true,
-      description: "Capa comunitaria gratuita de OpenRouter. Garantía estricta 0 Bs.",
+      description:
+        "Enrutador automático que elige un modelo :free disponible. Garantía 0 Bs y soporte de herramientas.",
     },
     {
-      id: "meta-llama/llama-3.1-8b-instruct:free",
-      name: "Llama 3.1 8B Instruct (:free)",
+      id: "nvidia/nemotron-3.5-super-vl:free",
+      name: "Nemotron 3.5 Super VL (:free)",
       isFree: true,
-      description: "Modelo gratuito rápido comunitario sin costo por token.",
+      description:
+        "Modelo gratuito multimodal con soporte de herramientas y 1M de contexto.",
     },
     {
-      id: "mistralai/mistral-7b-instruct:free",
-      name: "Mistral 7B Instruct (:free)",
+      id: "google/gemma-4-31b-it:free",
+      name: "Gemma 4 31B IT (:free)",
       isFree: true,
-      description: "Modelo libre de respaldo para tareas estándar.",
+      description:
+        "Modelo gratuito de Google con buen desempeño en español y soporte de herramientas.",
     },
   ],
   simulator: [

@@ -9,6 +9,15 @@ import {
 } from "./types";
 import { getProviderKeys, maskKey } from "./key-manager";
 import { getAssistantConfig, AssistantIdentityConfig } from "./config-manager";
+import {
+  DEFAULT_CEREBRAS_MODEL,
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_GROQ_MODEL,
+  DEFAULT_OPENROUTER_MODEL,
+  defaultModelForProvider,
+  isFreeOpenRouterModel,
+  normalizeProviderModel,
+} from "./model-defaults";
 import { GroqAdapter } from "./adapters/groq-adapter";
 import { GeminiAdapter } from "./adapters/gemini-adapter";
 import { CerebrasAdapter } from "./adapters/cerebras-adapter";
@@ -26,10 +35,11 @@ export class ModelRouter {
     return [
       {
         provider: "groq",
-        name: "Groq Cloud (Llama 3.3 70B & 8B)",
+        name: "Groq Cloud (GPT-OSS 120B & 20B)",
         status: keys.groqKey ? "ACTIVE" : "PENDING_KEY",
         configuredModel:
-          config.providerModels?.groq || "llama-3.3-70b-versatile",
+          normalizeProviderModel("groq", config.providerModels?.groq) ||
+          DEFAULT_GROQ_MODEL,
         availableModels: VERIFIED_MODELS_CATALOG.groq.map((m) => m.id),
         maskedKey: maskKey(keys.groqKey),
         isFreeVerified: true,
@@ -45,7 +55,9 @@ export class ModelRouter {
         provider: "gemini",
         name: "Google Gemini 3.x (Texto + Visión + Audio)",
         status: keys.geminiKey ? "ACTIVE" : "PENDING_KEY",
-        configuredModel: config.providerModels?.gemini || "gemini-3.1-flash-lite",
+        configuredModel:
+          normalizeProviderModel("gemini", config.providerModels?.gemini) ||
+          DEFAULT_GEMINI_MODEL,
         availableModels: VERIFIED_MODELS_CATALOG.gemini.map((m) => m.id),
         maskedKey: maskKey(keys.geminiKey),
         isFreeVerified: true,
@@ -63,7 +75,8 @@ export class ModelRouter {
         name: "OpenRouter (Capa Comunitaria :free)",
         status: keys.openRouterKey ? "ACTIVE" : "PENDING_KEY",
         configuredModel:
-          config.providerModels?.openrouter || "meta-llama/llama-3.3-70b-instruct:free",
+          normalizeProviderModel("openrouter", config.providerModels?.openrouter) ||
+          DEFAULT_OPENROUTER_MODEL,
         availableModels: VERIFIED_MODELS_CATALOG.openrouter.map((m) => m.id),
         maskedKey: maskKey(keys.openRouterKey),
         isFreeVerified: true,
@@ -77,7 +90,9 @@ export class ModelRouter {
         provider: "cerebras",
         name: "Cerebras Cloud (Inference Trial)",
         status: keys.cerebrasKey ? "TRIAL" : "PENDING_KEY",
-        configuredModel: config.providerModels?.cerebras || "llama3.1-70b",
+        configuredModel:
+          normalizeProviderModel("cerebras", config.providerModels?.cerebras) ||
+          DEFAULT_CEREBRAS_MODEL,
         availableModels: VERIFIED_MODELS_CATALOG.cerebras.map((m) => m.id),
         maskedKey: maskKey(keys.cerebrasKey),
         isFreeVerified: false,
@@ -119,22 +134,28 @@ export class ModelRouter {
       case "groq":
         return new GroqAdapter(
           keyOverride || keys.groqKey,
-          modelOverride || config.providerModels?.groq || "llama-3.3-70b-versatile"
+          normalizeProviderModel("groq", modelOverride || config.providerModels?.groq) ||
+            DEFAULT_GROQ_MODEL
         );
       case "gemini":
         return new GeminiAdapter(
           keyOverride || keys.geminiKey,
-          modelOverride || config.providerModels?.gemini || "gemini-3.1-flash-lite"
+          normalizeProviderModel("gemini", modelOverride || config.providerModels?.gemini) ||
+            DEFAULT_GEMINI_MODEL
         );
       case "cerebras":
         return new CerebrasAdapter(
           keyOverride || keys.cerebrasKey,
-          modelOverride || config.providerModels?.cerebras || "llama3.1-70b"
+          normalizeProviderModel("cerebras", modelOverride || config.providerModels?.cerebras) ||
+            DEFAULT_CEREBRAS_MODEL
         );
       case "openrouter":
         return new OpenRouterAdapter(
           keyOverride || keys.openRouterKey,
-          modelOverride || config.providerModels?.openrouter || "meta-llama/llama-3.3-70b-instruct:free"
+          normalizeProviderModel(
+            "openrouter",
+            modelOverride || config.providerModels?.openrouter
+          ) || DEFAULT_OPENROUTER_MODEL
         );
       case "simulator":
       case "local":
@@ -170,16 +191,28 @@ export class ModelRouter {
     // Gemini es el motor gratuito principal (texto + visión + audio).
     const primaryProvider = (config.activeProvider || "GEMINI").toLowerCase();
     const primaryModel =
-      config.activeModel || options?.model || "gemini-3.1-flash-lite";
+      normalizeProviderModel(primaryProvider, config.activeModel || options?.model) ||
+      defaultModelForProvider(primaryProvider);
 
     // 2. Construir adaptadores
-    const groq = new GroqAdapter(keys.groqKey, config.providerModels?.groq || "llama-3.3-70b-versatile");
+    const groq = new GroqAdapter(
+      keys.groqKey,
+      normalizeProviderModel("groq", config.providerModels?.groq) || DEFAULT_GROQ_MODEL
+    );
     const gemini = new GeminiAdapter(
       keys.geminiKey,
-      config.providerModels?.gemini || "gemini-3.1-flash-lite"
+      normalizeProviderModel("gemini", config.providerModels?.gemini) || DEFAULT_GEMINI_MODEL
     );
-    const openrouter = new OpenRouterAdapter(keys.openRouterKey, config.providerModels?.openrouter || "meta-llama/llama-3.3-70b-instruct:free");
-    const cerebras = new CerebrasAdapter(keys.cerebrasKey, config.providerModels?.cerebras || "llama3.1-70b");
+    const openrouter = new OpenRouterAdapter(
+      keys.openRouterKey,
+      normalizeProviderModel("openrouter", config.providerModels?.openrouter) ||
+        DEFAULT_OPENROUTER_MODEL
+    );
+    const cerebras = new CerebrasAdapter(
+      keys.cerebrasKey,
+      normalizeProviderModel("cerebras", config.providerModels?.cerebras) ||
+        DEFAULT_CEREBRAS_MODEL
+    );
     const simulator = new LocalSimulatorAdapter();
 
     // 3. Mapear proveedores disponibles
@@ -200,8 +233,8 @@ export class ModelRouter {
     const validateFreeModel = (provider: string, model?: string) => {
       if (!model) return true; // Si no hay modelo, el adaptador usa su default (que asumimos gratuito)
 
-      // Restricción estricta: OpenRouter solo permite modelos con sufijo :free
-      if (provider === "openrouter" && !model.endsWith(":free")) {
+      // Restricción estricta: OpenRouter solo permite la capa gratuita.
+      if (provider === "openrouter" && !isFreeOpenRouterModel(model)) {
         return false;
       }
 

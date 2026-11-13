@@ -98,7 +98,7 @@ export async function scrapeWebsite(rootUrl: string): Promise<CrawlResult> {
           "X-Title": "Atiende",
         },
         body: JSON.stringify({
-          model: "anthropic/claude-3.5-haiku",
+          model: "openrouter/free",
           messages: [
             {
               role: "system",

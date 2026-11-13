@@ -41,7 +41,7 @@ export function Simulator() {
       title: "Asistente Inicializado",
       tool: "identidad",
       status: "ready",
-      details: "TropiBot (Groq / llama-3.3-70b) listo para Ivirgarzama (Trópico de Cochabamba).",
+      details: "TropiBot (Groq / GPT-OSS 120B) listo para Ivirgarzama (Trópico de Cochabamba).",
       time: "Ahora",
     },
   ]);
@@ -65,19 +65,28 @@ export function Simulator() {
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "No se pudo conectar con TropiBot.");
+      }
+
+      // La API devuelve { success, result: { content, toolCalls, ... } }.
+      // Se acepta también el formato plano por compatibilidad.
+      const result = data.result || data;
+      const toolCalls = result.toolCalls || data.toolCalls;
+
       setMessages([
         ...newMsgs,
         {
           role: "assistant",
-          content: data.content || "Mensaje procesado.",
-          toolCalls: data.toolCalls,
+          content: result.content || "Mensaje procesado.",
+          toolCalls,
         },
       ]);
 
       // Agregar a la línea de tiempo de ejecución
-      if (data.toolCalls && data.toolCalls.length > 0) {
-        const newSteps = data.toolCalls.map((tc: any) => ({
+      if (toolCalls && toolCalls.length > 0) {
+        const newSteps = toolCalls.map((tc: any) => ({
           title: `Herramienta: ${tc.tool}`,
           tool: tc.tool,
           status: "success",
@@ -98,13 +107,16 @@ export function Simulator() {
           ...prev,
         ]);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
       setMessages([
         ...newMsgs,
         {
           role: "assistant",
-          content: "Hubo un error al conectar con TropiBot.",
+          content:
+            e?.message === "No estás autenticado en TropiGO"
+              ? "Tu sesión expiró. Vuelve a iniciar sesión para usar el simulador."
+              : e?.message || "Hubo un error al conectar con TropiBot.",
         },
       ]);
     } finally {
@@ -155,7 +167,7 @@ export function Simulator() {
                   TropiBot Simulator
                 </span>
                 <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full">
-                  Groq llama-3.3
+                  Groq GPT-OSS
                 </span>
               </div>
               <p className="text-[11px] text-[#667085]">

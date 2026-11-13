@@ -60,6 +60,11 @@ con QR personal.
 - Webhook de Meta verificado. El canal está en `DISCONNECTED` hasta cargar las
   credenciales oficiales en **Canales**.
 - Worker de Render opcional para el modo QR no oficial.
+- Modelos de IA vigentes (noviembre 2026): Gemini `gemini-3.1-flash-lite`,
+  Groq `openai/gpt-oss-120b` y OpenRouter `openrouter/free`. Los IDs retirados
+  (`llama-3.3-70b-versatile`, `meta-llama/llama-3.3-70b-instruct:free`) se
+  migran automáticamente desde `src/lib/ai/model-defaults.ts`; no hace falta
+  reconfigurar la base de datos.
 
 ## 3. Comandos
 

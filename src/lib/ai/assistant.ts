@@ -2,6 +2,7 @@ import { prisma } from "../prisma";
 import { executeTool, getToolDefinitions, TROPIGO_TOOLS } from "./tools";
 import { OrderToolContext } from "../orders/order-service";
 import { calculateRideFare, getRideFareConfig } from "../rides/fare";
+import { DEFAULT_GROQ_MODEL, normalizeProviderModel } from "./model-defaults";
 
 export interface ToolCallExecution {
   tool: string;
@@ -194,7 +195,7 @@ export async function executeToolCall(
 
 /**
  * Invoca el motor de IA de TropiBot
- * Prioridad 1: Groq API (Plan 100% gratuito de alta velocidad con llama-3.3-70b-versatile)
+ * Prioridad 1: Groq API (Plan 100% gratuito de alta velocidad con GPT-OSS 120B)
  * Prioridad 2: OpenRouter API (Fallback)
  * Prioridad 3: Simulador contextualizado local para Ivirgarzama (Zero Config)
  */
@@ -204,7 +205,8 @@ export async function runAssistantChat(
   context?: OrderToolContext
 ): Promise<AssistantResponse> {
   const groqKey = process.env.GROQ_API_KEY;
-  const groqModel = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+  const groqModel =
+    normalizeProviderModel("groq", process.env.GROQ_MODEL) || DEFAULT_GROQ_MODEL;
 
   // 1. Si existe GROQ_API_KEY configurada, usar el endpoint gratuito de Groq
   if (groqKey) {

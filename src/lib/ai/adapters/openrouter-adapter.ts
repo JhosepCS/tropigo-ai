@@ -1,16 +1,42 @@
-import { IAAdapter, ChatMessage, CompletionOptions, CompletionResult, ConnectionTestResult } from "../types";
+import {
+  IAAdapter,
+  ChatMessage,
+  CompletionOptions,
+  CompletionResult,
+  ConnectionTestResult,
+} from "../types";
+import {
+  DEFAULT_OPENROUTER_MODEL,
+  normalizeProviderModel,
+} from "../model-defaults";
+
+/**
+ * Detecta cuando OpenRouter rechaza un modelo porque dejó de ser gratuito,
+ * ya no existe o no está disponible para la cuenta. Se reintenta una vez con
+ * el enrutador gratuito vigente.
+ */
+function isUnavailableModelError(status: number, detail: string): boolean {
+  if (status !== 404 && status !== 400) return false;
+  const text = (detail || "").toLowerCase();
+  return (
+    text.includes("unavailable") ||
+    text.includes("does not exist") ||
+    text.includes("not found") ||
+    text.includes("no longer") ||
+    text.includes("not available")
+  );
+}
 
 export class OpenRouterAdapter implements IAAdapter {
   readonly providerName = "openrouter" as const;
   private apiKey?: string;
   private defaultModel: string;
 
-  constructor(apiKey?: string, defaultModel = "meta-llama/llama-3.3-70b-instruct:free") {
+  constructor(apiKey?: string, defaultModel = DEFAULT_OPENROUTER_MODEL) {
     this.apiKey = apiKey?.trim();
-    // Forzar que el modelo por defecto siempre sea de la capa gratuita :free
-    this.defaultModel = defaultModel.endsWith(":free")
-      ? defaultModel
-      : "meta-llama/llama-3.3-70b-instruct:free";
+    this.defaultModel =
+      normalizeProviderModel("openrouter", defaultModel) ||
+      DEFAULT_OPENROUTER_MODEL;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -18,22 +44,57 @@ export class OpenRouterAdapter implements IAAdapter {
   }
 
   /**
-   * Garantiza que únicamente se ejecuten modelos de la capa comunitaria gratuita (:free)
+   * Garantiza que únicamente se ejecuten modelos de la capa comunitaria
+   * gratuita (`:free` u `openrouter/free`).
    */
   private enforceFreeModel(modelCandidate?: string): string {
-    const candidate = modelCandidate || this.defaultModel;
-    if (!candidate.endsWith(":free")) {
+    const candidate = normalizeProviderModel(
+      "openrouter",
+      modelCandidate || this.defaultModel
+    );
+    if (!candidate) return DEFAULT_OPENROUTER_MODEL;
+
+    if (
+      candidate !== DEFAULT_OPENROUTER_MODEL &&
+      !candidate.endsWith(":free")
+    ) {
       console.warn(
-        `[OpenRouter Safety Guard] El modelo '${candidate}' no incluye la etiqueta ':free'. ` +
-        `Reemplazando automáticamente por '${this.defaultModel}' para garantizar 0 Bs de costo.`
+        `[OpenRouter Safety Guard] El modelo '${candidate}' no pertenece a la capa gratuita. ` +
+          `Reemplazando automáticamente por '${DEFAULT_OPENROUTER_MODEL}' para garantizar 0 Bs de costo.`
       );
-      return this.defaultModel;
+      return DEFAULT_OPENROUTER_MODEL;
     }
+
     return candidate;
   }
 
+  private async callChat(
+    model: string,
+    body: Record<string, unknown>
+  ): Promise<Response> {
+    return fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://tropigo.app",
+        "X-Title": "TropiGO AI Ivirgarzama",
+      },
+      body: JSON.stringify({ ...body, model }),
+    });
+  }
+
+  private async readError(res: Response): Promise<string> {
+    try {
+      const errJson = await res.json();
+      return errJson.error?.message || JSON.stringify(errJson);
+    } catch {
+      return await res.text().catch(() => `HTTP ${res.status}`);
+    }
+  }
+
   async testConnection(options?: { model?: string }): Promise<ConnectionTestResult> {
-    const model = this.enforceFreeModel(options?.model);
+    let model = this.enforceFreeModel(options?.model);
     if (!this.apiKey) {
       return {
         success: false,
@@ -46,39 +107,39 @@ export class OpenRouterAdapter implements IAAdapter {
 
     const startTime = Date.now();
     try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://tropigo.app",
-          "X-Title": "TropiGO AI Ivirgarzama",
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: "user", content: "ping" }],
-          max_tokens: 5,
-          temperature: 0.1,
-        }),
+      let res = await this.callChat(model, {
+        messages: [{ role: "user", content: "ping" }],
+        max_tokens: 5,
+        temperature: 0.1,
       });
+
+      let errorDetail = "";
+      if (!res.ok) {
+        errorDetail = await this.readError(res);
+
+        if (
+          isUnavailableModelError(res.status, errorDetail) &&
+          model !== DEFAULT_OPENROUTER_MODEL
+        ) {
+          model = DEFAULT_OPENROUTER_MODEL;
+          res = await this.callChat(model, {
+            messages: [{ role: "user", content: "ping" }],
+            max_tokens: 5,
+            temperature: 0.1,
+          });
+          if (!res.ok) errorDetail = await this.readError(res);
+        }
+      }
 
       const latencyMs = Date.now() - startTime;
 
       if (!res.ok) {
-        let errorDetail = `HTTP ${res.status}`;
-        try {
-          const errJson = await res.json();
-          errorDetail = errJson.error?.message || JSON.stringify(errJson);
-        } catch {
-          errorDetail = await res.text().catch(() => `HTTP ${res.status}`);
-        }
-
         if (res.status === 401) {
           errorDetail = "Clave API de OpenRouter inválida o no autorizada.";
         } else if (res.status === 402) {
           errorDetail = "OpenRouter solicitó créditos de pago. Solicitud bloqueada por la garantía 0 Bs.";
         } else if (res.status === 429) {
-          errorDetail = "Límite de tasa en la capa libre :free alcanzado temporalmente en OpenRouter.";
+          errorDetail = "Límite de tasa en la capa libre alcanzado temporalmente en OpenRouter.";
         }
 
         return {
@@ -119,11 +180,10 @@ export class OpenRouterAdapter implements IAAdapter {
       throw new Error("OPENROUTER_API_KEY no está configurada.");
     }
 
-    const model = this.enforceFreeModel(options?.model);
+    let model = this.enforceFreeModel(options?.model);
     const startTime = Date.now();
 
-    const bodyPayload: any = {
-      model,
+    const bodyPayload: Record<string, unknown> = {
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
       temperature: options?.temperature ?? 0.3,
     };
@@ -132,27 +192,33 @@ export class OpenRouterAdapter implements IAAdapter {
       bodyPayload.max_tokens = options.maxTokens;
     }
 
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://tropigo.app",
-        "X-Title": "TropiGO AI Ivirgarzama",
-      },
-      body: JSON.stringify(bodyPayload),
-    });
+    if (options?.tools && options.tools.length > 0) {
+      bodyPayload.tools = options.tools;
+      bodyPayload.tool_choice = options.toolChoice || "auto";
+    }
+
+    let res = await this.callChat(model, bodyPayload);
+    let errText = "";
+
+    if (!res.ok) {
+      errText = await this.readError(res);
+
+      if (
+        isUnavailableModelError(res.status, errText) &&
+        model !== DEFAULT_OPENROUTER_MODEL
+      ) {
+        console.warn(
+          `[OpenRouterAdapter] El modelo '${model}' no está disponible en la capa gratuita. Reintentando con '${DEFAULT_OPENROUTER_MODEL}'.`
+        );
+        model = DEFAULT_OPENROUTER_MODEL;
+        res = await this.callChat(model, bodyPayload);
+        if (!res.ok) errText = await this.readError(res);
+      }
+    }
 
     const latencyMs = Date.now() - startTime;
 
     if (!res.ok) {
-      let errText = "";
-      try {
-        const errJson = await res.json();
-        errText = errJson.error?.message || JSON.stringify(errJson);
-      } catch {
-        errText = await res.text().catch(() => "");
-      }
       throw new Error(`OpenRouter API Error [${res.status}]: ${errText}`);
     }
 

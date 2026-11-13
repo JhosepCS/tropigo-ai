@@ -95,36 +95,40 @@ export async function createSession(
  */
 export async function getSession(): Promise<SessionPayload | null> {
   try {
-    let token: string | undefined;
+    const candidates: string[] = [];
 
     // 1. Intentar leer desde cookies
     try {
       const cookieStore = await cookies();
-      token =
+      const cookieToken =
         cookieStore.get(COOKIE_NAME)?.value ||
         cookieStore.get(LEGACY_COOKIE_NAME)?.value;
+      if (cookieToken) candidates.push(cookieToken);
     } catch {
       // Ignorar si cookies() no está disponible
     }
 
-    // 2. Si no hay cookie, intentar leer desde headers HTTP
-    if (!token) {
-      try {
-        const headersList = await headers();
-        const authHeader = headersList.get("authorization");
-        if (authHeader && authHeader.startsWith("Bearer ")) {
-          token = authHeader.substring(7).trim();
-        } else {
-          token = headersList.get("x-tropigo-token") || undefined;
-        }
-      } catch {
-        // Ignorar si headers() no está disponible
+    // 2. Leer también desde headers HTTP. Esto permite que una API funcione
+    // con el token de respaldo aunque una cookie vieja haya quedado inválida.
+    try {
+      const headersList = await headers();
+      const authHeader = headersList.get("authorization");
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const bearer = authHeader.substring(7).trim();
+        if (bearer) candidates.push(bearer);
       }
+      const customToken = headersList.get("x-tropigo-token");
+      if (customToken) candidates.push(customToken);
+    } catch {
+      // Ignorar si headers() no está disponible
     }
 
-    if (!token) return null;
+    for (const token of candidates) {
+      const session = await verifySessionToken(token);
+      if (session) return session;
+    }
 
-    return await verifySessionToken(token);
+    return null;
   } catch (e) {
     return null;
   }
@@ -179,6 +183,7 @@ export async function destroySession() {
 
     cookieStore.delete(COOKIE_NAME);
     cookieStore.delete(LEGACY_COOKIE_NAME);
+    cookieStore.delete("tropigo_logged_in");
   } catch (e) {
     console.error("Error al destruir sesión:", e);
   }

@@ -126,7 +126,7 @@ export function AjustesClient({
   // 3. Modelo de IA (Groq / OpenRouter)
   const [models, setModels] = useState<any[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
-  const [selectedModelId, setSelectedModelId] = useState("llama-3.3-70b-versatile");
+  const [selectedModelId, setSelectedModelId] = useState("openrouter/free");
   const [modelSearch, setModelSearch] = useState("");
   const [providerFilter, setProviderFilter] = useState<"ALL" | "free" | "anthropic" | "google" | "openai">("ALL");
   const [sortBy, setSortBy] = useState<"price" | "name">("price");
@@ -171,8 +171,8 @@ export function AjustesClient({
   }, []);
 
   const selectedModel = models.find((m) => m.id === selectedModelId) || {
-    id: "meta-llama/llama-3.3-70b-instruct:free",
-    name: "Llama 3.3 70B",
+    id: "openrouter/free",
+    name: "OpenRouter Free Router",
     provider: "meta",
     promptPricePer1M: 0,
     completionPricePer1M: 0,

@@ -11,7 +11,7 @@ export default function ProbarPage() {
             Simulador de Pruebas: TropiBot
           </h2>
           <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-            Groq Llama-3.3 70B
+Groq GPT-OSS 120B
           </span>
         </div>
         <p className="text-xs text-[#667085] mt-0.5">

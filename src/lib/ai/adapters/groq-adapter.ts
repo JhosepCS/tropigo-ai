@@ -1,21 +1,74 @@
-import { IAAdapter, ChatMessage, CompletionOptions, CompletionResult, ConnectionTestResult } from "../types";
+import {
+  IAAdapter,
+  ChatMessage,
+  CompletionOptions,
+  CompletionResult,
+  ConnectionTestResult,
+} from "../types";
+import { DEFAULT_GROQ_MODEL, normalizeProviderModel } from "../model-defaults";
+
+/**
+ * Detecta respuestas de Groq cuando el modelo solicitado ya no existe o fue
+ * retirado del catálogo. En ese caso se reintenta una vez con el modelo
+ * vigente para no romper la conversación del cliente.
+ */
+function isRetiredModelError(status: number, detail: string): boolean {
+  if (status !== 404 && status !== 400) return false;
+  const text = (detail || "").toLowerCase();
+  return (
+    text.includes("model") &&
+    (text.includes("does not exist") ||
+      text.includes("not found") ||
+      text.includes("decommission") ||
+      text.includes("not supported") ||
+      text.includes("no longer"))
+  );
+}
 
 export class GroqAdapter implements IAAdapter {
   readonly providerName = "groq" as const;
   private apiKey?: string;
   private defaultModel: string;
 
-  constructor(apiKey?: string, defaultModel = "llama-3.3-70b-versatile") {
+  constructor(apiKey?: string, defaultModel = DEFAULT_GROQ_MODEL) {
     this.apiKey = apiKey?.trim();
-    this.defaultModel = defaultModel;
+    this.defaultModel =
+      normalizeProviderModel("groq", defaultModel) || DEFAULT_GROQ_MODEL;
+  }
+
+  private resolveModel(model?: string): string {
+    return normalizeProviderModel("groq", model || this.defaultModel) || DEFAULT_GROQ_MODEL;
   }
 
   async isAvailable(): Promise<boolean> {
     return Boolean(this.apiKey && this.apiKey.length > 0);
   }
 
+  private async callChat(
+    model: string,
+    body: Record<string, unknown>
+  ): Promise<Response> {
+    return fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ...body, model }),
+    });
+  }
+
+  private async readError(res: Response): Promise<string> {
+    try {
+      const errJson = await res.json();
+      return errJson.error?.message || JSON.stringify(errJson);
+    } catch {
+      return await res.text().catch(() => `HTTP ${res.status}`);
+    }
+  }
+
   async testConnection(options?: { model?: string }): Promise<ConnectionTestResult> {
-    const model = options?.model || this.defaultModel;
+    let model = this.resolveModel(options?.model);
     if (!this.apiKey) {
       return {
         success: false,
@@ -28,31 +81,31 @@ export class GroqAdapter implements IAAdapter {
 
     const startTime = Date.now();
     try {
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: "user", content: "ping" }],
-          max_tokens: 5,
-          temperature: 0.1,
-        }),
+      let res = await this.callChat(model, {
+        messages: [{ role: "user", content: "ping" }],
+        max_tokens: 5,
+        temperature: 0.1,
       });
+
+      let errorDetail = "";
+      if (!res.ok) {
+        errorDetail = await this.readError(res);
+
+        // Reintento automático si el modelo configurado fue retirado.
+        if (isRetiredModelError(res.status, errorDetail) && model !== DEFAULT_GROQ_MODEL) {
+          model = DEFAULT_GROQ_MODEL;
+          res = await this.callChat(model, {
+            messages: [{ role: "user", content: "ping" }],
+            max_tokens: 5,
+            temperature: 0.1,
+          });
+          if (!res.ok) errorDetail = await this.readError(res);
+        }
+      }
 
       const latencyMs = Date.now() - startTime;
 
       if (!res.ok) {
-        let errorDetail = `HTTP ${res.status}`;
-        try {
-          const errJson = await res.json();
-          errorDetail = errJson.error?.message || JSON.stringify(errJson);
-        } catch {
-          errorDetail = await res.text().catch(() => `HTTP ${res.status}`);
-        }
-
         if (res.status === 401) {
           errorDetail = "Clave API de Groq inválida o revocada.";
         } else if (res.status === 429) {
@@ -97,11 +150,10 @@ export class GroqAdapter implements IAAdapter {
       throw new Error("GROQ_API_KEY no está configurada.");
     }
 
-    const model = options?.model || this.defaultModel;
+    let model = this.resolveModel(options?.model);
     const startTime = Date.now();
 
-    const bodyPayload: any = {
-      model,
+    const bodyPayload: Record<string, unknown> = {
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
       temperature: options?.temperature ?? 0.3,
     };
@@ -115,25 +167,26 @@ export class GroqAdapter implements IAAdapter {
       bodyPayload.tool_choice = options.toolChoice || "auto";
     }
 
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(bodyPayload),
-    });
+    let res = await this.callChat(model, bodyPayload);
+    let errDetail = "";
+
+    if (!res.ok) {
+      errDetail = await this.readError(res);
+
+      // Si el modelo guardado ya no existe, reintentar con el vigente.
+      if (isRetiredModelError(res.status, errDetail) && model !== DEFAULT_GROQ_MODEL) {
+        console.warn(
+          `[GroqAdapter] El modelo '${model}' ya no está disponible. Reintentando con '${DEFAULT_GROQ_MODEL}'.`
+        );
+        model = DEFAULT_GROQ_MODEL;
+        res = await this.callChat(model, bodyPayload);
+        if (!res.ok) errDetail = await this.readError(res);
+      }
+    }
 
     const latencyMs = Date.now() - startTime;
 
     if (!res.ok) {
-      let errDetail = "";
-      try {
-        const errJson = await res.json();
-        errDetail = errJson.error?.message || JSON.stringify(errJson);
-      } catch {
-        errDetail = await res.text().catch(() => "");
-      }
       throw new Error(`Groq API Error [${res.status}]: ${errDetail}`);
     }
 
