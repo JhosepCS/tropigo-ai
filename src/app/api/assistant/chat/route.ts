@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ModelRouter } from "@/lib/ai/model-router";
+import { runAgentChat } from "@/lib/ai/agent";
 import { ChatMessage } from "@/lib/ai/types";
 import { getAssistantConfig, buildSystemPrompt } from "@/lib/ai/config-manager";
-import { getRealDataContextPrompt, getToolDefinitions, executeTool } from "@/lib/ai/tools";
+import { getRealDataContextPrompt, executeTool } from "@/lib/ai/tools";
 import { requireAuth, UnauthorizedError } from "@/lib/auth/rbac";
 
 export async function POST(req: NextRequest) {
@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     // El simulador del CRM solo puede usarlo personal autenticado.
     const session = await requireAuth();
     const body = await req.json();
-    const { messages, options, draftConfig } = body;
+    const { messages, draftConfig } = body;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
@@ -44,46 +44,36 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Opciones con herramientas conectadas a la base de datos.
-    // No se aceptan tools ni toolContext enviados por el cliente: el contexto
-    // de pedidos debe ser construido por el servidor.
-    const callOptions = {
-      model: options?.model,
-      temperature: options?.temperature,
-      maxTokens: options?.maxTokens,
-      tools: getToolDefinitions(),
-      toolContext: {
-        source: "CRM" as const,
-        actorUserId: session.userId,
-        actorRole: session.role,
-        confirmationVerified: false,
-      },
+    // Contexto de herramientas construido por el servidor. No se aceptan
+    // tools ni toolContext enviados por el cliente.
+    const toolContext = {
+      source: "CRM" as const,
+      actorUserId: session.userId,
+      actorRole: session.role,
+      confirmationVerified: false,
     };
 
-    // Ejecutar chat respetando el proveedor y modelo seleccionados en la configuración
-    const result = await ModelRouter.executeChat(formattedMessages, callOptions, effectiveConfig);
+    // Ejecutar el mismo orquestador que usan WhatsApp y Webchat: permite
+    // varias rondas de herramientas y garantiza una respuesta final con texto.
+    const result = await runAgentChat({
+      messages: formattedMessages,
+      config: effectiveConfig,
+      toolContext,
+    });
 
     // Resolver tool calls si no tienen resultado
     if (result.toolCalls && result.toolCalls.length > 0) {
       for (const call of result.toolCalls) {
         if (!call.result) {
-          call.result = await executeTool(call.tool, call.args, callOptions.toolContext);
+          call.result = await executeTool(call.tool, call.args, toolContext);
         }
       }
+    }
 
-      // Si el modelo ejecutó herramientas y dejó content vacío, usar el texto formulado por la herramienta
-      if (!result.content) {
-        const primaryResult = result.toolCalls[0].result;
-        if (primaryResult) {
-          result.content =
-            primaryResult.resumenTexto ||
-            primaryResult.mensajeConfirmacion ||
-            primaryResult.mensajeOficial ||
-            primaryResult.mensaje ||
-            primaryResult.error ||
-            "";
-        }
-      }
+    // Nunca devolver una burbuja vacía al simulador.
+    if (!result.content || !result.content.trim()) {
+      result.content =
+        "No pude generar una respuesta en este momento. Intenta de nuevo o revisa la configuración del proveedor de IA.";
     }
 
     return NextResponse.json({

@@ -183,21 +183,55 @@ export class OpenRouterAdapter implements IAAdapter {
     let model = this.enforceFreeModel(options?.model);
     const startTime = Date.now();
 
-    const bodyPayload: Record<string, unknown> = {
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
-      temperature: options?.temperature ?? 0.3,
+    const buildBody = (
+      maxTokens?: number,
+      disableReasoning = false
+    ): Record<string, unknown> => {
+      const body: Record<string, unknown> = {
+        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        temperature: options?.temperature ?? 0.3,
+      };
+
+      // Algunos modelos gratuitos (Nemotron, Dots, etc.) consumen todo el
+      // presupuesto en "reasoning" y devuelven content vacío. Se desactiva
+      // solo en el reintento, porque ciertos endpoints exigen razonamiento.
+      if (disableReasoning) {
+        body.reasoning = { enabled: false };
+      }
+
+      if (maxTokens) {
+        body.max_tokens = maxTokens;
+      }
+
+      if (options?.tools && options.tools.length > 0) {
+        body.tools = options.tools;
+        body.tool_choice = options.toolChoice || "auto";
+      }
+
+      return body;
     };
 
-    if (options?.maxTokens) {
-      bodyPayload.max_tokens = options.maxTokens;
-    }
+    const parseCompletion = (data: any) => {
+      const choice = data.choices?.[0];
+      const content: string = choice?.message?.content || "";
+      const toolCalls: any[] = [];
 
-    if (options?.tools && options.tools.length > 0) {
-      bodyPayload.tools = options.tools;
-      bodyPayload.tool_choice = options.toolChoice || "auto";
-    }
+      for (const call of choice?.message?.tool_calls || []) {
+        try {
+          toolCalls.push({
+            tool: call.function?.name,
+            args: JSON.parse(call.function?.arguments || "{}"),
+            result: null,
+          });
+        } catch {
+          // Ignorar argumentos malformados de un modelo gratuito.
+        }
+      }
 
-    let res = await this.callChat(model, bodyPayload);
+      return { content, toolCalls, tokensUsed: data.usage?.total_tokens };
+    };
+
+    let res = await this.callChat(model, buildBody(options?.maxTokens));
     let errText = "";
 
     if (!res.ok) {
@@ -211,28 +245,59 @@ export class OpenRouterAdapter implements IAAdapter {
           `[OpenRouterAdapter] El modelo '${model}' no está disponible en la capa gratuita. Reintentando con '${DEFAULT_OPENROUTER_MODEL}'.`
         );
         model = DEFAULT_OPENROUTER_MODEL;
-        res = await this.callChat(model, bodyPayload);
+        res = await this.callChat(model, buildBody(options?.maxTokens));
         if (!res.ok) errText = await this.readError(res);
       }
     }
-
-    const latencyMs = Date.now() - startTime;
 
     if (!res.ok) {
       throw new Error(`OpenRouter API Error [${res.status}]: ${errText}`);
     }
 
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content || "";
-    const tokensUsed = data.usage?.total_tokens;
+    let parsed = parseCompletion(await res.json());
+
+    // Algunos modelos gratuitos agotan el presupuesto en razonamiento y
+    // devuelven content vacío. Se reintenta con más margen y razonamiento
+    // desactivado; si el endpoint lo exige, se reintenta sin desactivarlo.
+    if (!parsed.content.trim() && parsed.toolCalls.length === 0) {
+      const retryBudget = Math.max(options?.maxTokens || 0, 1200);
+      console.warn(
+        `[OpenRouterAdapter] Respuesta vacía de '${model}'. Reintentando con ${retryBudget} tokens.`
+      );
+
+      res = await this.callChat(model, buildBody(retryBudget, true));
+
+      if (!res.ok) {
+        errText = await this.readError(res);
+        if (errText.toLowerCase().includes("reasoning is mandatory")) {
+          res = await this.callChat(model, buildBody(retryBudget, false));
+          if (!res.ok) errText = await this.readError(res);
+        }
+      }
+
+      if (!res.ok) {
+        throw new Error(`OpenRouter API Error [${res.status}]: ${errText}`);
+      }
+
+      parsed = parseCompletion(await res.json());
+    }
+
+    if (!parsed.content.trim() && parsed.toolCalls.length === 0) {
+      throw new Error(
+        `OpenRouter devolvió una respuesta vacía con el modelo '${model}'.`
+      );
+    }
+
+    const latencyMs = Date.now() - startTime;
 
     return {
-      content,
+      content: parsed.content,
       provider: "openrouter",
       model,
       latencyMs,
-      tokensUsed,
+      tokensUsed: parsed.tokensUsed,
       fallbackUsed: false,
+      toolCalls: parsed.toolCalls.length > 0 ? parsed.toolCalls : undefined,
     };
   }
 }

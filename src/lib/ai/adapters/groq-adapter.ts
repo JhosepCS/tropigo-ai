@@ -153,21 +153,52 @@ export class GroqAdapter implements IAAdapter {
     let model = this.resolveModel(options?.model);
     const startTime = Date.now();
 
-    const bodyPayload: Record<string, unknown> = {
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
-      temperature: options?.temperature ?? 0.3,
+    const buildBody = (maxTokens?: number): Record<string, unknown> => {
+      const body: Record<string, unknown> = {
+        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        temperature: options?.temperature ?? 0.3,
+      };
+
+      // En los modelos GPT-OSS el razonamiento puede consumir todo el
+      // presupuesto y dejar el content vacío. Se limita a "low" para que la
+      // respuesta visible siempre tenga tokens disponibles.
+      if (model.includes("gpt-oss")) {
+        body.reasoning_effort = "low";
+      }
+
+      if (maxTokens) {
+        body.max_tokens = maxTokens;
+      }
+
+      if (options?.tools && options.tools.length > 0) {
+        body.tools = options.tools;
+        body.tool_choice = options.toolChoice || "auto";
+      }
+
+      return body;
     };
 
-    if (options?.maxTokens) {
-      bodyPayload.max_tokens = options.maxTokens;
-    }
+    const parseCompletion = (data: any) => {
+      const choice = data.choices?.[0];
+      const content: string = choice?.message?.content || "";
+      const toolCalls: any[] = [];
 
-    if (options?.tools && options.tools.length > 0) {
-      bodyPayload.tools = options.tools;
-      bodyPayload.tool_choice = options.toolChoice || "auto";
-    }
+      for (const call of choice?.message?.tool_calls || []) {
+        try {
+          toolCalls.push({
+            tool: call.function?.name,
+            args: JSON.parse(call.function?.arguments || "{}"),
+            result: null,
+          });
+        } catch {
+          // Ignorar argumentos malformados.
+        }
+      }
 
-    let res = await this.callChat(model, bodyPayload);
+      return { content, toolCalls, tokensUsed: data.usage?.total_tokens };
+    };
+
+    let res = await this.callChat(model, buildBody(options?.maxTokens));
     let errDetail = "";
 
     if (!res.ok) {
@@ -179,43 +210,47 @@ export class GroqAdapter implements IAAdapter {
           `[GroqAdapter] El modelo '${model}' ya no está disponible. Reintentando con '${DEFAULT_GROQ_MODEL}'.`
         );
         model = DEFAULT_GROQ_MODEL;
-        res = await this.callChat(model, bodyPayload);
+        res = await this.callChat(model, buildBody(options?.maxTokens));
         if (!res.ok) errDetail = await this.readError(res);
       }
     }
-
-    const latencyMs = Date.now() - startTime;
 
     if (!res.ok) {
       throw new Error(`Groq API Error [${res.status}]: ${errDetail}`);
     }
 
-    const data = await res.json();
-    const choice = data.choices?.[0];
-    const content = choice?.message?.content || "";
-    const tokensUsed = data.usage?.total_tokens;
+    let parsed = parseCompletion(await res.json());
 
-    const toolCalls: any[] = [];
-    if (choice?.message?.tool_calls) {
-      for (const call of choice.message.tool_calls) {
-        try {
-          toolCalls.push({
-            tool: call.function.name,
-            args: JSON.parse(call.function.arguments || "{}"),
-            result: null,
-          });
-        } catch {}
+    // Reintento con más presupuesto si el modelo devolvió una respuesta vacía.
+    if (!parsed.content.trim() && parsed.toolCalls.length === 0) {
+      const retryBudget = Math.max(options?.maxTokens || 0, 1200);
+      console.warn(
+        `[GroqAdapter] Respuesta vacía de '${model}'. Reintentando con ${retryBudget} tokens.`
+      );
+      res = await this.callChat(model, buildBody(retryBudget));
+
+      if (!res.ok) {
+        errDetail = await this.readError(res);
+        throw new Error(`Groq API Error [${res.status}]: ${errDetail}`);
       }
+
+      parsed = parseCompletion(await res.json());
     }
 
+    if (!parsed.content.trim() && parsed.toolCalls.length === 0) {
+      throw new Error(`Groq devolvió una respuesta vacía con el modelo '${model}'.`);
+    }
+
+    const latencyMs = Date.now() - startTime;
+
     return {
-      content,
+      content: parsed.content,
       provider: "groq",
       model,
       latencyMs,
-      tokensUsed,
+      tokensUsed: parsed.tokensUsed,
       fallbackUsed: false,
-      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      toolCalls: parsed.toolCalls.length > 0 ? parsed.toolCalls : undefined,
     };
   }
 }

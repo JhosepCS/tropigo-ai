@@ -224,6 +224,14 @@ prisma/migrations/20261110000000_init/   Baseline completo de producción
 - **OpenRouter Error [404] “unavailable for free”**: el slug gratuito de
   Llama 3.3 dejó de existir. El sistema usa `openrouter/free`, que enruta
   automáticamente a un modelo gratuito disponible con soporte de herramientas.
+- **Groq Error [429] “tokens per minute”**: la capa gratuita de Groq limita a
+  8.000 TPM por organización. El catálogo completo de herramientas puede rozar
+  ese límite, así que el enrutador continúa automáticamente con Gemini. Para
+  producción se recomienda Gemini como proveedor activo y Groq como respaldo.
+- **Respuestas vacías de modelos gratuitos**: algunos modelos de OpenRouter
+  consumen todo el presupuesto en razonamiento. El adaptador reintenta con más
+  tokens y, si el endpoint lo permite, desactiva el razonamiento; si aun así no
+  hay texto, el enrutador usa el siguiente proveedor.
 - **“No estás autenticado en TropiGO” después de iniciar sesión**: usa siempre
   el dominio estable `https://tropigo-ai.vercel.app`. Cada URL de deployment
   de Vercel (`tropigo-xxxx.vercel.app`) es un origen distinto y las cookies no
