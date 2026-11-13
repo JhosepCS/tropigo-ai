@@ -211,3 +211,23 @@ src/worker/index.ts                      Worker Baileys + health + persistencia
 docs/CONFIGURAR-META.md                  Guía del número oficial y número de prueba
 prisma/migrations/20261110000000_init/   Baseline completo de producción
 ```
+
+---
+
+## 🧯 Solución de problemas frecuentes
+
+- **Groq Error [404] “model does not exist”**: Groq retiró
+  `llama-3.3-70b-versatile`. El sistema ahora usa `openai/gpt-oss-120b`
+  (y `openai/gpt-oss-20b` como respaldo). Los modelos retirados se migran
+  automáticamente desde `src/lib/ai/model-defaults.ts`, incluso si quedaron
+  guardados en la base de datos.
+- **OpenRouter Error [404] “unavailable for free”**: el slug gratuito de
+  Llama 3.3 dejó de existir. El sistema usa `openrouter/free`, que enruta
+  automáticamente a un modelo gratuito disponible con soporte de herramientas.
+- **“No estás autenticado en TropiGO” después de iniciar sesión**: usa siempre
+  el dominio estable `https://tropigo-ai.vercel.app`. Cada URL de deployment
+  de Vercel (`tropigo-xxxx.vercel.app`) es un origen distinto y las cookies no
+  se comparten entre ellas. Borra las cookies del sitio y vuelve a iniciar
+  sesión en el dominio estable.
+- **Gemini 503 / saturación**: el enrutador cambia automáticamente al
+  siguiente proveedor gratuito o al simulador local; no requiere intervención.
