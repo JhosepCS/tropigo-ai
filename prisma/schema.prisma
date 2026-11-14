@@ -418,6 +418,7 @@ model Order {
   discounts      OrderDiscount[]
   paymentRecords PaymentRecord[]
   loyaltyEvents  LoyaltyEvent[]
+  rating         OrderRating?
 
   @@index([cityId, status])
   @@index([customerId])
@@ -429,6 +430,18 @@ model Order {
 // =================================================================
 // 6.1 COTIZACIONES DE PEDIDO Y NUMERACIÓN ATÓMICA
 // =================================================================
+
+model OrderRating {
+  id        String   @id @default(cuid())
+  orderId   String   @unique
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rating    Int // 1 a 5
+  comment   String?
+  channel   String   @default("WHATSAPP")
+  createdAt DateTime @default(now())
+
+  @@index([rating, createdAt])
+}
 
 model OrderQuote {
   id                   String        @id @default(cuid())
@@ -655,6 +668,7 @@ model Message {
   toolCallsJson  String? // Herramientas invocadas por la IA
   tokensUsed     Int? // Tokens consumidos en inferencia
   providerModel  String? // Ej: "groq/llama-3.3-70b"
+  latencyMs      Int? // Latencia de inferencia en ms (solo ASSISTANT)
   rawPayload     String?
   createdAt      DateTime     @default(now())
 
@@ -928,6 +942,13 @@ model Promotion {
   startsAt       DateTime  @default(now())
   expiresAt      DateTime
   isActive       Boolean   @default(true)
+
+  // Programación por día y hora (hora de Bolivia)
+  scheduleDays    String? // JSON: ["lunes","martes"]
+  scheduleStart   String? // "11:00"
+  scheduleEnd     String? // "14:00"
+  autoAnnounce    Boolean @default(false)
+  announceMessage String?
 
   orderDiscounts OrderDiscount[]
 

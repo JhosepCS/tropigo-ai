@@ -1,65 +1,119 @@
 # ============================================================
-# LEEME-PRIMERO.txt — TropiGO AI — Backup 12 nov 2026
+# LEEME-PRIMERO.txt — TropiGO AI — Backup 13 nov 2026
 # ============================================================
 
 ## PASOS PARA CONTINUAR EN LA OTRA PC
 
-1. Clonar el repo:
-   git clone https://github.com/JhosepCS/tropigo-ai.git
+1. Extraer el .7z con 7-Zip (contraseña del backup)
+
+2. Abrir la carpeta tropigo-ai (o TropiGO-AI):
    cd tropigo-ai
 
-2. Copiar el archivo .env (del backup cifrado o crearlo manual)
+3. Copiar el archivo .env del backup a la raíz del proyecto
+   (o si clonaste desde GitHub, pegar el .env manualmente)
 
-3. Instalar y correr:
+4. Instalar y correr:
    npm install
    npx prisma generate
    npm run dev
 
-4. La BD ya está en Supabase — NO instalar PostgreSQL.
+5. La BD ya está en Supabase — NO instalar PostgreSQL.
 
 ## CREDENCIALES
-   - Panel: admin@tropigo.bo / admin1234567
-   - URL: https://tropigo-ai.vercel.app/login
 
-## BUG ACTIVO: LOGIN SE PIERDE AL CAMBIAR SECCIÓN
+   - Panel web:  admin@tropigo.bo / admin1234567
+   - URL prod:   https://tropigo-ai.vercel.app/login
+   - URL local:  http://localhost:3000/login
 
-   Error React #418 (hydration mismatch) en DevTools.
-   El login no persiste entre secciones del dashboard.
-   
-   INSTRUCCIONES PARA EL AGENTE IA QUE CONTINÚE:
+## ESTADO AL 13 DE NOVIEMBRE 2026
 
-   Lee AGENTS.md en la raíz del proyecto para contexto completo.
-   
-   El bug de login tiene estas pistas:
-   - Error React #418 = hydration mismatch (server vs client HTML)
-   - Posible causa: componentes que usan Date/localStorage en render
-   - El middleware (src/middleware.ts) corre en Edge Runtime
-   - Ya se eliminaron consultas BD de la verificación de sesión
-   - El secreto JWT tiene fallback hardcodeado
-   - Verificar que ENCRYPTION_KEY esté en Vercel env vars
-   - Probar primero en localhost para aislar si es bug de código o de Vercel
-   
-   Archivos clave del auth:
-   - src/middleware.ts
-   - src/lib/auth/session.ts
-   - src/lib/auth/secret.ts  
-   - src/lib/auth/rbac.ts
-   - src/app/api/auth/login/route.ts
-   - src/app/login/login-form.tsx
+### ✅ Lo que ya funciona (NO tocar)
+   - WhatsApp oficial (Meta Cloud API) — webhook verificado
+   - Chat web con IA multimodelo
+   - IA con 3 proveedores gratuitos verificados:
+     • Gemini (gemini-3.1-flash-lite) — principal
+     • Groq (openai/gpt-oss-120b) — respaldo
+     • OpenRouter (openrouter/free) — respaldo
+     • Simulador Local (local-ivirgarzama-v1) — emergencia
+   - Herramientas IA (cotizar, fidelidad, pagos, ubicación, memoria)
+   - Fidelidad (sellos, QR, canje, niveles Bronce/Plata/Oro)
+   - Pagos digitales (QR, Tigo Money, Altoke, Yape, ZAS)
+   - Comprobante de pago por foto (Gemini Vision)
+   - GPS y cobro por zona + distancia desde Plaza Principal
+   - Notificaciones WhatsApp al cliente por cambio de estado
+   - QR personal del rider enviado al cliente
+   - Seguimiento en vivo con mapa
+   - Avatar TropiGO (/avatar-tropigo.png) — corregido
+   - RBAC completo (roles y permisos)
+   - Login funcionando
 
-## QUÉ YA FUNCIONA
-   ✅ WhatsApp oficial (Meta Cloud API)
-   ✅ Chat web con IA
-   ✅ IA con Gemini (texto, audio, imagen)
-   ✅ Herramientas IA (cotizar, fidelidad, pagos, ubicación)
-   ✅ Fidelidad (sellos, QR, canje, niveles Bronce/Plata/Oro)
-   ✅ Pagos digitales (QR, Tigo Money, Altoke, Yape, ZAS)
-   ✅ Comprobante de pago por foto (Gemini Vision)
-   ✅ GPS y cobro por zona + distancia desde Plaza Principal
-   ✅ Google Maps distancia real (opcional, necesita GOOGLE_MAPS_API_KEY)
-   ✅ Google Calendar agendamiento (opcional)
-   ✅ Notificaciones WhatsApp al cliente por cambio de estado
-   ✅ QR personal del rider enviado al cliente
-   ✅ Seguimiento en vivo con mapa
-   ✅ RBAC completo (roles y permisos)
-   ❌ Login persistente en dashboard (bug activo)
+### 🔧 Lo que falta implementar (Fase A — guía en docs/MEJORAS-OPENCODE.md)
+   1. Horario inteligente fuera de horario
+   2. Encuesta de satisfacción post-entrega
+   3. Botones interactivos en WhatsApp (menú, confirmación, pago)
+   4. Historial y recomendaciones personalizadas
+   5. Promociones automáticas por día/hora
+   6. Catálogo visual con imágenes
+   7. Panel de métricas de la IA
+
+### 📋 Lo que se hace después (Fase B — en la otra laptop)
+   - Plantillas de Meta (Templates)
+   - Ventana de 24h para mensajes proactivos
+   - Notificaciones proactivas con cron
+   - Pruebas en vivo con WhatsApp real
+
+## SERVICIOS VINCULADOS
+
+   | Servicio    | Estado      | Detalle                                      |
+   |-------------|-------------|----------------------------------------------|
+   | Supabase    | ✅ Activo   | Proyecto: fwtcjeyccyxmfkypbrmc               |
+   | Vercel      | ✅ Activo   | Proyecto: tropigo-ai (team_1TaKGjkTYS9IN1YzyCn3mTau) |
+   | Gemini      | ✅ Conectado| API Key en Supabase + Vercel + .env           |
+   | Groq        | ✅ Conectado| API Key en Supabase + Vercel + .env           |
+   | OpenRouter  | ✅ Conectado| API Key en Supabase + Vercel + .env           |
+   | GitHub      | ✅ Vinculado| https://github.com/JhosepCS/tropigo-ai       |
+   | Meta (WhatsApp) | ⏳ Pendiente | Webhook listo, falta cargar credenciales   |
+
+## VARIABLES DE ENTORNO (.env)
+
+   Las variables están en el .env del backup. Las principales:
+
+   - DATABASE_URL / DIRECT_URL — Supabase pooler
+   - NEXT_PUBLIC_SUPABASE_URL — URL pública de Supabase
+   - NEXT_PUBLIC_SUPABASE_ANON_KEY — Clave pública
+   - SUPABASE_SERVICE_ROLE_KEY — Clave de servicio
+   - GROQ_API_KEY — Groq IA
+   - GEMINI_API_KEY — Gemini IA
+   - OPENROUTER_API_KEY — OpenRouter IA
+   - GEMINI_BACKUP_KEY — Gemini respaldo
+   - ENCRYPTION_KEY — Cifrado AES-256
+   - APP_URL — URL pública (cambiar a https://tropigo-ai.vercel.app en prod)
+   - ADMIN_EMAIL / ADMIN_PASSWORD — Login admin
+   - WHATSAPP_PROVIDER — META_CLOUD_API (producción) o BAILEYS_QR (pruebas)
+
+## GUÍAS DISPONIBLES
+
+   | Archivo                      | Contenido                                     |
+   |------------------------------|-----------------------------------------------|
+   | AGENTS.md                    | Contexto completo del proyecto para agentes IA |
+   | docs/MEJORAS-OPENCODE.md     | Guía validada de 8 mejoras (Fase A y B)        |
+   | docs/CONFIGURAR-META.md      | Configurar WhatsApp con Meta Cloud API         |
+   | docs/CONTEXTO-PROYECTO.md    | Arquitectura y estado del proyecto             |
+
+## CÓMO CONTINUAR CON LAS MEJORAS
+
+   1. Abrir el proyecto en tu IDE (VS Code, OpenCode, etc.)
+   2. Leer docs/MEJORAS-OPENCODE.md — tiene las instrucciones validadas
+   3. Copiar el prompt de la Sección 6 de esa guía y pegarlo en tu agente IA
+   4. Implementar en orden: A1 → A2 → A3 → A4 → A5 → A6 → A7
+   5. Después de cada mejora: npx tsc --noEmit && npm run build
+   6. NUNCA ejecutar prisma migrate reset ni npm run db:seed
+
+## SI LAS API KEYS SE AGOTAN
+
+   Los 3 proveedores tienen capa gratuita generosa. Si se agotan:
+   1. Crear nueva cuenta con otro email
+   2. Generar nueva API Key
+   3. Ir a Dashboard → IA → pegar la nueva clave
+   4. Click en "Probar Conexión"
+   5. El sistema rota automáticamente: Gemini → Groq → OpenRouter → Simulador

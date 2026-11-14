@@ -8,6 +8,24 @@ import {
   normalizeProviderModel,
 } from "./model-defaults";
 
+export type WeekdayKey =
+  | "domingo"
+  | "lunes"
+  | "martes"
+  | "miercoles"
+  | "jueves"
+  | "viernes"
+  | "sabado";
+
+export interface DaySchedule {
+  open: string; // "08:00"
+  close: string; // "23:00"
+  closed?: boolean;
+}
+
+export type OperatingHours = Partial<Record<WeekdayKey, DaySchedule | null>>;
+export type OffHoursPolicy = "TAKE_MESSAGE" | "CONTINUE_AND_BOOK";
+
 export interface AssistantIdentityConfig {
   id?: string;
   name: string;
@@ -27,6 +45,8 @@ export interface AssistantIdentityConfig {
   activeModel: string;
   fallbackProviders?: string[];
   providerModels?: Record<string, string>;
+  operatingHours?: OperatingHours;
+  offHoursPolicy?: OffHoursPolicy;
   safeMode?: boolean;
   updatedAt?: string;
 }
@@ -58,6 +78,8 @@ export const DEFAULT_ASSISTANT_CONFIG: AssistantIdentityConfig = {
     cerebras: DEFAULT_CEREBRAS_MODEL,
     openrouter: DEFAULT_OPENROUTER_MODEL,
   },
+  operatingHours: {},
+  offHoursPolicy: "TAKE_MESSAGE",
   safeMode: false,
 };
 
