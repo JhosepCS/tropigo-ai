@@ -77,41 +77,41 @@ export function LoginForm() {
         )}
 
         <div className="space-y-1.5">
-          <label className="font-semibold text-slate-700">
+          <label className="font-semibold text-[#4A3A50] dark:text-slate-300">
             Correo Electrónico o Teléfono
           </label>
           <div className="relative">
-            <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <Mail className="w-4 h-4 text-[#B58ACB] absolute left-3 top-2.5" />
             <input
               type="text"
               required
               placeholder="tu-correo@tropigo.bo"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+              className="w-full bg-[#FBF8FC] border border-[#E8DFED] rounded-xl pl-9 pr-3 py-2 text-[#1E1523] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#8E58A6] font-medium dark:bg-white/[0.05] dark:border-white/10 dark:text-white dark:focus:bg-white/[0.08]"
             />
           </div>
         </div>
 
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <label className="font-semibold text-slate-700">Contraseña</label>
+            <label className="font-semibold text-[#4A3A50] dark:text-slate-300">Contraseña</label>
             <Link
               href="/forgot-password"
-              className="text-[11px] font-semibold text-emerald-700 hover:underline"
+              className="text-[11px] font-semibold text-[#5C3470] hover:underline dark:text-[#C9A7D8]"
             >
               ¿Olvidaste tu contraseña?
             </Link>
           </div>
           <div className="relative">
-            <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <Lock className="w-4 h-4 text-[#B58ACB] absolute left-3 top-2.5" />
             <input
               type="password"
               required
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+              className="w-full bg-[#FBF8FC] border border-[#E8DFED] rounded-xl pl-9 pr-3 py-2 text-[#1E1523] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#8E58A6] font-medium dark:bg-white/[0.05] dark:border-white/10 dark:text-white dark:focus:bg-white/[0.08]"
             />
           </div>
         </div>
@@ -120,7 +120,7 @@ export function LoginForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
+            className="w-full bg-[#331E39] hover:bg-[#482957] text-white font-bold py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm shadow-[#331E39]/20 disabled:opacity-50"
           >
             <span>{loading ? "Comprobando credenciales..." : "Iniciar Sesión"}</span>
             <ArrowRight className="w-4 h-4" />
@@ -128,12 +128,12 @@ export function LoginForm() {
         </div>
       </form>
 
-      <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+      <div className="pt-3 border-t border-[#F0E6F4] dark:border-white/10 flex items-center justify-between text-[11px] text-[#6B5A72] dark:text-slate-400">
         <span className="flex items-center gap-1 font-medium">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+          <ShieldCheck className="w-3.5 h-3.5 text-[#8E58A6] dark:text-[#C9A7D8]" />
           Acceso protegido por RBAC
         </span>
-        <Link href="/" className="hover:text-emerald-700 font-semibold">
+        <Link href="/" className="hover:text-[#331E39] font-semibold dark:hover:text-white">
           Ir a la Portada
         </Link>
       </div>

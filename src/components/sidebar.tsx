@@ -1,25 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard,
-  UtensilsCrossed,
-  MessageSquare,
-  MapPin,
-  Bot,
-  Settings,
+  ChevronRight,
+  Compass,
   LogOut,
   Menu,
-  X,
-  Store,
-  ShoppingBag,
-  Users,
   Sparkles,
-  ShieldCheck,
-  Gift,
+  X,
 } from "lucide-react";
+import {
+  CRM_GROUPS,
+  CRM_SECTIONS,
+  type CrmSection,
+} from "@/lib/dashboard/sections";
 
 interface SidebarProps {
   pendingOrdersCount?: number;
@@ -29,23 +25,16 @@ interface SidebarProps {
   userRole?: string;
 }
 
-interface NavItem {
-  name: string;
-  href: string;
-  icon: any;
-  badge?: string;
-  badgeColor?: string;
-  highlight?: boolean;
-}
-
-interface NavGroup {
-  group: string;
-  items: NavItem[];
+function isSectionActive(pathname: string, section: CrmSection) {
+  if (section.href === "/dashboard") {
+    return pathname === "/dashboard";
+  }
+  return pathname.startsWith(section.href);
 }
 
 export function Sidebar({
-  pendingOrdersCount = 1,
-  unreadCount = 2,
+  pendingOrdersCount = 0,
+  unreadCount = 0,
   businessName = "TropiGO Ivirgarzama",
   userName = "Operador Central",
   userRole = "ADMIN",
@@ -70,226 +59,163 @@ export function Sidebar({
       .join("")
       .toUpperCase() || "IV";
 
-  // Cerrar el drawer al cambiar de ruta
   useEffect(() => {
     setIsMobileOpen(false);
   }, [pathname]);
 
-  const navigation: NavGroup[] = [
-    // 1. Panel & Conversaciones
-    {
-      group: "Atención & Operaciones",
-      items: [
-        {
-          name: "Panel Principal",
-          href: "/dashboard",
-          icon: LayoutDashboard,
-        },
-        {
-          name: "Conversaciones WhatsApp",
-          href: "/dashboard/conversaciones",
-          icon: MessageSquare,
-          badge: unreadCount > 0 ? `${unreadCount}` : undefined,
-          badgeColor: "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
-        },
-        {
-          name: "Pedidos WhatsApp",
-          href: "/dashboard/pedidos",
-          icon: ShoppingBag,
-          badge: pendingOrdersCount > 0 ? `${pendingOrdersCount}` : undefined,
-          badgeColor: "bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800",
-        },
-        {
-          name: "Clientes & Memoria",
-          href: "/dashboard/clientes",
-          icon: Users,
-        },
-        {
-          name: "Fidelidad & Sellos",
-          href: "/dashboard/fidelidad",
-          icon: Gift,
-        },
-      ],
-    },
-    // 2. Comercios, Catálogo y Zonas
-    {
-      group: "Negocio & Logística",
-      items: [
-        {
-          name: "Comercios",
-          href: "/dashboard/comercios",
-          icon: Store,
-        },
-        {
-          name: "Catálogo & Menús",
-          href: "/dashboard/catalogo",
-          icon: UtensilsCrossed,
-        },
-        {
-          name: "Zonas & Tarifas",
-          href: "/dashboard/zonas",
-          icon: MapPin,
-        },
-      ],
-    },
-    // 3. IA y Configuración
-    {
-      group: "Inteligencia Artificial",
-      items: [
-        {
-          name: "AI Studio (Personalización)",
-          href: "/dashboard/ia",
-          icon: Sparkles,
-          highlight: true,
-        },
-        {
-          name: "Ajustes Generales",
-          href: "/dashboard/ajustes",
-          icon: Settings,
-        },
-      ],
-    },
-  ];
+  const renderBadge = (section: CrmSection) => {
+    const count =
+      section.badge === "orders"
+        ? pendingOrdersCount
+        : section.badge === "conversations"
+          ? unreadCount
+          : 0;
+
+    if (!section.badge || count <= 0) return null;
+
+    return (
+      <span className="min-w-[20px] rounded-full border border-[#C9A7D8]/25 bg-[#C9A7D8]/15 px-1.5 py-0.5 text-center text-[10px] font-bold text-[#E6D2F0]">
+        {count > 99 ? "99+" : count}
+      </span>
+    );
+  };
 
   const renderNavContent = () => (
     <>
-      {/* Header / Logo de TropiGO */}
-      <div className="p-4 border-b border-[#EAECF0] dark:border-slate-800 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5 min-w-0 group">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white font-black text-lg shadow-sm group-hover:scale-105 transition-transform">
+      {/* Marca */}
+      <div className="flex items-center justify-between border-b border-white/10 p-4">
+        <Link href="/dashboard" className="group flex min-w-0 items-center gap-2.5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-gradient-to-br from-[#8E58A6] to-[#5C3470] text-lg font-black text-white shadow-lg shadow-black/20 transition-transform group-hover:scale-105">
             TG
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="font-black text-sm text-[#101828] dark:text-white tracking-tight">
+              <span className="truncate text-sm font-black tracking-tight text-white">
                 TropiGO AI
               </span>
-              <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 font-bold px-1.5 py-0.2 rounded-full border border-emerald-200 dark:border-emerald-800">
+              <span className="rounded-full border border-[#C9A7D8]/30 bg-[#C9A7D8]/15 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#E6D2F0]">
                 CRM
               </span>
             </div>
-            <p className="text-[10px] font-medium text-emerald-700 dark:text-emerald-400 truncate">
-              Ivirgarzama • Movemos el Trópico 🌴
+            <p className="truncate text-[10px] font-medium text-[#C9A7D8]">
+              Ivirgarzama · Movemos el Trópico 🌴
             </p>
           </div>
         </Link>
 
-        {/* Botón cerrar para móvil */}
         <button
           onClick={() => setIsMobileOpen(false)}
-          className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+          className="rounded-lg p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white lg:hidden"
+          aria-label="Cerrar menú"
         >
-          <X className="w-5 h-5" />
+          <X className="h-5 w-5" />
         </button>
       </div>
 
-      {/* Navegación Principal */}
-      <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
-        {navigation.map((section, idx) => (
-          <div key={idx} className="space-y-1">
-            <div className="px-3 py-1 text-[10px] font-bold text-[#98A2B3] dark:text-slate-500 uppercase tracking-wider">
-              {section.group}
+      {/* Navegación */}
+      <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-3">
+        {CRM_GROUPS.map((group) => {
+          const items = CRM_SECTIONS.filter((section) => section.group === group);
+          if (items.length === 0) return null;
+
+          return (
+            <div key={group} className="space-y-0.5">
+              <div className="px-3 pb-0.5 text-[9px] font-bold uppercase tracking-[0.16em] text-white/35">
+                {group}
+              </div>
+              {items.map((section) => {
+                const active = isSectionActive(pathname, section);
+                const Icon = section.icon;
+
+                return (
+                  <Link
+                    key={section.href}
+                    href={section.href}
+                    className={`group relative flex items-center justify-between rounded-xl px-3 py-1.5 text-[11px] transition-all ${
+                      active
+                        ? "border border-white/10 bg-white/[0.09] font-bold text-white shadow-sm"
+                        : "font-medium text-white/60 hover:bg-white/[0.05] hover:text-white"
+                    }`}
+                  >
+                    {active && (
+                      <span className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r-full bg-[#C9A7D8]" />
+                    )}
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <Icon
+                        className={`h-3.5 w-3.5 shrink-0 transition-colors ${
+                          active
+                            ? "text-[#D8B8E8]"
+                            : "text-white/40 group-hover:text-[#D8B8E8]"
+                        }`}
+                      />
+                      <span className="truncate">{section.name}</span>
+                    </span>
+                    {renderBadge(section)}
+                    {section.href === "/dashboard/ia" && !section.badge && (
+                      <Sparkles className="h-3 w-3 shrink-0 text-[#C9A7D8]/70" />
+                    )}
+                  </Link>
+                );
+              })}
             </div>
-            {section.items.map((item) => {
-              const isActive = pathname === item.href;
-              const Icon = item.icon;
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center justify-between px-3 py-2 text-xs font-medium rounded-xl transition-all group ${
-                    isActive
-                      ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 font-bold border border-emerald-200/60 dark:border-emerald-800 shadow-2xs"
-                      : "text-[#475467] dark:text-slate-400 hover:bg-[#F9FAFB] dark:hover:bg-slate-800/60 hover:text-[#101828] dark:hover:text-white"
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Icon
-                      className={`w-4 h-4 transition-colors ${
-                        isActive
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-[#667085] dark:text-slate-500 group-hover:text-[#101828] dark:group-hover:text-slate-200"
-                      }`}
-                    />
-                    <span>{item.name}</span>
-                  </div>
-
-                  {item.badge && (
-                    <span
-                      className={`text-[10px] px-2 py-0.2 rounded-full border font-bold ${item.badgeColor}`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
-
-                  {item.highlight && !item.badge && (
-                    <span className="text-[9px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 px-1.5 py-0.2 rounded font-semibold">
-                      Test IA
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
+          );
+        })}
       </nav>
 
-      {/* Enlaces de Cambio Rápido de Rol */}
-      <div className="p-3 border-t border-[#EAECF0] dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 space-y-1.5">
-        <span className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 px-1 block">
-          Cambiar Vista
+      {/* Guía rápida */}
+      <div className="px-3 pb-2.5">
+        <Link
+          href="/dashboard/guia"
+          className="group block rounded-xl border border-white/10 bg-white/[0.05] p-2.5 transition-colors hover:bg-white/[0.09]"
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#C9A7D8]/15 text-[#E6D2F0]">
+              <Compass className="h-3 w-3" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-bold text-white">¿Nuevo en el CRM?</p>
+              <p className="truncate text-[8px] text-white/50">
+                Aprende qué hace cada sección
+              </p>
+            </div>
+            <ChevronRight className="h-3 w-3 text-white/40 transition-transform group-hover:translate-x-0.5 group-hover:text-[#D8B8E8]" />
+          </div>
+        </Link>
+      </div>
+
+      {/* Cambiar vista */}
+      <div className="space-y-1 border-t border-white/10 p-2.5">
+        <span className="block px-1 text-[8px] font-black uppercase tracking-wider text-white/35">
+          Cambiar vista
         </span>
-        <div className="grid grid-cols-2 gap-1.5 text-[11px] font-bold">
+        <div className="grid grid-cols-2 gap-1.5 text-[10px] font-bold">
           <Link
             href="/comercio"
-            className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-600 text-slate-700 dark:text-slate-200 text-center truncate transition-colors"
+            className="truncate rounded-lg border border-white/10 bg-white/[0.05] p-1.5 text-center text-white/70 transition-colors hover:bg-white/[0.09] hover:text-white"
           >
             🍳 Cocina
           </Link>
           <Link
             href="/repartidor"
-            className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-600 text-slate-700 dark:text-slate-200 text-center truncate transition-colors"
+            className="truncate rounded-lg border border-white/10 bg-white/[0.05] p-1.5 text-center text-white/70 transition-colors hover:bg-white/[0.09] hover:text-white"
           >
             🛵 Repartidor
           </Link>
         </div>
       </div>
 
-      {/* Widget Asistente AI Studio */}
-      <div className="px-3 pb-2 pt-1 border-t border-[#EAECF0] dark:border-slate-800 bg-[#FAFAFA] dark:bg-slate-900/40">
-        <Link
-          href="/dashboard/ia"
-          className="flex items-center gap-2 p-2 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/60 hover:bg-emerald-100/70 dark:hover:bg-emerald-900/40 transition-colors"
-        >
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center text-sm font-bold shadow-2xs">
-            🌴
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate">TropiBot AI</p>
-            <p className="text-[9px] text-emerald-700 dark:text-emerald-400 font-medium truncate flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-              Personalizar en AI Studio
-            </p>
-          </div>
-          <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-        </Link>
-      </div>
-
-      {/* Footer Usuario & Ubicación */}
-      <div className="p-3 border-t border-[#EAECF0] dark:border-slate-800 bg-[#FAFAFA] dark:bg-slate-900/40">
-        <div className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-800/80 border border-[#EAECF0] dark:border-slate-700 shadow-2xs">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-300 font-bold text-xs flex items-center justify-center shrink-0">
+      {/* Usuario */}
+      <div className="border-t border-white/10 p-2.5">
+        <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.05] p-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#C9A7D8]/20 text-[10px] font-bold text-[#E6D2F0]">
               {userInitials}
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-bold text-[#101828] dark:text-white truncate">
-                {userName}
-              </p>
-              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold truncate flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-                {userRole} · Ivirgarzama
+              <p className="truncate text-[11px] font-bold text-white">{userName}</p>
+              <p className="flex items-center gap-1 truncate text-[9px] font-semibold text-[#C9A7D8]">
+                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                {userRole} · {businessName}
               </p>
             </div>
           </div>
@@ -297,9 +223,9 @@ export function Sidebar({
             type="button"
             onClick={handleLogout}
             title="Cerrar sesión"
-            className="text-[#98A2B3] dark:text-slate-400 hover:text-[#475467] dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-[#F2F4F7] dark:hover:bg-slate-700 transition-colors"
+            className="rounded-lg p-1.5 text-white/40 transition-colors hover:bg-white/10 hover:text-white"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -308,32 +234,29 @@ export function Sidebar({
 
   return (
     <>
-      {/* 1. Sidebar Permanente para Escritorio (Desktop) */}
-      <aside className="hidden lg:flex w-64 border-r border-[#EAECF0] dark:border-slate-800 bg-white dark:bg-slate-900 flex-col h-screen sticky top-0 z-30 select-none transition-colors duration-200">
+      {/* Sidebar escritorio */}
+      <aside className="sticky top-0 z-30 hidden h-screen w-[272px] select-none flex-col border-r border-white/10 bg-[#331E39] text-white shadow-2xl shadow-[#331E39]/20 lg:flex">
         {renderNavContent()}
       </aside>
 
-      {/* 2. Botón Flotante para Móvil (abre el Drawer) */}
+      {/* Botón móvil */}
       <button
         onClick={() => setIsMobileOpen(true)}
-        className="lg:hidden fixed bottom-4 right-4 z-40 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2.5 rounded-full shadow-lg flex items-center gap-2 text-xs font-bold transition-transform active:scale-95"
-        aria-label="Abrir Menú de Despacho"
+        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-[#331E39] px-3.5 py-2.5 text-xs font-bold text-white shadow-lg shadow-[#331E39]/30 transition-transform hover:bg-[#482957] active:scale-95 lg:hidden"
+        aria-label="Abrir menú del CRM"
       >
-        <Menu className="w-4 h-4" />
-        <span>Menú Admin</span>
+        <Menu className="h-4 w-4" />
+        <span>Menú CRM</span>
       </button>
 
-      {/* 3. Modal / Drawer para Móviles */}
+      {/* Drawer móvil */}
       {isMobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
-          {/* Backdrop con desenfoque */}
+        <div className="fixed inset-0 z-50 flex lg:hidden">
           <div
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-[#1F1024]/70 backdrop-blur-sm transition-opacity"
             onClick={() => setIsMobileOpen(false)}
           />
-
-          {/* Panel Lateral Drawer */}
-          <aside className="relative w-72 max-w-[85vw] bg-white dark:bg-slate-900 h-full flex flex-col shadow-2xl z-10 select-none">
+          <aside className="relative z-10 flex h-full w-72 max-w-[85vw] select-none flex-col bg-[#331E39] text-white shadow-2xl">
             {renderNavContent()}
           </aside>
         </div>

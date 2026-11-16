@@ -7,7 +7,7 @@ export function Card({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-150 overflow-hidden ${className}`}
+      className={`bg-white dark:bg-[#1E1423] rounded-2xl border border-[#EFE6F4] dark:border-white/10 shadow-[0_1px_2px_rgba(51,30,57,0.04)] hover:border-[#C9A7D8] dark:hover:border-[#74438C] transition-all duration-150 overflow-hidden ${className}`}
       {...props}
     >
       {children}
@@ -73,7 +73,7 @@ export function CardFooter({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={`p-4 bg-slate-50/70 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 ${className}`}
+      className={`p-4 bg-[#FBF8FC] dark:bg-white/[0.03] border-t border-[#F0E6F4] dark:border-white/10 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 ${className}`}
       {...props}
     >
       {children}

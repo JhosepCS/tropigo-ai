@@ -3,56 +3,104 @@
 @tailwind utilities;
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
+  --background: 280 25% 98%;
+  --foreground: 285 30% 10%;
 
   --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
+  --card-foreground: 285 30% 10%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 222.2 84% 4.9%;
+  --popover-foreground: 285 30% 10%;
 
-  --primary: 160 84% 39%; /* TropiGreen #059669 */
+  --primary: 283 32% 17%; /* Morado oscuro #331E39 */
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
+  --secondary: 282 30% 96%;
+  --secondary-foreground: 283 32% 17%;
 
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
+  --muted: 282 20% 95%;
+  --muted-foreground: 283 10% 42%;
 
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
+  --accent: 282 30% 94%;
+  --accent-foreground: 283 32% 17%;
 
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
 
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 142.1 76.2% 36.3%;
+  --border: 282 20% 89%;
+  --input: 282 20% 89%;
+  --ring: 283 30% 45%;
 
   --radius: 0.5rem;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  background-color: #F9FAFB;
-  color: #101828;
+  background-color: #f7f4f9;
+  color: #1e1523;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Scrollbar sutil estilo Untitled UI */
+.dark body {
+  background-color: #140d17;
+  color: #f3edf5;
+}
+
+::selection {
+  background-color: #c9a7d8;
+  color: #331e39;
+}
+
+/* Scrollbar sutil con acento morado */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #E4E7EC;
+  background: #d9c8e2;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #D0D5DD;
+  background: #b58acb;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #482957;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #74438c;
+}
+
+/* Fondo decorativo del hero del CRM */
+.crm-hero-glow {
+  background-image:
+    radial-gradient(circle at 12% 18%, rgba(201, 167, 216, 0.24), transparent 34%),
+    radial-gradient(circle at 88% 8%, rgba(16, 185, 129, 0.14), transparent 30%),
+    radial-gradient(circle at 72% 92%, rgba(142, 88, 166, 0.28), transparent 38%);
+}
+
+.crm-dot-grid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* Tarjeta base del CRM */
+.crm-card {
+  border-radius: 1.25rem;
+  border: 1px solid #e8dfed;
+  background-color: #ffffff;
+  box-shadow: 0 1px 2px rgba(51, 30, 57, 0.04), 0 8px 24px -18px rgba(51, 30, 57, 0.22);
+}
+
+.dark .crm-card {
+  border-color: rgba(255, 255, 255, 0.08);
+  background-color: #1e1423;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
 }

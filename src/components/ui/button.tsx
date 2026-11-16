@@ -44,19 +44,19 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     const variantStyles = {
       primary:
-        "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-600/20 focus-visible:ring-emerald-500 border border-emerald-700/20",
+        "bg-[#331E39] hover:bg-[#482957] text-white shadow-sm shadow-[#331E39]/25 focus-visible:ring-[#8E58A6] border border-[#331E39]",
       secondary:
-        "bg-slate-100 hover:bg-slate-200 text-slate-900 border border-slate-200/60 focus-visible:ring-slate-400",
+        "bg-[#F3EAF7] hover:bg-[#E6D2F0] text-[#331E39] border border-[#E0CCE9] focus-visible:ring-[#8E58A6]",
       outline:
-        "bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 focus-visible:ring-emerald-500 shadow-xs",
+        "bg-white hover:bg-[#FBF8FC] text-[#5C3470] border border-[#D8B8E8] focus-visible:ring-[#8E58A6] shadow-xs",
       ghost:
-        "bg-transparent hover:bg-slate-100 text-slate-700 hover:text-slate-900 focus-visible:ring-slate-400",
+        "bg-transparent hover:bg-[#F3EAF7] text-[#5C3470] hover:text-[#331E39] focus-visible:ring-[#8E58A6]",
       solar:
         "bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-sm shadow-amber-500/20 focus-visible:ring-amber-400 border border-amber-600/20",
       danger:
         "bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-600/20 focus-visible:ring-rose-500 border border-rose-700/20",
       subtle:
-        "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/60 focus-visible:ring-emerald-500",
+        "bg-[#F3EAF7] hover:bg-[#E6D2F0] text-[#5C3470] border border-[#E0CCE9] focus-visible:ring-[#8E58A6]",
     }[variant];
 
     return (
