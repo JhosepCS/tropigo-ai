@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    await requireRole(["SUPERADMIN", "ADMIN"]);
+    await requireRole(["SUPERADMIN", "ADMIN", "OPERATOR"]);
 
     const contentType = req.headers.get("content-type") || "";
 

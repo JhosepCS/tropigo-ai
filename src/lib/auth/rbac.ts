@@ -122,8 +122,12 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ],
   OPERATOR: [
     "merchants:read_all",
+    "merchants:manage_all",
     "products:read_all",
+    "products:manage_all",
     "fleet:read_all",
+    "fleet:manage_all",
+    "zones:manage",
     "orders:read_all",
     "orders:dispatch",
     "rides:read_all",

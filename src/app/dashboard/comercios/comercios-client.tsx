@@ -400,7 +400,7 @@ export function ComerciosClient({
                     <div className="p-1.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/40">
                       <span className="text-emerald-700 dark:text-emerald-400 block font-medium">Comisión</span>
                       <span className="text-xs font-black text-emerald-900 dark:text-emerald-300">
-                        {(m.commissionRate * 100).toFixed(0)}%
+                        {(Number(m.commissionRate || 0) * 100).toFixed(0)}%
                       </span>
                     </div>
                   </div>

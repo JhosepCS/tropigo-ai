@@ -332,7 +332,7 @@ export function CatalogoClient({
                     {m.products?.length || 0} productos activos
                   </span>
                   <span className="text-amber-600 dark:text-amber-400 font-bold">
-                    ★ {m.rating ? m.rating.toFixed(1) : "5.0"}
+                    ★ {m.rating ? Number(m.rating).toFixed(1) : "5.0"}
                   </span>
                 </div>
               </CardContent>
@@ -392,7 +392,7 @@ export function CatalogoClient({
                         </span>
                       </td>
                       <td className="p-3.5 font-black text-slate-900 dark:text-white text-sm">
-                        {p.price.toFixed(2)} Bs.
+                        {Number(p.price || 0).toFixed(2)} Bs.
                       </td>
                       <td className="p-3.5 text-right">
                         <button

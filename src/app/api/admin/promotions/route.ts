@@ -20,7 +20,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireRole(["SUPERADMIN", "ADMIN"]);
+    await requireRole(["SUPERADMIN", "ADMIN", "OPERATOR"]);
     const body = await req.json();
 
     const {
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    await requireRole(["SUPERADMIN", "ADMIN"]);
+    await requireRole(["SUPERADMIN", "ADMIN", "OPERATOR"]);
     const body = await req.json();
     const { id, isActive } = body;
 
