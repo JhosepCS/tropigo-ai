@@ -382,6 +382,23 @@ export function PedidosClient({
                       <span className="font-bold">Nota cliente:</span> {order.customerNotes}
                     </p>
                   )}
+
+                  {/* Encuesta de Satisfacción Post-Entrega (Mejora A2) */}
+                  {(order as any).rating && (
+                    <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 p-2 rounded-xl text-[11px] flex items-center justify-between">
+                      <div className="flex items-center gap-1 text-amber-800 dark:text-amber-300 font-bold">
+                        <span>{"⭐".repeat((order as any).rating.rating)}</span>
+                        <span className="text-[10px] text-amber-700 dark:text-amber-400 font-normal">
+                          ({(order as any).rating.rating}/5 estrellas)
+                        </span>
+                      </div>
+                      {(order as any).rating.comment && (
+                        <span className="text-slate-600 dark:text-slate-300 text-[10px] italic max-w-[180px] truncate">
+                          &quot;{(order as any).rating.comment}&quot;
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs space-y-1">

@@ -20,6 +20,7 @@ import { locationRequestTool } from "./location-request-tool";
 import { recommendationTool } from "./recommendation-tool";
 import { promotionsTool } from "./promotions-tool";
 import { catalogVisualTool } from "./catalog-visual-tool";
+import { getActivePromotionsNow } from "../../promotions/active-promos";
 import { OrderToolContext } from "../../orders/order-service";
 
 export * from "./types";
@@ -155,7 +156,7 @@ export async function executeTool(
  */
 export async function getRealDataContextPrompt(): Promise<string> {
   try {
-    const [merchants, products, zones, business] = await Promise.all([
+    const [merchants, products, zones, business, activePromos] = await Promise.all([
       prisma.merchant.findMany({
         where: { isOpen: true },
         select: { name: true, category: true, phone: true, address: true, isOpen: true },
@@ -176,15 +177,26 @@ export async function getRealDataContextPrompt(): Promise<string> {
         select: { name: true, baseDeliveryCost: true, baseRideCost: true, estimatedMinutes: true },
       }),
       prisma.businessProfile.findFirst(),
+      getActivePromotionsNow().catch(() => []),
     ]);
 
+    const activePromosText =
+      Array.isArray(activePromos) && activePromos.length > 0
+        ? (activePromos as any[])
+            .map(
+              (p: any) =>
+                `• ${p.title} (${p.discountPercent}% OFF): ${p.description || "Disponible hoy"}. Mensaje sugerido: "${p.announceMessage || ""}"`
+            )
+            .join("\n")
+        : "No hay promociones especiales programadas para este horario.";
+
     const cleanMerchants = merchants
-      .map((m) => `• ${m.name.replace(/^\[DEMO\]\s*/i, "")} (${m.category}) - ${m.address}`)
+      .map((m: any) => `• ${m.name.replace(/^\[DEMO\]\s*/i, "")} (${m.category}) - ${m.address}`)
       .join("\n");
 
     const cleanProducts = products
       .map(
-        (p) =>
+        (p: any) =>
           `• ${p.name.replace(/^\[DEMO\]\s*/i, "")} [${p.merchant.name.replace(/^\[DEMO\]\s*/i, "")}]: ${p.price.toFixed(
             2
           )} Bs.`
@@ -199,7 +211,7 @@ export async function getRealDataContextPrompt(): Promise<string> {
 
     const cleanZones = zones
       .map(
-        (z) =>
+        (z: any) =>
           `• Zona ${z.name}: Delivery ${z.baseDeliveryCost.toFixed(2)} Bs. | Mototaxi ${Math.max(
             z.baseRideCost,
             minRideFare
@@ -262,6 +274,9 @@ Tarifa mínima oficial: ${minRideFare.toFixed(2)} Bs. Recargo Torito/trimóvil: 
       2
     )} Bs. La tarifa final nunca puede ser inferior a la mínima.
 
+[PROMOCIONES Y OFERTAS ACTIVAS HOY EN IVIRGARZAMA]
+${activePromosText}
+
 [PROGRAMA DE FIDELIDAD]
 ${loyaltyBlock}
 
@@ -285,6 +300,9 @@ REGLA DE INTEGRIDAD ESTRICTA Y PROTOCOLO DE PEDIDOS:
 7. UBICACIÓN: si el cliente pide delivery y no hay GPS ni barrio claro, usa 'solicitar_ubicacion' para enviar el botón nativo de ubicación. Si ya compartió ubicación, el sistema la guarda en su perfil y la reutiliza; no se la pidas otra vez salvo que indique otra dirección.
 8. PAGOS Y COMPROBANTES: si el cliente envía una foto de un comprobante, el sistema la analiza y registra el pago (verificado o pendiente). Usa 'consultar_mis_pagos' para responder por el estado exacto. Nunca afirmes que un pago está verificado si el bloque [COMPROBANTE DE PAGO PROCESADO] no dice PAGO VERIFICADO. El QR personal del repartidor aparece en el enlace /pagar del pedido cuando hay rider asignado.
 9. RIDERS: no asignes repartidores manualmente. El sistema asigna automáticamente al pasar el pedido a LISTO_RECOJO si hay un rider disponible. Puedes informar el nombre del repartidor cuando 'consultar_estado_pedido' lo devuelva.
+10. PROMOCIONES DEL DÍA: si hay promociones en [PROMOCIONES Y OFERTAS ACTIVAS HOY EN IVIRGARZAMA], anúncialas amablemente cuando el cliente salude o pida sugerencias gastronómicas.
+11. CATÁLOGO VISUAL CON FOTOS: si el cliente pide ver fotos, imágenes o la carta con fotos de un restaurante, invoca 'mostrar_catalogo_visual' con el nombre del comercio para enviarle las fotos oficiales por WhatsApp.
+12. RECOMENDACIONES PERSONALIZADAS: si el cliente te pregunta qué pedir o si ya ha ordenado antes, usa 'sugerir_pedido_anterior' para recomendarle sus platos favoritos de compras pasadas.
 =================================================================
 `.trim();
   } catch (e: any) {

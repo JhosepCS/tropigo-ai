@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ImageUploader } from "@/components/ui/image-uploader";
 import {
   Store,
   Search,
@@ -498,30 +499,13 @@ export function ComerciosClient({
             </div>
           </div>
 
-          {/* URL de Foto o Logo */}
-          <div className="space-y-1.5">
-            <label className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-              <ImageIcon className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Foto o Logo del Negocio (URL)</span>
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="url"
-                placeholder="https://images.unsplash.com/... o enlace de foto"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-              />
-              {imageUrl && (
-                <div className="w-10 h-10 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shrink-0 bg-slate-100">
-                  <img src={imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                </div>
-              )}
-            </div>
-            <p className="text-[10px] text-slate-400">
-              Esta foto se mostrará a los clientes en WhatsApp cuando soliciten el menú del restaurante.
-            </p>
-          </div>
+          {/* Subida de Foto o Logo */}
+          <ImageUploader
+            value={imageUrl}
+            onChange={setImageUrl}
+            label="Foto o Logo del Negocio"
+            helperText="Sube una foto o logo desde tu dispositivo (JPG/PNG) o pega un enlace. La IA la enviará a los clientes en WhatsApp."
+          />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">

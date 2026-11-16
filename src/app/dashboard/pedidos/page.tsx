@@ -13,6 +13,7 @@ export default async function PedidosPage() {
           assignedRider: true,
           deliveryZone: true,
           items: true,
+          rating: true,
           statusHistory: { orderBy: { createdAt: "asc" } },
         },
         orderBy: { createdAt: "desc" },

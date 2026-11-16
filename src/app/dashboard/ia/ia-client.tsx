@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Card } from "@/components/ui/card";
 import {
   Sparkles,
   Bot,
@@ -32,6 +33,12 @@ import {
   Server,
   Layers,
   ArrowRight,
+  BarChart3,
+  Star,
+  Clock,
+  Percent,
+  TrendingUp,
+  Calendar,
 } from "lucide-react";
 import { AIProviderStatus, ConnectionTestResult, VERIFIED_MODELS_CATALOG } from "@/lib/ai/types";
 import { AssistantIdentityConfig } from "@/lib/ai/config-manager";
@@ -58,8 +65,27 @@ const PRESET_AVATARS = [
 ];
 
 export function IAClient({ initialProviders, initialAssistantConfig }: IAClientProps) {
-  // Pestaña activa: "studio" (Personalización) vs "providers" (API Keys & Modelos)
-  const [activeTab, setActiveTab] = useState<"studio" | "providers">("studio");
+  // Pestaña activa: "studio" (Personalización) vs "providers" (API Keys & Modelos) vs "metrics" (Métricas)
+  const [activeTab, setActiveTab] = useState<"studio" | "providers" | "metrics">("studio");
+
+  // Estado de Métricas de IA (Mejora A7)
+  const [metrics, setMetrics] = useState<any>(null);
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
+
+  const fetchMetrics = async () => {
+    setLoadingMetrics(true);
+    try {
+      const res = await fetch("/api/admin/metrics");
+      if (res.ok) {
+        const data = await res.json();
+        setMetrics(data);
+      }
+    } catch (e) {
+      console.error("Error al obtener métricas:", e);
+    } finally {
+      setLoadingMetrics(false);
+    }
+  };
 
   // Estado del Asistente en AI Studio
   const [config, setConfig] = useState<AssistantIdentityConfig>(initialAssistantConfig);
@@ -315,12 +341,28 @@ export function IAClient({ initialProviders, initialAssistantConfig }: IAClientP
           onClick={() => setActiveTab("providers")}
           className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${
             activeTab === "providers"
-              ? "border-emerald-600 text-emerald-700"
-              : "border-transparent text-[#667085] hover:text-[#101828]"
+              ? "border-emerald-600 text-emerald-700 dark:text-emerald-400"
+              : "border-transparent text-[#667085] hover:text-[#101828] dark:hover:text-white"
           }`}
         >
           <Cpu className="w-4 h-4" />
-          <span>Motor Multimodelo & Claves API (Groq / Gemini / OpenRouter)</span>
+          <span>Motor Multimodelo & Claves API</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("metrics");
+            fetchMetrics();
+          }}
+          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${
+            activeTab === "metrics"
+              ? "border-emerald-600 text-emerald-700 dark:text-emerald-400"
+              : "border-transparent text-[#667085] hover:text-[#101828] dark:hover:text-white"
+          }`}
+        >
+          <BarChart3 className="w-4 h-4" />
+          <span>Métricas de IA & Encuestas (A7)</span>
         </button>
       </div>
 
@@ -775,13 +817,62 @@ export function IAClient({ initialProviders, initialAssistantConfig }: IAClientP
 
               {/* Prohibiciones */}
               <div className="space-y-1 pt-2">
-                <label className="text-xs font-bold text-slate-800">Prohibiciones Estrictas de Seguridad</label>
+                <label className="text-xs font-bold text-slate-800 dark:text-slate-200">Prohibiciones Estrictas de Seguridad</label>
                 <textarea
                   rows={3}
                   value={config.prohibitedActions}
                   onChange={(e) => setConfig({ ...config, prohibitedActions: e.target.value })}
-                  className="w-full bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl p-3 text-xs text-red-900 font-mono focus:bg-white focus:outline-none focus:ring-1 focus:ring-red-400"
+                  className="w-full bg-[#F9FAFB] dark:bg-slate-800 border border-[#D0D5DD] dark:border-slate-700 rounded-xl p-3 text-xs text-red-900 dark:text-red-300 font-mono focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-red-400"
                 />
+              </div>
+
+              {/* Horario Inteligente & Respuestas Fuera de Turno (Mejora A1) */}
+              <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-emerald-600" />
+                  <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Horario Inteligente & Respuestas Automáticas Fuera de Turno (A1)
+                  </label>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Controla qué responde TropiBot a los clientes cuando escriben fuera del horario de atención comercial de Ivirgarzama (hora Bolivia UTC-4).
+                </p>
+
+                <div className="space-y-2">
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                    Política al recibir mensajes fuera de horario:
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfig({ ...config, offHoursPolicy: "TAKE_MESSAGE" })}
+                      className={`p-3 rounded-xl border text-left text-xs transition-colors ${
+                        config.offHoursPolicy === "TAKE_MESSAGE"
+                          ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 font-bold text-emerald-950 dark:text-emerald-300"
+                          : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                      }`}
+                    >
+                      <p className="font-bold">Tomar mensaje / Aviso formal</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 font-normal mt-0.5">
+                        Informa que el local está cerrado y registra la consulta para el turno de apertura.
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfig({ ...config, offHoursPolicy: "CONTINUE_AND_BOOK" })}
+                      className={`p-3 rounded-xl border text-left text-xs transition-colors ${
+                        config.offHoursPolicy === "CONTINUE_AND_BOOK"
+                          ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 font-bold text-emerald-950 dark:text-emerald-300"
+                          : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                      }`}
+                    >
+                      <p className="font-bold">Agendamiento 24/7</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 font-normal mt-0.5">
+                        Permite cotizar y agendar pedidos anticipados para la mañana siguiente.
+                      </p>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1307,6 +1398,156 @@ export function IAClient({ initialProviders, initialAssistantConfig }: IAClientP
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* PESTAÑA 3: MÉTRICAS DE IA, RESOLUCIÓN Y ENCUESTAS DE CLIENTES (MEJORA A7) */}
+      {/* ========================================================================= */}
+      {activeTab === "metrics" && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
+            <div>
+              <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 tracking-wider uppercase bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                Métricas de IA en Tiempo Real
+              </span>
+              <h3 className="text-lg font-black text-slate-900 dark:text-white mt-1">
+                Rendimiento Autónomo, Encuestas & Herramientas
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Datos de actividad en vivo generados en los canales oficiales de WhatsApp y Web.
+              </p>
+            </div>
+            <button
+              onClick={fetchMetrics}
+              disabled={loadingMetrics}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-xs font-bold text-slate-700 dark:text-slate-300 transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingMetrics ? "animate-spin" : ""}`} />
+              <span>Actualizar Métricas</span>
+            </button>
+          </div>
+
+          {loadingMetrics && !metrics ? (
+            <div className="p-12 text-center text-slate-400 text-xs animate-pulse">
+              Calculando estadísticas de IA y encuestas de satisfacción...
+            </div>
+          ) : (
+            <>
+              {/* 4 KPIs Principales */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card className="p-4 border-l-4 border-l-emerald-500">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                    Satisfacción Clientes (Encuesta A2)
+                  </span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-2xl font-black text-slate-900 dark:text-white">
+                      ★ {metrics?.satisfaccionClientes?.promedioEstrellas || "5.0"}
+                    </span>
+                    <span className="text-[11px] text-amber-500 font-bold">/ 5.0</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                    {metrics?.satisfaccionClientes?.totalCalificaciones || 0} encuestas post-entrega
+                  </p>
+                </Card>
+
+                <Card className="p-4 border-l-4 border-l-teal-500">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                    Resolución Autónoma IA
+                  </span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                      {metrics?.aiResolutionRate || "100%"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                    Sin intervención de operador humano
+                  </p>
+                </Card>
+
+                <Card className="p-4 border-l-4 border-l-blue-500">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                    Total Conversaciones
+                  </span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-2xl font-black text-slate-900 dark:text-white">
+                      {metrics?.totalConversations || 0}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                    {metrics?.handoffsCount || 0} transferencias a humano
+                  </p>
+                </Card>
+
+                <Card className="p-4 border-l-4 border-l-purple-500">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                    Periodo Analizado
+                  </span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xl font-black text-slate-900 dark:text-white">
+                      {metrics?.period || "Últimos 7 días"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                    Actualizado en tiempo real
+                  </p>
+                </Card>
+              </div>
+
+              {/* Herramientas Más Usadas y Latencias */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card className="p-5 space-y-3">
+                  <h4 className="text-xs font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-emerald-600" />
+                    <span>Herramientas de IA Más Invocadas</span>
+                  </h4>
+                  {metrics?.herramientasMasUsadas && metrics.herramientasMasUsadas.length > 0 ? (
+                    <div className="space-y-2 text-xs">
+                      {metrics.herramientasMasUsadas.map((t: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                          <span className="font-mono text-slate-700 dark:text-slate-200 font-bold">
+                            {t.herramienta}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold text-[10px]">
+                            {t.ejecuciones} ejecuciones
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 py-4 text-center">
+                      Aún no hay ejecuciones registradas en este periodo.
+                    </p>
+                  )}
+                </Card>
+
+                <Card className="p-5 space-y-3">
+                  <h4 className="text-xs font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
+                    <Cpu className="w-4 h-4 text-emerald-600" />
+                    <span>Latencia Promedio y Modelos de IA</span>
+                  </h4>
+                  {metrics?.promedioLatenciaMs && metrics.promedioLatenciaMs.length > 0 ? (
+                    <div className="space-y-2 text-xs">
+                      {metrics.promedioLatenciaMs.map((l: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                          <span className="font-mono text-slate-700 dark:text-slate-200">
+                            {l.modelo}
+                          </span>
+                          <span className="font-bold text-slate-900 dark:text-white">
+                            ~{l.latenciaMs} ms
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 py-4 text-center">
+                      Sin datos de latencia acumulados aún.
+                    </p>
+                  )}
+                </Card>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
