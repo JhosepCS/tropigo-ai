@@ -90,14 +90,14 @@ export function Sidebar({
           href: "/dashboard/conversaciones",
           icon: MessageSquare,
           badge: unreadCount > 0 ? `${unreadCount}` : undefined,
-          badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+          badgeColor: "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
         },
         {
           name: "Pedidos WhatsApp",
           href: "/dashboard/pedidos",
           icon: ShoppingBag,
           badge: pendingOrdersCount > 0 ? `${pendingOrdersCount}` : undefined,
-          badgeColor: "bg-amber-50 text-amber-700 border-amber-200",
+          badgeColor: "bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800",
         },
         {
           name: "Clientes & Memoria",
@@ -154,21 +154,21 @@ export function Sidebar({
   const renderNavContent = () => (
     <>
       {/* Header / Logo de TropiGO */}
-      <div className="p-4 border-b border-[#EAECF0] flex items-center justify-between">
+      <div className="p-4 border-b border-[#EAECF0] dark:border-slate-800 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5 min-w-0 group">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white font-black text-lg shadow-sm group-hover:scale-105 transition-transform">
             TG
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="font-black text-sm text-[#101828] tracking-tight">
+              <span className="font-black text-sm text-[#101828] dark:text-white tracking-tight">
                 TropiGO AI
               </span>
-              <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.2 rounded-full border border-emerald-200">
+              <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 font-bold px-1.5 py-0.2 rounded-full border border-emerald-200 dark:border-emerald-800">
                 CRM
               </span>
             </div>
-            <p className="text-[10px] font-medium text-emerald-700 truncate">
+            <p className="text-[10px] font-medium text-emerald-700 dark:text-emerald-400 truncate">
               Ivirgarzama • Movemos el Trópico 🌴
             </p>
           </div>
@@ -177,7 +177,7 @@ export function Sidebar({
         {/* Botón cerrar para móvil */}
         <button
           onClick={() => setIsMobileOpen(false)}
-          className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+          className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
         >
           <X className="w-5 h-5" />
         </button>
@@ -187,7 +187,7 @@ export function Sidebar({
       <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
         {navigation.map((section, idx) => (
           <div key={idx} className="space-y-1">
-            <div className="px-3 py-1 text-[10px] font-bold text-[#98A2B3] uppercase tracking-wider">
+            <div className="px-3 py-1 text-[10px] font-bold text-[#98A2B3] dark:text-slate-500 uppercase tracking-wider">
               {section.group}
             </div>
             {section.items.map((item) => {
@@ -200,16 +200,16 @@ export function Sidebar({
                   href={item.href}
                   className={`flex items-center justify-between px-3 py-2 text-xs font-medium rounded-xl transition-all group ${
                     isActive
-                      ? "bg-emerald-50 text-emerald-900 font-bold border border-emerald-200/60 shadow-2xs"
-                      : "text-[#475467] hover:bg-[#F9FAFB] hover:text-[#101828]"
+                      ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 font-bold border border-emerald-200/60 dark:border-emerald-800 shadow-2xs"
+                      : "text-[#475467] dark:text-slate-400 hover:bg-[#F9FAFB] dark:hover:bg-slate-800/60 hover:text-[#101828] dark:hover:text-white"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <Icon
                       className={`w-4 h-4 transition-colors ${
                         isActive
-                          ? "text-emerald-600"
-                          : "text-[#667085] group-hover:text-[#101828]"
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-[#667085] dark:text-slate-500 group-hover:text-[#101828] dark:group-hover:text-slate-200"
                       }`}
                     />
                     <span>{item.name}</span>
@@ -224,7 +224,7 @@ export function Sidebar({
                   )}
 
                   {item.highlight && !item.badge && (
-                    <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold">
+                    <span className="text-[9px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 px-1.5 py-0.2 rounded font-semibold">
                       Test IA
                     </span>
                   )}
@@ -236,20 +236,20 @@ export function Sidebar({
       </nav>
 
       {/* Enlaces de Cambio Rápido de Rol */}
-      <div className="p-3 border-t border-[#EAECF0] bg-slate-50/70 space-y-1.5">
-        <span className="text-[9px] font-black uppercase text-slate-400 px-1 block">
+      <div className="p-3 border-t border-[#EAECF0] dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 space-y-1.5">
+        <span className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 px-1 block">
           Cambiar Vista
         </span>
         <div className="grid grid-cols-2 gap-1.5 text-[11px] font-bold">
           <Link
             href="/comercio"
-            className="p-1.5 rounded-lg bg-white border border-slate-200 hover:border-emerald-300 text-slate-700 text-center truncate"
+            className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-600 text-slate-700 dark:text-slate-200 text-center truncate transition-colors"
           >
             🍳 Cocina
           </Link>
           <Link
             href="/repartidor"
-            className="p-1.5 rounded-lg bg-white border border-slate-200 hover:border-emerald-300 text-slate-700 text-center truncate"
+            className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-600 text-slate-700 dark:text-slate-200 text-center truncate transition-colors"
           >
             🛵 Repartidor
           </Link>
@@ -257,37 +257,37 @@ export function Sidebar({
       </div>
 
       {/* Widget Asistente AI Studio */}
-      <div className="px-3 pb-2 pt-1 border-t border-[#EAECF0] bg-[#FAFAFA]">
+      <div className="px-3 pb-2 pt-1 border-t border-[#EAECF0] dark:border-slate-800 bg-[#FAFAFA] dark:bg-slate-900/40">
         <Link
           href="/dashboard/ia"
-          className="flex items-center gap-2 p-2 rounded-xl bg-emerald-50/70 border border-emerald-200/60 hover:bg-emerald-100/70 transition-colors"
+          className="flex items-center gap-2 p-2 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/60 hover:bg-emerald-100/70 dark:hover:bg-emerald-900/40 transition-colors"
         >
           <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center text-sm font-bold shadow-2xs">
             🌴
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-bold text-slate-900 truncate">TropiBot AI</p>
-            <p className="text-[9px] text-emerald-700 font-medium truncate flex items-center gap-1">
+            <p className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate">TropiBot AI</p>
+            <p className="text-[9px] text-emerald-700 dark:text-emerald-400 font-medium truncate flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
               Personalizar en AI Studio
             </p>
           </div>
-          <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+          <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
         </Link>
       </div>
 
       {/* Footer Usuario & Ubicación */}
-      <div className="p-3 border-t border-[#EAECF0] bg-[#FAFAFA]">
-        <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-[#EAECF0] shadow-2xs">
+      <div className="p-3 border-t border-[#EAECF0] dark:border-slate-800 bg-[#FAFAFA] dark:bg-slate-900/40">
+        <div className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-800/80 border border-[#EAECF0] dark:border-slate-700 shadow-2xs">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-300 font-bold text-xs flex items-center justify-center shrink-0">
               {userInitials}
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-bold text-[#101828] truncate">
+              <p className="text-xs font-bold text-[#101828] dark:text-white truncate">
                 {userName}
               </p>
-              <p className="text-[10px] text-emerald-600 font-semibold truncate flex items-center gap-1">
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold truncate flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
                 {userRole} · Ivirgarzama
               </p>
@@ -297,7 +297,7 @@ export function Sidebar({
             type="button"
             onClick={handleLogout}
             title="Cerrar sesión"
-            className="text-[#98A2B3] hover:text-[#475467] p-1.5 rounded-lg hover:bg-[#F2F4F7]"
+            className="text-[#98A2B3] dark:text-slate-400 hover:text-[#475467] dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-[#F2F4F7] dark:hover:bg-slate-700 transition-colors"
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -309,7 +309,7 @@ export function Sidebar({
   return (
     <>
       {/* 1. Sidebar Permanente para Escritorio (Desktop) */}
-      <aside className="hidden lg:flex w-64 border-r border-[#EAECF0] bg-white flex-col h-screen sticky top-0 z-30 select-none">
+      <aside className="hidden lg:flex w-64 border-r border-[#EAECF0] dark:border-slate-800 bg-white dark:bg-slate-900 flex-col h-screen sticky top-0 z-30 select-none transition-colors duration-200">
         {renderNavContent()}
       </aside>
 
@@ -333,7 +333,7 @@ export function Sidebar({
           />
 
           {/* Panel Lateral Drawer */}
-          <aside className="relative w-72 max-w-[85vw] bg-white h-full flex flex-col shadow-2xl z-10 select-none">
+          <aside className="relative w-72 max-w-[85vw] bg-white dark:bg-slate-900 h-full flex flex-col shadow-2xl z-10 select-none">
             {renderNavContent()}
           </aside>
         </div>

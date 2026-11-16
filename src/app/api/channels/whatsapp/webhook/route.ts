@@ -23,6 +23,7 @@ import {
   buildCustomerLoyaltyPrompt,
 } from "@/lib/loyalty/prompt";
 import { extractLoyaltyCode } from "@/lib/loyalty/code";
+import { checkOperatingHours } from "@/lib/schedule/operating-hours";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -445,6 +446,75 @@ export async function POST(req: NextRequest) {
       }
 
       // -------------------------------------------------------------
+      // 4.1 MANEJO DIRECTO DE BOTONES INTERACTIVOS Y ENCUESTAS
+      // -------------------------------------------------------------
+      if (msg.type === "interactive" && msg.interactiveResponseId && metaAdapter) {
+        const responseId = msg.interactiveResponseId;
+
+        // A) Calificación post-entrega (rate_5_orderId)
+        if (responseId.startsWith("rate_")) {
+          const parts = responseId.split("_");
+          const score = parseInt(parts[1], 10);
+          const orderId = parts.slice(2).join("_");
+
+          if (score >= 1 && score <= 5 && orderId) {
+            await prisma.orderRating.upsert({
+              where: { orderId },
+              create: {
+                orderId,
+                rating: score,
+                channel: "WHATSAPP",
+              },
+              update: {
+                rating: score,
+              },
+            });
+
+            const stars = "⭐".repeat(score);
+            const thanksMsg =
+              score >= 4
+                ? `¡Muchas gracias por tu calificación de ${stars}! Nos alegra mucho haberte servido bien. ¡Te esperamos en tu próximo pedido en TropiGO! 🛵💨`
+                : `Agradecemos tu calificación de ${stars}. Lamentamos los inconvenientes y tomaremos muy en cuenta tu opinión para seguir mejorando nuestro servicio en Ivirgarzama. 🙏`;
+
+            await metaAdapter.sendMessage(customerPhone, thanksMsg);
+            recentWamids.set(msg.id, { timestamp: Date.now(), state: "COMPLETED" });
+            continue;
+          }
+        }
+
+        // B) Menú rápido inicial
+        if (responseId === "menu_delivery") {
+          userText = "Quiero ver los restaurantes y pedir comida";
+        } else if (responseId === "menu_mototaxi") {
+          userText = "Quiero pedir un mototaxi";
+        } else if (responseId === "menu_mandado") {
+          userText = "Quiero pedir un mandado express";
+        } else if (responseId === "menu_fidelidad") {
+          userText = "Quiero consultar mi tarjeta de fidelidad y sellos";
+        } else if (responseId === "confirm_order_yes") {
+          userText = "Sí, confirmo mi pedido";
+        } else if (responseId === "confirm_order_no") {
+          userText = "No confirmo el pedido, deseo modificarlo";
+        } else if (responseId === "pay_cash") {
+          userText = "Voy a pagar en efectivo contra entrega";
+        } else if (responseId === "pay_qr") {
+          userText = "Voy a pagar con código QR o billetera móvil";
+        }
+      }
+
+      // -------------------------------------------------------------
+      // 4.2 VERIFICACIÓN DE HORARIO DE ATENCIÓN (A1)
+      // -------------------------------------------------------------
+      const scheduleCheck = await checkOperatingHours();
+      if (!scheduleCheck.isOpen && metaAdapter) {
+        if (scheduleCheck.offHoursPolicy === "TAKE_MESSAGE") {
+          await metaAdapter.sendMessage(customerPhone, scheduleCheck.message);
+          recentWamids.set(msg.id, { timestamp: Date.now(), state: "COMPLETED" });
+          continue;
+        }
+      }
+
+      // -------------------------------------------------------------
       // 5. RESPUESTA AUTOMÁTICA DEL ASISTENTE SEGÚN AI STUDIO
       // -------------------------------------------------------------
       if (!metaAdapter) {
@@ -668,18 +738,81 @@ export async function POST(req: NextRequest) {
           aiResponse.content?.trim() ||
           "¡Hola! He recibido tu mensaje en TropiGO Ivirgarzama. En un momento te atendemos.";
 
-        // Enviar respuesta por WhatsApp oficial de Meta. Si la IA pidió la
-        // ubicación, se usa el botón nativo de compartir ubicación.
+        // -------------------------------------------------------------
+        // ENVÍO DE RESPUESTA INTERACTIVA O MULTIMODAL SEGÚN HERRAMIENTAS
+        // -------------------------------------------------------------
         const wantsLocation = Boolean(
           aiResponse.toolCalls?.some(
             (call) => call.tool === "solicitar_ubicacion"
           )
         );
-        const outboundWamid = wantsLocation
-          ? await metaAdapter
-              .sendLocationRequest(customerPhone, replyText)
-              .catch(() => metaAdapter.sendMessage(customerPhone, replyText))
-          : await metaAdapter.sendMessage(customerPhone, replyText);
+
+        const visualCatalogCall = aiResponse.toolCalls?.find(
+          (call) => call.tool === "mostrar_catalogo_visual"
+        );
+
+        const hasSummaryQuote = Boolean(
+          aiResponse.toolCalls?.some(
+            (call) => call.tool === "preparar_resumen_pedido"
+          )
+        );
+
+        let outboundWamid = "";
+
+        // 1. Si la IA pidió ubicación mediante botón nativo
+        if (wantsLocation) {
+          outboundWamid = await metaAdapter
+            .sendLocationRequest(customerPhone, replyText)
+            .catch(() => metaAdapter.sendMessage(customerPhone, replyText));
+        }
+        // 2. Si la IA cotizó un pedido oficial, mostrar botones interactivos de Confirmación
+        else if (hasSummaryQuote) {
+          outboundWamid = await metaAdapter
+            .sendInteractiveButtons(customerPhone, replyText, [
+              { id: "confirm_order_yes", title: "✅ Sí, confirmo" },
+              { id: "confirm_order_no", title: "❌ Modificar" },
+              { id: "pay_qr", title: "📱 Pagar con QR" },
+            ])
+            .catch(() => metaAdapter.sendMessage(customerPhone, replyText));
+        }
+        // 3. Saludo inicial o menú principal si el cliente escribe un saludo simple
+        else if (
+          /^(hola|buenas|buenos dias|buenas tardes|buenas noches|menu|opciones|empezar|inicio|tropibot)\b/i.test(
+            (userText || "").trim().toLowerCase()
+          ) &&
+          !aiResponse.toolCalls?.length
+        ) {
+          outboundWamid = await metaAdapter
+            .sendInteractiveButtons(customerPhone, replyText, [
+              { id: "menu_delivery", title: "🍕 Pedir comida" },
+              { id: "menu_mototaxi", title: "🛵 Mototaxi" },
+              { id: "menu_fidelidad", title: "🎁 Mi Fidelidad" },
+            ])
+            .catch(() => metaAdapter.sendMessage(customerPhone, replyText));
+        }
+        // 4. Mensaje de texto estándar
+        else {
+          outboundWamid = await metaAdapter.sendMessage(customerPhone, replyText);
+        }
+
+        // 5. Envío de fotos del catálogo si la IA ejecutó 'mostrar_catalogo_visual'
+        if (visualCatalogCall?.result?.menu) {
+          const itemsConFoto = (visualCatalogCall.result.menu as any[]).filter(
+            (item: any) => item.tieneFoto && item.fotoUrl
+          );
+          // Enviar hasta 3 fotos destacadas para no saturar la conexión de WhatsApp
+          for (const item of itemsConFoto.slice(0, 3)) {
+            await metaAdapter
+              .sendImage(
+                customerPhone,
+                item.fotoUrl,
+                `🍽️ *${item.nombre}* - ${item.precio}\n${item.descripcion || ""}`
+              )
+              .catch((err) => {
+                console.warn("[Meta Webhook] No se pudo enviar foto del plato:", err.message);
+              });
+          }
+        }
 
         // Guardar mensaje saliente del asistente con su wamid, herramientas usadas y estado inicial SENT
         await prisma.message.create({

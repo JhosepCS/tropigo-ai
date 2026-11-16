@@ -158,6 +158,15 @@ export async function getAssistantConfig(): Promise<AssistantIdentityConfig> {
       normalizeProviderModel(activeProvider, record.activeModel) ||
       defaultModelForProvider(activeProvider);
 
+    let parsedOperatingHours: OperatingHours = DEFAULT_ASSISTANT_CONFIG.operatingHours || {};
+    try {
+      if (record.operatingHours) {
+        parsedOperatingHours = JSON.parse(record.operatingHours);
+      }
+    } catch {}
+
+    const offHoursPolicy = (record.offHoursPolicy as OffHoursPolicy) || DEFAULT_ASSISTANT_CONFIG.offHoursPolicy || "TAKE_MESSAGE";
+
     return {
       id: record.id,
       name: record.name || DEFAULT_ASSISTANT_CONFIG.name,
@@ -177,6 +186,8 @@ export async function getAssistantConfig(): Promise<AssistantIdentityConfig> {
       activeModel,
       fallbackProviders: extraData.fallbackProviders || DEFAULT_ASSISTANT_CONFIG.fallbackProviders,
       providerModels: normalizeProviderModels(extraData.providerModels),
+      operatingHours: parsedOperatingHours,
+      offHoursPolicy,
       safeMode: record.safeMode ?? false,
       updatedAt: record.updatedAt?.toISOString(),
     };
@@ -231,7 +242,9 @@ export async function saveAssistantConfig(
         prohibitedActions: merged.prohibitedActions.trim(),
         handoffRules: JSON.stringify(merged.handoffRules),
         customHandoffRule: merged.customHandoffRule ? merged.customHandoffRule.trim() : null,
+        operatingHours: JSON.stringify(merged.operatingHours || {}),
         operatingHoursJson: JSON.stringify(extraData),
+        offHoursPolicy: merged.offHoursPolicy || "TAKE_MESSAGE",
         activeProvider: merged.activeProvider,
         activeModel: merged.activeModel,
         safeMode: merged.safeMode ?? false,
@@ -248,7 +261,9 @@ export async function saveAssistantConfig(
         prohibitedActions: merged.prohibitedActions.trim(),
         handoffRules: JSON.stringify(merged.handoffRules),
         customHandoffRule: merged.customHandoffRule ? merged.customHandoffRule.trim() : null,
+        operatingHours: JSON.stringify(merged.operatingHours || {}),
         operatingHoursJson: JSON.stringify(extraData),
+        offHoursPolicy: merged.offHoursPolicy || "TAKE_MESSAGE",
         activeProvider: merged.activeProvider,
         activeModel: merged.activeModel,
         safeMode: merged.safeMode ?? false,

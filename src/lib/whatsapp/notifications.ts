@@ -116,6 +116,31 @@ export async function sendOrderStatusNotification(
       });
     }
 
+    // Encuesta de satisfacción inmediata al entregar el pedido
+    if (newStatus === "ENTREGADO") {
+      await adapter
+        .sendInteractiveList(
+          recipient,
+          "Tu opinión nos importa ⭐",
+          "¿Cómo calificarías tu experiencia con TropiGO en este pedido?",
+          [
+            {
+              title: "Calificación del servicio",
+              rows: [
+                { id: `rate_5_${order.id}`, title: "⭐⭐⭐⭐⭐ Excelente", description: "Todo llegó a tiempo y en perfecto estado" },
+                { id: `rate_4_${order.id}`, title: "⭐⭐⭐⭐ Muy bueno", description: "Buen servicio en general" },
+                { id: `rate_3_${order.id}`, title: "⭐⭐⭐ Regular", description: "Puede mejorar en tiempo o entrega" },
+                { id: `rate_2_${order.id}`, title: "⭐⭐ Malo", description: "Tuve inconvenientes con mi pedido" },
+                { id: `rate_1_${order.id}`, title: "⭐ Muy malo", description: "Mala experiencia" },
+              ],
+            },
+          ]
+        )
+        .catch((err) => {
+          console.warn(`[sendOrderStatusNotification] No se pudo enviar encuesta a ${recipient}:`, err?.message || err);
+        });
+    }
+
     // Si hay imagen de QR del repartidor y URL pública, enviarla como apoyo
     if (riderQrToSend) {
       await adapter.sendImage(recipient, riderQrToSend, riderQrCaption).catch((err) => {

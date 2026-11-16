@@ -17,6 +17,9 @@ import { loyaltyCodeTool } from "./loyalty-code-tool";
 import { paymentMethodsTool } from "./payments-tool";
 import { paymentStatusTool } from "./payment-status-tool";
 import { locationRequestTool } from "./location-request-tool";
+import { recommendationTool } from "./recommendation-tool";
+import { promotionsTool } from "./promotions-tool";
+import { catalogVisualTool } from "./catalog-visual-tool";
 import { OrderToolContext } from "../../orders/order-service";
 
 export * from "./types";
@@ -37,6 +40,9 @@ export * from "./loyalty-code-tool";
 export * from "./payments-tool";
 export * from "./payment-status-tool";
 export * from "./location-request-tool";
+export * from "./recommendation-tool";
+export * from "./promotions-tool";
+export * from "./catalog-visual-tool";
 
 /**
  * Catálogo modular completo de las herramientas internas de TropiGO
@@ -59,6 +65,9 @@ export const TROPIGO_TOOLS: IAssistantTool[] = [
   paymentMethodsTool,
   paymentStatusTool,
   locationRequestTool,
+  recommendationTool,
+  promotionsTool,
+  catalogVisualTool,
 ];
 
 /**

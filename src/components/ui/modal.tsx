@@ -22,7 +22,6 @@ export function Modal({
   footer,
   maxWidth = "md",
 }: ModalProps) {
-  // Manejo de tecla ESC para accesibilidad
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isOpen) {
@@ -59,25 +58,25 @@ export function Modal({
     >
       {/* Backdrop con desenfoque elegante */}
       <div
-        className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+        className="fixed inset-0 bg-slate-900/60 dark:bg-black/80 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
         onClick={onClose}
         aria-hidden="true"
       />
 
       {/* Contenedor Modal */}
       <div
-        className={`relative w-full ${maxWidthClass} bg-white rounded-2xl shadow-floating border border-slate-200 overflow-hidden z-10 transition-all transform animate-in zoom-in-95 duration-200`}
+        className={`relative w-full ${maxWidthClass} bg-white dark:bg-slate-900 rounded-2xl shadow-floating border border-slate-200 dark:border-slate-800 overflow-hidden z-10 transition-all transform animate-in zoom-in-95 duration-200 text-slate-900 dark:text-slate-100`}
       >
         {/* Encabezado */}
-        <div className="flex items-start justify-between p-5 pb-4 border-b border-slate-100">
+        <div className="flex items-start justify-between p-5 pb-4 border-b border-slate-100 dark:border-slate-800">
           <div>
             {title && (
-              <h2 className="text-base font-bold text-slate-900 tracking-tight">
+              <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
                 {title}
               </h2>
             )}
             {description && (
-              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
                 {description}
               </p>
             )}
@@ -86,7 +85,7 @@ export function Modal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors -mr-1"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors -mr-1"
             aria-label="Cerrar ventana"
           >
             <X className="w-5 h-5" />
@@ -98,7 +97,7 @@ export function Modal({
 
         {/* Pie opcional */}
         {footer && (
-          <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+          <div className="p-4 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2.5">
             {footer}
           </div>
         )}
