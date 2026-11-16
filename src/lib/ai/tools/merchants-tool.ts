@@ -85,6 +85,10 @@ export const merchantsTool: IAssistantTool = {
           telefono: m.phone,
           platosDisponibles: m._count.products,
           descripcion: m.description,
+          coordenadas:
+            m.latitude && m.longitude
+              ? { latitud: m.latitude, longitud: m.longitude }
+              : null,
         };
       });
 

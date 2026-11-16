@@ -41,15 +41,27 @@ export const zonesTool: IAssistantTool = {
         };
       }
 
-      const formatted = zones.map((z) => ({
-        id: z.id,
-        nombre: z.name,
-        localidad: z.city?.name || "Ivirgarzama",
-        descripcion: z.description,
-        tarifaBaseDeliveryBs: z.baseDeliveryCost,
-        tarifaBaseMototaxiBs: z.baseRideCost,
-        tiempoEstimadoMinutos: z.estimatedMinutes,
-      }));
+      const formatted = zones.map((z) => {
+        let geo: any = null;
+        try {
+          if (z.polygonGeoJson) geo = JSON.parse(z.polygonGeoJson);
+        } catch {}
+
+        return {
+          id: z.id,
+          nombre: z.name,
+          categoria: geo?.category || "GENERAL",
+          localidad: z.city?.name || "Ivirgarzama",
+          descripcion: z.description,
+          tarifaBaseDeliveryBs: z.baseDeliveryCost,
+          tarifaBaseMototaxiBs: z.baseRideCost,
+          tiempoEstimadoMinutos: z.estimatedMinutes,
+          coordenadas:
+            geo?.latitude && geo?.longitude
+              ? { latitud: geo.latitude, longitud: geo.longitude }
+              : null,
+        };
+      });
 
       return {
         total: formatted.length,
