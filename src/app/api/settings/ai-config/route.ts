@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ModelRouter } from "@/lib/ai/model-router";
 import { saveProviderKeys } from "@/lib/ai/key-manager";
 import { getAssistantConfig, saveAssistantConfig } from "@/lib/ai/config-manager";
-import { requireAuth } from "@/lib/auth/rbac";
+import { requireAuth, UnauthorizedError, ForbiddenError } from "@/lib/auth/rbac";
 
 export async function GET() {
   try {
@@ -26,8 +26,8 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    // Validar sesión de operador o administrador si está autenticado
-    await requireAuth().catch(() => null);
+    // Validar sesión de operador o administrador
+    await requireAuth();
 
     const body = await req.json();
     const {
@@ -83,6 +83,12 @@ export async function POST(req: NextRequest) {
       assistantConfig: updatedConfig,
     });
   } catch (error: any) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
+    if (error instanceof ForbiddenError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     console.error("Error al guardar configuración de IA:", error);
     return NextResponse.json(
       { error: error.message || "Error al guardar configuración de IA." },

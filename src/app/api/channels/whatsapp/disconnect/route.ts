@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
 import { disconnectWhatsAppSecurely } from "@/lib/whatsapp/meta-manager";
-import { requireAuth } from "@/lib/auth/rbac";
+import { requireAuth, UnauthorizedError, ForbiddenError } from "@/lib/auth/rbac";
 
 export async function POST() {
   try {
-    await requireAuth().catch(() => null);
+    await requireAuth();
     await disconnectWhatsAppSecurely();
     return NextResponse.json({
       success: true,
       message: "WhatsApp Business Cloud API desconectado de forma segura.",
     });
   } catch (error: any) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
+    if (error instanceof ForbiddenError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     console.error("Error al desconectar WhatsApp:", error);
     return NextResponse.json(
       { error: error.message || "Error al desconectar WhatsApp" },

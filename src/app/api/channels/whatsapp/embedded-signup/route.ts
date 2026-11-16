@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleEmbeddedSignupExchange, getMaskedWhatsAppStatus } from "@/lib/whatsapp/meta-manager";
-import { requireAuth } from "@/lib/auth/rbac";
+import { requireAuth, UnauthorizedError, ForbiddenError } from "@/lib/auth/rbac";
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAuth().catch(() => null);
+    await requireAuth();
 
     const body = await req.json();
     const { code, wabaId, phoneNumberId } = body;
@@ -31,6 +31,12 @@ export async function POST(req: NextRequest) {
       status: updatedStatus,
     });
   } catch (error: any) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
+    if (error instanceof ForbiddenError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     console.error("Error en intercambio de Embedded Signup:", error);
     return NextResponse.json(
       { success: false, error: error.message || "Error al procesar Embedded Signup de Meta." },

@@ -451,7 +451,17 @@ export async function POST(req: NextRequest) {
       if (msg.type === "interactive" && msg.interactiveResponseId && metaAdapter) {
         const responseId = msg.interactiveResponseId;
 
-        // A) Calificación post-entrega (rate_5_orderId)
+        // A) Respuestas rápidas configurables desde AI Studio (quick_0, quick_1...)
+        if (responseId.startsWith("quick_")) {
+          const quickIndex = parseInt(responseId.slice("quick_".length), 10);
+          const quickConfig = await getAssistantConfig();
+          const quickReply = quickConfig.quickReplies?.[quickIndex];
+          if (quickReply?.message) {
+            userText = quickReply.message;
+          }
+        }
+
+        // B) Calificación post-entrega (rate_5_orderId)
         if (responseId.startsWith("rate_")) {
           const parts = responseId.split("_");
           const score = parseInt(parts[1], 10);
@@ -685,9 +695,21 @@ export async function POST(req: NextRequest) {
           buildCustomerLoyaltyPrompt(customer.id),
           buildCustomerLocationPrompt(customer.id),
         ]);
+
+        // Si el operador eligió agendar fuera de horario, el modelo debe saberlo
+        // para no prometer entrega inmediata ni inventar disponibilidad.
+        const offHoursContext = !scheduleCheck.isOpen
+          ? `[FUERA DE HORARIO DE ATENCIÓN]\n` +
+            `El negocio está cerrado en este momento. ` +
+            (scheduleCheck.nextOpenDay && scheduleCheck.nextOpenTime
+              ? `El próximo horario de apertura es el día ${scheduleCheck.nextOpenDay} a las ${scheduleCheck.nextOpenTime} (hora Bolivia). `
+              : "") +
+            `Puedes tomar pedidos programados o reservas para ese horario, pero no prometas entrega inmediata ni atención presencial fuera de horario.`
+          : "";
+
         const systemPrompt = buildSystemPrompt(
           assistantConfig,
-          [realDataContext, memoryContext, loyaltyContext, locationContext]
+          [realDataContext, memoryContext, loyaltyContext, locationContext, offHoursContext]
             .filter(Boolean)
             .join("\n\n")
         );
@@ -782,13 +804,20 @@ export async function POST(req: NextRequest) {
           ) &&
           !aiResponse.toolCalls?.length
         ) {
-          outboundWamid = await metaAdapter
-            .sendInteractiveButtons(customerPhone, replyText, [
-              { id: "menu_delivery", title: "🍕 Pedir comida" },
-              { id: "menu_mototaxi", title: "🛵 Mototaxi" },
-              { id: "menu_fidelidad", title: "🎁 Mi Fidelidad" },
-            ])
-            .catch(() => metaAdapter.sendMessage(customerPhone, replyText));
+          const quickReplies = (assistantConfig.quickReplies || [])
+            .filter((q) => q && q.enabled !== false && q.label?.trim() && q.message?.trim())
+            .slice(0, 3);
+          const quickButtons = quickReplies.map((q, index) => ({
+            id: `quick_${index}`,
+            title: q.label.trim().slice(0, 20),
+          }));
+
+          outboundWamid =
+            quickButtons.length > 0
+              ? await metaAdapter
+                  .sendInteractiveButtons(customerPhone, replyText, quickButtons)
+                  .catch(() => metaAdapter.sendMessage(customerPhone, replyText))
+              : await metaAdapter.sendMessage(customerPhone, replyText);
         }
         // 4. Mensaje de texto estándar
         else {
@@ -823,6 +852,7 @@ export async function POST(req: NextRequest) {
             toolCallsJson: aiResponse.toolCalls ? JSON.stringify(aiResponse.toolCalls) : null,
             providerModel: `${aiResponse.provider}/${aiResponse.model}`,
             tokensUsed: aiResponse.tokensUsed || null,
+            latencyMs: aiResponse.latencyMs || null,
             rawPayload: JSON.stringify({
               wamid: outboundWamid,
               deliveryStatus: "SENT",

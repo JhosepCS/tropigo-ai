@@ -24,6 +24,26 @@ import {
   Map as MapIcon,
 } from "lucide-react";
 
+const CATEGORY_LABELS: Record<string, string> = {
+  TODAS: "Todas las zonas",
+  RESIDENCIAL: "🏘️ Residencial / Barrio",
+  HOTEL: "🏨 Hotel / Hospedaje",
+  MERCADO: "🛒 Mercado / Comercio",
+  HOSPITAL: "🏥 Hospital / Salud",
+  TERMINAL: "🚌 Terminal / Transporte",
+  GENERAL: "📍 Zona urbana general",
+};
+
+function getZoneCategory(zone: any): string {
+  if (!zone?.polygonGeoJson) return "GENERAL";
+  try {
+    const parsed = JSON.parse(zone.polygonGeoJson);
+    return String(parsed?.category || "GENERAL").toUpperCase();
+  } catch {
+    return "GENERAL";
+  }
+}
+
 export function ZonasClient({
   cities,
   zones: initialZones,
@@ -52,9 +72,11 @@ export function ZonasClient({
   const [newRideCost, setNewRideCost] = useState(String(minRideFare));
   const [newMinutes, setNewMinutes] = useState("20");
   const [newDescription, setNewDescription] = useState("");
-  const [newLat, setNewLat] = useState<number | "">(-17.0315);
-  const [newLng, setNewLng] = useState<number | "">(-64.8615);
+  const [newCategory, setNewCategory] = useState("RESIDENCIAL");
+  const [newLat, setNewLat] = useState<number | "">(-17.033507);
+  const [newLng, setNewLng] = useState<number | "">(-64.857436);
   const [geoLocating, setGeoLocating] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState("TODAS");
 
   // Mapa interactivo seleccionado
   const [selectedMapCoords, setSelectedMapCoords] = useState<{
@@ -62,10 +84,15 @@ export function ZonasClient({
     lng: number;
     title: string;
   } | null>({
-    lat: -17.0315,
-    lng: -64.8615,
+    lat: -17.033507,
+    lng: -64.857436,
     title: "Plaza Principal de Ivirgarzama (Centro)",
   });
+
+  const filteredZones =
+    categoryFilter === "TODAS"
+      ? zones
+      : zones.filter((zone) => getZoneCategory(zone) === categoryFilter);
 
   const startEdit = (zone: any) => {
     setEditingId(zone.id);
@@ -148,6 +175,7 @@ export function ZonasClient({
           baseDeliveryCost: Number(newDeliveryCost),
           baseRideCost: Number(newRideCost),
           estimatedMinutes: Number(newMinutes),
+          category: newCategory,
           latitude: typeof newLat === "number" ? newLat : null,
           longitude: typeof newLng === "number" ? newLng : null,
         }),
@@ -238,8 +266,8 @@ export function ZonasClient({
             <button
               onClick={() =>
                 setSelectedMapCoords({
-                  lat: -17.0315,
-                  lng: -64.8615,
+                  lat: -17.033507,
+                  lng: -64.857436,
                   title: "Plaza Principal de Ivirgarzama (Centro)",
                 })
               }
@@ -270,8 +298,8 @@ export function ZonasClient({
             frameBorder="0"
             scrolling="no"
             src={`https://maps.google.com/maps?q=${
-              selectedMapCoords ? `${selectedMapCoords.lat},${selectedMapCoords.lng}` : "-17.0315,-64.8615"
-            }&z=14&output=embed`}
+              selectedMapCoords ? `${selectedMapCoords.lat},${selectedMapCoords.lng}` : "-17.033507,-64.857436"
+            }&z=15&output=embed`}
           />
         </div>
       </div>
@@ -316,14 +344,28 @@ export function ZonasClient({
 
       {/* 3. Zonas Tarifarias de Ivirgarzama */}
       <div className="space-y-3">
-        <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-          <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Zonas y Tarifas Activas ({zones.length} zonas configuradas)</span>
-        </h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Zonas y Tarifas Activas ({filteredZones.length} de {zones.length} zonas)</span>
+          </h3>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          >
+            {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {zones.map((z) => {
+          {filteredZones.map((z) => {
             const isEditing = editingId === z.id;
+            const zoneCategory = getZoneCategory(z);
             let coords: { latitude: number; longitude: number } | null = null;
             if (z.polygonGeoJson) {
               try {
@@ -339,7 +381,7 @@ export function ZonasClient({
                 <CardHeader className="bg-slate-50/70 dark:bg-slate-800/40 pb-3 flex flex-row items-center justify-between">
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                      Zona Tarifaria
+                      {CATEGORY_LABELS[zoneCategory] || "Zona Tarifaria"}
                     </span>
                     <CardTitle className="text-base text-slate-900 dark:text-white">{z.name}</CardTitle>
                   </div>
@@ -514,6 +556,24 @@ export function ZonasClient({
             </div>
 
             <div className="space-y-1">
+              <label className="font-semibold text-slate-700 dark:text-slate-200">Tipo de Zona / Cobertura *</label>
+              <select
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+              >
+                <option value="RESIDENCIAL">🏘️ Residencial / Barrio</option>
+                <option value="HOTEL">🏨 Hotel / Hospedaje</option>
+                <option value="MERCADO">🛒 Mercado / Centro Comercial</option>
+                <option value="HOSPITAL">🏥 Hospital / Salud</option>
+                <option value="TERMINAL">🚌 Terminal / Transporte</option>
+                <option value="GENERAL">📍 Zona Urbana General</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
               <label className="font-semibold text-slate-700 dark:text-slate-200">Localidad *</label>
               <select
                 value={newCityId}
@@ -595,7 +655,7 @@ export function ZonasClient({
                   step="any"
                   value={newLat}
                   onChange={(e) => setNewLat(e.target.value === "" ? "" : Number(e.target.value))}
-                  placeholder="-17.0315"
+                  placeholder="-17.033507"
                   className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white font-mono"
                 />
               </div>
@@ -607,7 +667,7 @@ export function ZonasClient({
                   step="any"
                   value={newLng}
                   onChange={(e) => setNewLng(e.target.value === "" ? "" : Number(e.target.value))}
-                  placeholder="-64.8615"
+                  placeholder="-64.857436"
                   className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white font-mono"
                 />
               </div>

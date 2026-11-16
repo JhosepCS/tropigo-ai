@@ -44,6 +44,18 @@ export async function checkOperatingHours(): Promise<OperatingHoursCheck> {
     .toString()
     .padStart(2, "0")}`;
 
+  // Si el operador no activó el horario, el asistente atiende 24/7.
+  // Esto evita que una configuración vacía bloquee todos los mensajes.
+  if (!config.operatingHoursEnabled) {
+    return {
+      isOpen: true,
+      currentDay,
+      currentTimeStr,
+      offHoursPolicy: policy,
+      message: "",
+    };
+  }
+
   const todaySchedule: DaySchedule | null | undefined = hours[currentDay];
 
   // Si no hay horario configurado para hoy o está explícitamente cerrado
@@ -56,7 +68,13 @@ export async function checkOperatingHours(): Promise<OperatingHoursCheck> {
       offHoursPolicy: policy,
       nextOpenDay: next?.day,
       nextOpenTime: next?.time,
-      message: buildOffHoursMessage(currentDay, next?.day, next?.time, policy),
+      message: buildOffHoursMessage(
+        currentDay,
+        next?.day,
+        next?.time,
+        policy,
+        config.offHoursMessage
+      ),
     };
   }
 
@@ -82,7 +100,13 @@ export async function checkOperatingHours(): Promise<OperatingHoursCheck> {
     offHoursPolicy: policy,
     nextOpenDay: next?.day,
     nextOpenTime: next?.time,
-    message: buildOffHoursMessage(currentDay, next?.day, next?.time, policy),
+    message: buildOffHoursMessage(
+      currentDay,
+      next?.day,
+      next?.time,
+      policy,
+      config.offHoursMessage
+    ),
   };
 }
 
@@ -115,7 +139,8 @@ function buildOffHoursMessage(
   currentDay: WeekdayKey,
   nextDay?: WeekdayKey,
   nextTime?: string,
-  policy: "TAKE_MESSAGE" | "CONTINUE_AND_BOOK" = "TAKE_MESSAGE"
+  policy: "TAKE_MESSAGE" | "CONTINUE_AND_BOOK" = "TAKE_MESSAGE",
+  customMessage?: string
 ): string {
   const nextInfo =
     nextDay && nextTime
@@ -123,6 +148,25 @@ function buildOffHoursMessage(
           nextDay === currentDay ? "hoy" : `el día ${nextDay}`
         } a las *${nextTime}*.`
       : "Te responderemos en cuanto reanudemos la atención.";
+
+  // Mensaje configurable desde AI Studio. Admite {nextOpen} y {día}.
+  const custom = (customMessage || "").trim();
+  if (custom) {
+    const nextOpenText =
+      nextDay && nextTime
+        ? `${nextDay === currentDay ? "hoy" : `el día ${nextDay}`} a las ${nextTime}`
+        : "nuestra próxima apertura";
+    let rendered = custom
+      .replace(/\{nextOpen\}/gi, nextOpenText)
+      .replace(/\{dia\}/gi, nextDay || "próximo día")
+      .replace(/\{hora\}/gi, nextTime || "la hora de apertura");
+
+    if (!/\{nextOpen\}/i.test(custom) && !nextOpenText.includes("próxima apertura")) {
+      rendered += `\n\n⏰ ${nextInfo}`;
+    }
+
+    return rendered;
+  }
 
   if (policy === "CONTINUE_AND_BOOK") {
     return (

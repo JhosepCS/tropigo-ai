@@ -14,10 +14,9 @@ import { getRealRoadDistanceKm } from "./maps-distance";
  */
 export const DEFAULT_DELIVERY_CENTER = {
   name: "Plaza Principal de Ivirgarzama",
-  // Coordenadas del casco central de Ivirgarzama (mismas referencias que
-  // usa el módulo de distancias del proyecto).
-  latitude: -17.0315,
-  longitude: -64.8615,
+  // Coordenadas oficiales de la Plaza Principal de Ivirgarzama
+  latitude: -17.033507383798074,
+  longitude: -64.85743625167643,
 };
 
 export interface DeliveryPricingConfig {

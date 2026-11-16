@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ModelRouter } from "@/lib/ai/model-router";
-import { requireAuth } from "@/lib/auth/rbac";
+import { requireAuth, UnauthorizedError, ForbiddenError } from "@/lib/auth/rbac";
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAuth().catch(() => null);
+    await requireAuth();
 
     const body = await req.json();
     const { provider, key, model } = body;
@@ -27,6 +27,12 @@ export async function POST(req: NextRequest) {
       testResult,
     });
   } catch (error: any) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
+    if (error instanceof ForbiddenError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     console.error("Error al probar proveedor de IA:", error);
     return NextResponse.json(
       {

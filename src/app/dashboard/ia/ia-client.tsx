@@ -41,7 +41,7 @@ import {
   Calendar,
 } from "lucide-react";
 import { AIProviderStatus, ConnectionTestResult, VERIFIED_MODELS_CATALOG } from "@/lib/ai/types";
-import { AssistantIdentityConfig } from "@/lib/ai/config-manager";
+import { AssistantIdentityConfig, WeekdayKey } from "@/lib/ai/config-manager";
 import {
   DEFAULT_CEREBRAS_MODEL,
   DEFAULT_GEMINI_MODEL,
@@ -62,6 +62,16 @@ const PRESET_AVATARS = [
   { id: "chef", label: "Chef Ivirgarzama", url: "https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=150&auto=format&fit=crop&q=80", icon: "🍗" },
   { id: "toucan", label: "Tucán del Trópico", url: "https://images.unsplash.com/photo-1550853024-fae8dd4be47f?w=150&auto=format&fit=crop&q=80", icon: "🦜" },
   { id: "ai-smart", label: "AI Tech", url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80", icon: "🤖" },
+];
+
+const WEEKDAYS: { key: WeekdayKey; label: string }[] = [
+  { key: "lunes", label: "Lunes" },
+  { key: "martes", label: "Martes" },
+  { key: "miercoles", label: "Miércoles" },
+  { key: "jueves", label: "Jueves" },
+  { key: "viernes", label: "Viernes" },
+  { key: "sabado", label: "Sábado" },
+  { key: "domingo", label: "Domingo" },
 ];
 
 export function IAClient({ initialProviders, initialAssistantConfig }: IAClientProps) {
@@ -91,6 +101,48 @@ export function IAClient({ initialProviders, initialAssistantConfig }: IAClientP
   const [config, setConfig] = useState<AssistantIdentityConfig>(initialAssistantConfig);
   const [savingConfig, setSavingConfig] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const updateDaySchedule = (
+    day: WeekdayKey,
+    patch: Partial<{ open: string; close: string; closed: boolean }>
+  ) => {
+    const currentHours = config.operatingHours || {};
+    const existing = currentHours[day] || {
+      open: "08:00",
+      close: "22:00",
+      closed: false,
+    };
+    setConfig({
+      ...config,
+      operatingHours: {
+        ...currentHours,
+        [day]: { ...existing, ...patch },
+      },
+    });
+  };
+
+  const updateQuickReply = (
+    index: number,
+    patch: Partial<{ label: string; message: string; enabled: boolean }>
+  ) => {
+    const current = [...(config.quickReplies || [])];
+    current[index] = { ...(current[index] || { label: "", message: "" }), ...patch };
+    setConfig({ ...config, quickReplies: current.slice(0, 3) });
+  };
+
+  const addQuickReply = () => {
+    const current = [...(config.quickReplies || [])];
+    if (current.length >= 3) return;
+    current.push({ label: "", message: "", enabled: true });
+    setConfig({ ...config, quickReplies: current });
+  };
+
+  const removeQuickReply = (index: number) => {
+    setConfig({
+      ...config,
+      quickReplies: (config.quickReplies || []).filter((_, i) => i !== index),
+    });
+  };
 
   // Estado de Reglas de Pase a Humano
   const [newHandoffTag, setNewHandoffTag] = useState("");
@@ -873,6 +925,175 @@ export function IAClient({ initialProviders, initialAssistantConfig }: IAClientP
                     </button>
                   </div>
                 </div>
+
+                {/* Activación del horario y configuración por día */}
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3">
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
+                      Activar horario de atención
+                    </p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                      Si está desactivado, TropiBot atiende 24/7 y no envía avisos de cierre.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setConfig({
+                        ...config,
+                        operatingHoursEnabled: !config.operatingHoursEnabled,
+                      })
+                    }
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-bold border transition-colors ${
+                      config.operatingHoursEnabled
+                        ? "bg-emerald-600 border-emerald-600 text-white"
+                        : "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300"
+                    }`}
+                  >
+                    {config.operatingHoursEnabled ? "Activado" : "Desactivado"}
+                  </button>
+                </div>
+
+                {config.operatingHoursEnabled && (
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                      Horario por día (hora Bolivia UTC-4)
+                    </label>
+                    {WEEKDAYS.map(({ key, label }) => {
+                      const day = config.operatingHours?.[key];
+                      const closed = !day || day.closed;
+                      return (
+                        <div
+                          key={key}
+                          className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5"
+                        >
+                          <span className="w-20 text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                            {label}
+                          </span>
+                          <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                            <input
+                              type="checkbox"
+                              checked={!closed}
+                              onChange={(e) =>
+                                updateDaySchedule(key, { closed: !e.target.checked })
+                              }
+                              className="accent-emerald-600"
+                            />
+                            Abierto
+                          </label>
+                          <input
+                            type="time"
+                            value={day?.open || "08:00"}
+                            disabled={closed}
+                            onChange={(e) => updateDaySchedule(key, { open: e.target.value })}
+                            className="rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1 text-[11px] font-mono text-slate-800 dark:text-slate-100 disabled:opacity-40"
+                          />
+                          <span className="text-[10px] text-slate-400">a</span>
+                          <input
+                            type="time"
+                            value={day?.close || "22:00"}
+                            disabled={closed}
+                            onChange={(e) => updateDaySchedule(key, { close: e.target.value })}
+                            className="rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1 text-[11px] font-mono text-slate-800 dark:text-slate-100 disabled:opacity-40"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                    Mensaje automático fuera de horario (opcional)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={config.offHoursMessage || ""}
+                    onChange={(e) =>
+                      setConfig({ ...config, offHoursMessage: e.target.value })
+                    }
+                    placeholder="🌙 ¡Hola! En este momento TropiGO está cerrado. Te atendemos de nuevo {nextOpen}. Déjanos tu pedido y lo programamos."
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                    Variables disponibles: <code>{"{nextOpen}"}</code>, <code>{"{dia}"}</code> y{" "}
+                    <code>{"{hora}"}</code>. Si lo dejas vacío se usa el mensaje estándar.
+                  </p>
+                </div>
+              </div>
+
+              {/* Respuestas rápidas configurables del menú principal */}
+              <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-emerald-600" />
+                    <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Respuestas Automáticas del Menú Principal
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addQuickReply}
+                    disabled={(config.quickReplies || []).length >= 3}
+                    className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-800 px-2 py-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 disabled:opacity-40"
+                  >
+                    + Añadir botón
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Estos botones aparecen cuando el cliente saluda. Cada uno envía un mensaje
+                  canónico al asistente. WhatsApp permite máximo 3 botones y 20 caracteres por título.
+                </p>
+
+                {(config.quickReplies || []).map((qr, index) => (
+                  <div
+                    key={index}
+                    className="space-y-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Botón {index + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeQuickReply(index)}
+                        className="text-[10px] font-bold text-red-600 dark:text-red-400 hover:underline"
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      maxLength={20}
+                      value={qr.label}
+                      onChange={(e) =>
+                        updateQuickReply(index, { label: e.target.value })
+                      }
+                      placeholder="🍕 Pedir comida"
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <input
+                      type="text"
+                      value={qr.message}
+                      onChange={(e) =>
+                        updateQuickReply(index, { message: e.target.value })
+                      }
+                      placeholder="Quiero ver los restaurantes y pedir comida"
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={qr.enabled !== false}
+                        onChange={(e) =>
+                          updateQuickReply(index, { enabled: e.target.checked })
+                        }
+                        className="accent-emerald-600"
+                      />
+                      Mostrar este botón
+                    </label>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -1434,8 +1655,8 @@ export function IAClient({ initialProviders, initialAssistantConfig }: IAClientP
             </div>
           ) : (
             <>
-              {/* 4 KPIs Principales */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* 5 KPIs Principales */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <Card className="p-4 border-l-4 border-l-emerald-500">
                   <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
                     Satisfacción Clientes (Encuesta A2)
@@ -1481,6 +1702,20 @@ export function IAClient({ initialProviders, initialAssistantConfig }: IAClientP
 
                 <Card className="p-4 border-l-4 border-l-purple-500">
                   <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                    Consumo de Tokens (7 días)
+                  </span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-2xl font-black text-purple-600 dark:text-purple-400">
+                      {Number(metrics?.tokensTotal || 0).toLocaleString("es-BO")}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                    ~{Number(metrics?.promedioTokensPorMensaje || 0).toLocaleString("es-BO")} tokens por respuesta
+                  </p>
+                </Card>
+
+                <Card className="p-4 border-l-4 border-l-amber-500">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
                     Periodo Analizado
                   </span>
                   <div className="flex items-center gap-2 mt-1">
@@ -1524,18 +1759,26 @@ export function IAClient({ initialProviders, initialAssistantConfig }: IAClientP
                 <Card className="p-5 space-y-3">
                   <h4 className="text-xs font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
                     <Cpu className="w-4 h-4 text-emerald-600" />
-                    <span>Latencia Promedio y Modelos de IA</span>
+                    <span>Latencia, Mensajes y Tokens por Modelo</span>
                   </h4>
                   {metrics?.promedioLatenciaMs && metrics.promedioLatenciaMs.length > 0 ? (
                     <div className="space-y-2 text-xs">
                       {metrics.promedioLatenciaMs.map((l: any, idx: number) => (
-                        <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-                          <span className="font-mono text-slate-700 dark:text-slate-200">
-                            {l.modelo}
-                          </span>
-                          <span className="font-bold text-slate-900 dark:text-white">
-                            ~{l.latenciaMs} ms
-                          </span>
+                        <div key={idx} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-slate-700 dark:text-slate-200 font-bold truncate">
+                              {l.modelo}
+                            </span>
+                            <span className="font-bold text-slate-900 dark:text-white shrink-0">
+                              ~{l.latenciaMs} ms
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                            <span>{l.mensajes || 0} respuestas</span>
+                            <span className="font-bold text-purple-600 dark:text-purple-400">
+                              {Number(l.tokens || 0).toLocaleString("es-BO")} tokens
+                            </span>
+                          </div>
                         </div>
                       ))}
                     </div>

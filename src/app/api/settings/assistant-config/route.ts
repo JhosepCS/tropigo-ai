@@ -4,16 +4,27 @@ import {
   saveAssistantConfig,
   resetAssistantConfig,
 } from "@/lib/ai/config-manager";
-import { requireAuth } from "@/lib/auth/rbac";
+import {
+  requireAuth,
+  UnauthorizedError,
+  ForbiddenError,
+} from "@/lib/auth/rbac";
 
 export async function GET() {
   try {
+    await requireAuth();
     const config = await getAssistantConfig();
     return NextResponse.json({
       success: true,
       config,
     });
   } catch (error: any) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
+    if (error instanceof ForbiddenError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     return NextResponse.json(
       { error: error.message || "Error al obtener configuración del asistente." },
       { status: 500 }
@@ -24,7 +35,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     // Validar autorización de operador o administrador
-    await requireAuth().catch(() => null);
+    await requireAuth();
 
     const body = await req.json();
 
@@ -51,6 +62,24 @@ export async function POST(req: NextRequest) {
       orderPolicy: body.orderPolicy,
       handoffRules: Array.isArray(body.handoffRules) ? body.handoffRules : undefined,
       customHandoffRule: body.customHandoffRule,
+      operatingHours:
+        body.operatingHours && typeof body.operatingHours === "object"
+          ? body.operatingHours
+          : undefined,
+      operatingHoursEnabled:
+        typeof body.operatingHoursEnabled === "boolean"
+          ? body.operatingHoursEnabled
+          : undefined,
+      offHoursPolicy: body.offHoursPolicy,
+      offHoursMessage:
+        typeof body.offHoursMessage === "string" ? body.offHoursMessage : undefined,
+      quickReplies: Array.isArray(body.quickReplies) ? body.quickReplies : undefined,
+      activeProvider: body.activeProvider,
+      activeModel: body.activeModel,
+      providerModels: body.providerModels,
+      fallbackProviders: Array.isArray(body.fallbackProviders)
+        ? body.fallbackProviders
+        : undefined,
       safeMode: typeof body.safeMode === "boolean" ? body.safeMode : undefined,
     });
 
@@ -60,6 +89,12 @@ export async function POST(req: NextRequest) {
       config: updated,
     });
   } catch (error: any) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
+    if (error instanceof ForbiddenError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     console.error("Error en POST /api/settings/assistant-config:", error);
     return NextResponse.json(
       { error: error.message || "Error al actualizar la configuración del asistente." },

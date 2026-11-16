@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireRole,
+  UnauthorizedError,
+  ForbiddenError,
+} from "@/lib/auth/rbac";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
+    await requireRole(["SUPERADMIN", "ADMIN", "OPERATOR"]);
+
     const since = new Date();
     since.setDate(since.getDate() - 7); // Últimos 7 días
 
@@ -25,14 +32,27 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Latencia promedio en milisegundos por modelo
-    const latencyStats = await prisma.message.groupBy({
+    // Latencia promedio y consumo de tokens por modelo
+    const modelStats = await prisma.message.groupBy({
       by: ["providerModel"],
+      _count: true,
       _avg: { latencyMs: true },
+      _sum: { tokensUsed: true },
       where: {
         sender: "ASSISTANT",
         createdAt: { gte: since },
-        latencyMs: { not: null },
+      },
+      orderBy: { _sum: { tokensUsed: "desc" } },
+    });
+
+    // Consumo total de tokens de los últimos 7 días
+    const tokenTotals = await prisma.message.aggregate({
+      _sum: { tokensUsed: true },
+      _count: true,
+      where: {
+        sender: "ASSISTANT",
+        createdAt: { gte: since },
+        tokensUsed: { not: null },
       },
     });
 
@@ -64,6 +84,11 @@ export async function GET(req: NextRequest) {
       where: { createdAt: { gte: since } },
     });
 
+    const totalTokens = tokenTotals._sum.tokensUsed || 0;
+    const assistantMessages = messagesBySender.find(
+      (m) => m.sender === "ASSISTANT"
+    )?._count || 0;
+
     return NextResponse.json({
       period: "Últimos 7 días",
       totalConversations,
@@ -80,9 +105,21 @@ export async function GET(req: NextRequest) {
         modelo: m.providerModel || "gemini-3.1-flash-lite (default)",
         cantidad: m._count,
       })),
-      promedioLatenciaMs: latencyStats.map((l) => ({
-        modelo: l.providerModel || "default",
-        latenciaMs: Math.round(l._avg.latencyMs || 0),
+      tokensTotal: totalTokens,
+      promedioTokensPorMensaje:
+        assistantMessages > 0 ? Math.round(totalTokens / assistantMessages) : 0,
+      tokensByModel: modelStats
+        .filter((m) => (m._sum.tokensUsed || 0) > 0)
+        .map((m) => ({
+          modelo: m.providerModel || "default",
+          tokens: m._sum.tokensUsed || 0,
+          mensajes: m._count,
+        })),
+      promedioLatenciaMs: modelStats.map((m) => ({
+        modelo: m.providerModel || "default",
+        latenciaMs: Math.round(m._avg.latencyMs || 0),
+        mensajes: m._count,
+        tokens: m._sum.tokensUsed || 0,
       })),
       herramientasMasUsadas: topTools.map((t) => ({
         herramienta: t.action.replace("TOOL_", "").toLowerCase(),
@@ -94,6 +131,12 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error: any) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
+    if (error instanceof ForbiddenError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     console.error("[Metrics API] Error:", error);
     return NextResponse.json(
       { error: "No se pudieron calcular las métricas", detalle: error?.message },

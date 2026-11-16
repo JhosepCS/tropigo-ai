@@ -26,6 +26,15 @@ export interface DaySchedule {
 export type OperatingHours = Partial<Record<WeekdayKey, DaySchedule | null>>;
 export type OffHoursPolicy = "TAKE_MESSAGE" | "CONTINUE_AND_BOOK";
 
+export interface QuickReplyConfig {
+  /** Texto visible en el botón (máximo 20 caracteres en WhatsApp). */
+  label: string;
+  /** Mensaje canónico que se procesa como si el cliente lo hubiera escrito. */
+  message: string;
+  /** Permite ocultar una respuesta rápida sin borrarla. */
+  enabled?: boolean;
+}
+
 export interface AssistantIdentityConfig {
   id?: string;
   name: string;
@@ -46,7 +55,13 @@ export interface AssistantIdentityConfig {
   fallbackProviders?: string[];
   providerModels?: Record<string, string>;
   operatingHours?: OperatingHours;
+  /** Si es false, el asistente atiende 24/7 y no aplica el horario. */
+  operatingHoursEnabled?: boolean;
   offHoursPolicy?: OffHoursPolicy;
+  /** Mensaje automático fuera de horario. Admite {nextOpen}. */
+  offHoursMessage?: string;
+  /** Botones de respuesta rápida del menú principal (máximo 3). */
+  quickReplies?: QuickReplyConfig[];
   safeMode?: boolean;
   updatedAt?: string;
 }
@@ -79,7 +94,26 @@ export const DEFAULT_ASSISTANT_CONFIG: AssistantIdentityConfig = {
     openrouter: DEFAULT_OPENROUTER_MODEL,
   },
   operatingHours: {},
+  operatingHoursEnabled: false,
   offHoursPolicy: "TAKE_MESSAGE",
+  offHoursMessage: "",
+  quickReplies: [
+    {
+      label: "🍕 Pedir comida",
+      message: "Quiero ver los restaurantes y pedir comida",
+      enabled: true,
+    },
+    {
+      label: "🛵 Mototaxi",
+      message: "Quiero pedir un mototaxi",
+      enabled: true,
+    },
+    {
+      label: "🎁 Mi Fidelidad",
+      message: "Quiero consultar mi tarjeta de fidelidad y sellos",
+      enabled: true,
+    },
+  ],
   safeMode: false,
 };
 
@@ -166,6 +200,10 @@ export async function getAssistantConfig(): Promise<AssistantIdentityConfig> {
     } catch {}
 
     const offHoursPolicy = (record.offHoursPolicy as OffHoursPolicy) || DEFAULT_ASSISTANT_CONFIG.offHoursPolicy || "TAKE_MESSAGE";
+    const operatingHoursEnabled =
+      typeof extraData.operatingHoursEnabled === "boolean"
+        ? extraData.operatingHoursEnabled
+        : Object.keys(parsedOperatingHours).length > 0;
 
     return {
       id: record.id,
@@ -187,7 +225,12 @@ export async function getAssistantConfig(): Promise<AssistantIdentityConfig> {
       fallbackProviders: extraData.fallbackProviders || DEFAULT_ASSISTANT_CONFIG.fallbackProviders,
       providerModels: normalizeProviderModels(extraData.providerModels),
       operatingHours: parsedOperatingHours,
+      operatingHoursEnabled,
       offHoursPolicy,
+      offHoursMessage: extraData.offHoursMessage || DEFAULT_ASSISTANT_CONFIG.offHoursMessage || "",
+      quickReplies: Array.isArray(extraData.quickReplies)
+        ? extraData.quickReplies
+        : DEFAULT_ASSISTANT_CONFIG.quickReplies,
       safeMode: record.safeMode ?? false,
       updatedAt: record.updatedAt?.toISOString(),
     };
@@ -205,9 +248,15 @@ export async function saveAssistantConfig(
 ): Promise<AssistantIdentityConfig> {
   const current = await getAssistantConfig();
 
+  // Ignorar campos undefined para no borrar configuración existente cuando
+  // el panel guarda solo una sección (por ejemplo, proveedores o promociones).
+  const definedInput = Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined)
+  ) as Partial<AssistantIdentityConfig>;
+
   const merged: AssistantIdentityConfig = {
     ...current,
-    ...input,
+    ...definedInput,
   };
 
   // Nunca guardar identificadores retirados: se traducen al modelo vigente.
@@ -225,6 +274,9 @@ export async function saveAssistantConfig(
     orderPolicy: merged.orderPolicy,
     fallbackProviders: merged.fallbackProviders || DEFAULT_ASSISTANT_CONFIG.fallbackProviders,
     providerModels: merged.providerModels,
+    operatingHoursEnabled: merged.operatingHoursEnabled ?? false,
+    offHoursMessage: merged.offHoursMessage || "",
+    quickReplies: (merged.quickReplies || DEFAULT_ASSISTANT_CONFIG.quickReplies || []).slice(0, 3),
   };
 
   const existing = await prisma.assistantConfig.findFirst();

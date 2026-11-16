@@ -283,6 +283,7 @@ export async function POST(req: NextRequest) {
           : null,
         providerModel: `${aiResponse.provider}/${aiResponse.model}`,
         tokensUsed: aiResponse.tokensUsed || null,
+        latencyMs: aiResponse.latencyMs || null,
       },
     });
 

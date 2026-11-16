@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
       baseDeliveryCost,
       baseRideCost,
       estimatedMinutes = 20,
+      category = "RESIDENCIAL",
       latitude,
       longitude,
     } = body;
@@ -88,6 +89,7 @@ export async function POST(req: NextRequest) {
       polygonGeoJson = JSON.stringify({
         latitude,
         longitude,
+        category,
         referenceName: name.trim(),
       });
     }

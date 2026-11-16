@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveStandardMetaCredentials, verifyMetaConnection, getMaskedWhatsAppStatus } from "@/lib/whatsapp/meta-manager";
-import { requireAuth } from "@/lib/auth/rbac";
+import { requireAuth, UnauthorizedError, ForbiddenError } from "@/lib/auth/rbac";
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAuth().catch(() => null);
+    await requireAuth();
 
     const body = await req.json();
     const {
@@ -48,6 +48,12 @@ export async function POST(req: NextRequest) {
       status: updatedStatus,
     });
   } catch (error: any) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
+    if (error instanceof ForbiddenError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     console.error("Error al guardar credenciales de WhatsApp:", error);
     return NextResponse.json(
       { error: error.message || "Error al guardar credenciales de WhatsApp." },

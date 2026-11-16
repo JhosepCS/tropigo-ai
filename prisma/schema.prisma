@@ -810,6 +810,7 @@ model PaymentRecord {
 
   @@index([orderId])
   @@index([rideTripId])
+  @@index([methodId])
   @@index([verificationStatus])
 }
 
@@ -859,8 +860,8 @@ model BusinessProfile {
   // Centro de referencia para cobrar delivery por distancia. Por defecto, la
   // Plaza Principal de Ivirgarzama: a mayor distancia, mayor recargo.
   deliveryCenterName        String    @default("Plaza Principal de Ivirgarzama")
-  deliveryCenterLatitude    Float     @default(-17.0315)
-  deliveryCenterLongitude   Float     @default(-64.8615)
+  deliveryCenterLatitude    Float     @default(-17.033507383798074)
+  deliveryCenterLongitude   Float     @default(-64.85743625167643)
   // Asignación automática del repartidor disponible cuando el pedido está listo.
   autoAssignRiders          Boolean   @default(true)
   baseRideFee               Float     @default(10.0)

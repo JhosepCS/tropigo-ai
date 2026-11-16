@@ -59,8 +59,8 @@ export function ComerciosClient({
   const [commissionRate, setCommissionRate] = useState(10); // 10%
   const [description, setDescription] = useState("");
   const [imageUrl, setImageUrl] = useState("");
-  const [latitude, setLatitude] = useState<number | "">(-17.0315);
-  const [longitude, setLongitude] = useState<number | "">(-64.8615);
+  const [latitude, setLatitude] = useState<number | "">(-17.033507);
+  const [longitude, setLongitude] = useState<number | "">(-64.857436);
   const [geoLocating, setGeoLocating] = useState(false);
 
   // Cargar comercios con filtros del servidor
@@ -178,8 +178,8 @@ export function ComerciosClient({
       setAddress("");
       setDescription("");
       setImageUrl("");
-      setLatitude(-17.0315);
-      setLongitude(-64.8615);
+      setLatitude(-17.033507);
+      setLongitude(-64.857436);
       fetchMerchants(1);
     } catch (err: any) {
       alert(err.message || "Error al registrar comercio");
@@ -610,7 +610,7 @@ export function ComerciosClient({
                   step="any"
                   value={latitude}
                   onChange={(e) => setLatitude(e.target.value === "" ? "" : Number(e.target.value))}
-                  placeholder="-17.0315"
+                  placeholder="-17.033507"
                   className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white font-mono"
                 />
               </div>
@@ -622,7 +622,7 @@ export function ComerciosClient({
                   step="any"
                   value={longitude}
                   onChange={(e) => setLongitude(e.target.value === "" ? "" : Number(e.target.value))}
-                  placeholder="-64.8615"
+                  placeholder="-64.857436"
                   className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white font-mono"
                 />
               </div>
