@@ -59,18 +59,35 @@ interface CartItem {
   merchantName: string;
 }
 
-export function PublicClient({
+type PortalTab = "delivery" | "mototaxi" | "rastreo";
+
+export function PedirClient({
   merchants,
   zones,
   business,
+  initialSearch = "",
+  initialCategory = "TODOS",
+  initialTab = "delivery",
+  initialVehicle = "MOTO",
+  initialAddress = "",
+  rideFares,
 }: {
   merchants: Merchant[];
   zones: Zone[];
   business: any;
+  initialSearch?: string;
+  initialCategory?: string;
+  initialTab?: PortalTab;
+  initialVehicle?: "MOTO" | "TORITO";
+  initialAddress?: string;
+  rideFares?: { MOTO: number; TORITO: number; currency: string };
 }) {
-  const [activeTab, setActiveTab] = useState<"delivery" | "mototaxi" | "rastreo">("delivery");
-  const [selectedCategory, setSelectedCategory] = useState<string>("TODOS");
-  const [searchQuery, setSearchQuery] = useState("");
+  const motoFare = rideFares?.MOTO ?? 10;
+  const toritoFare = rideFares?.TORITO ?? 11;
+  const fareCurrency = rideFares?.currency || "Bs.";
+  const [activeTab, setActiveTab] = useState<PortalTab>(initialTab);
+  const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory);
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -78,7 +95,7 @@ export function PublicClient({
   // Formulario Checkout
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState(initialAddress);
   const [referencePoint, setReferencePoint] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"EFECTIVO" | "QR_BANCO">("EFECTIVO");
   const [createdOrderCode, setCreatedOrderCode] = useState<string | null>(null);
@@ -86,7 +103,8 @@ export function PublicClient({
   // Formulario Mototaxi
   const [rideOrigin, setRideOrigin] = useState("Mercado Central de Ivirgarzama");
   const [rideDestination, setRideDestination] = useState("Terminal de Buses");
-  const [rideVehicle, setRideVehicle] = useState<"MOTO" | "TORITO">("MOTO");
+  const [rideVehicle, setRideVehicle] = useState<"MOTO" | "TORITO">(initialVehicle);
+  const estimatedRideFare = rideVehicle === "MOTO" ? motoFare : toritoFare;
   const [ridePassengerName, setRidePassengerName] = useState("");
   const [ridePassengerPhone, setRidePassengerPhone] = useState("");
   const [isSubmittingRide, setIsSubmittingRide] = useState(false);
@@ -166,8 +184,8 @@ export function PublicClient({
 
     setIsSubmittingRide(true);
     try {
-      // Tarifa estimada: 4 Bs si es moto, 5 Bs si es torito
-      const fare = rideVehicle === "MOTO" ? 4.0 : 5.0;
+      // La tarifa real la calcula el servidor; aquí solo se envía la referencia.
+      const fare = estimatedRideFare;
 
       const res = await fetch("/api/public/rides/create", {
         method: "POST",
@@ -221,13 +239,13 @@ export function PublicClient({
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] text-[#101828] flex flex-col">
+    <div className="min-h-screen bg-[#F7F4F9] text-[#101828] flex flex-col">
       {/* 1. Header Público */}
       <header className="bg-white border-b border-[#EAECF0] sticky top-0 z-40 shadow-2xs">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
           {/* Logo y Slogan */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#8E58A6] to-[#5C3470] flex items-center justify-center text-white font-black text-xl shadow-xs">
+          <Link href="/" className="flex items-center gap-3 group">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#8E58A6] to-[#5C3470] flex items-center justify-center text-white font-black text-xl shadow-xs transition-transform group-hover:scale-105">
               TG
             </div>
             <div>
@@ -243,7 +261,7 @@ export function PublicClient({
                 Movemos el Trópico 🌴
               </p>
             </div>
-          </div>
+          </Link>
 
           {/* Selector de Ciudad / Cobertura */}
           <div className="hidden md:flex items-center gap-2 bg-[#F2F4F7] px-3 py-1.5 rounded-full text-xs font-medium text-[#344054]">
@@ -253,6 +271,13 @@ export function PublicClient({
 
           {/* Acciones Header */}
           <div className="flex items-center gap-3">
+            <Link
+              href="/"
+              className="hidden sm:inline-flex text-xs font-semibold text-[#475467] hover:text-[#101828] px-2 py-2 rounded-xl hover:bg-[#F2F4F7] transition-colors"
+            >
+              Inicio
+            </Link>
+
             <button
               onClick={() => setIsCartOpen(true)}
               className="relative flex items-center gap-2 bg-[#F3EAF7] hover:bg-[#E6D2F0] text-[#482957] font-bold text-xs px-3.5 py-2 rounded-xl border border-[#E0CCE9] transition-colors"
@@ -339,6 +364,22 @@ export function PublicClient({
         {/* TAB 1: DELIVERY DE COMIDA & TIENDAS */}
         {activeTab === "delivery" && (
           <div className="space-y-8">
+            {/* Dirección que llega desde la portada */}
+            {deliveryAddress.trim() && (
+              <div className="flex flex-col gap-2 rounded-2xl border border-[#E0CCE9] bg-[#F3EAF7] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="flex items-center gap-2 text-xs font-semibold text-[#482957]">
+                  <MapPin className="w-4 h-4 shrink-0 text-[#8E58A6]" />
+                  Entregar en: <span className="font-black">{deliveryAddress}</span>
+                </p>
+                <button
+                  onClick={() => setDeliveryAddress("")}
+                  className="self-start text-[11px] font-bold text-[#5C3470] underline-offset-2 hover:underline sm:self-auto"
+                >
+                  Cambiar dirección
+                </button>
+              </div>
+            )}
+
             {/* Buscador y Filtros */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -405,7 +446,8 @@ export function PublicClient({
 
                       <div className="text-right">
                         <span className="text-xs font-semibold text-[#5C3470] bg-[#F3EAF7] px-2.5 py-1 rounded-lg">
-                          Envío base: 5.00 Bs.
+                          Envío desde {(business?.baseDeliveryFee ?? 5).toFixed(2)}{" "}
+                          {business?.currencySymbol || "Bs."}
                         </span>
                       </div>
                     </div>
@@ -546,7 +588,9 @@ export function PublicClient({
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-xs">🛵 Mototaxi Rápida</span>
-                        <span className="text-xs font-black text-[#5C3470]">4.00 Bs.</span>
+                        <span className="text-xs font-black text-[#5C3470]">
+                          {motoFare.toFixed(2)} {fareCurrency}
+                        </span>
                       </div>
                       <p className="text-[10px] text-[#667085] mt-0.5">
                         1 pasajero, ágil por la ciudad
@@ -564,7 +608,9 @@ export function PublicClient({
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-xs">🛺 Torito / Trimóvil</span>
-                        <span className="text-xs font-black text-[#5C3470]">5.00 Bs.</span>
+                        <span className="text-xs font-black text-[#5C3470]">
+                          {toritoFare.toFixed(2)} {fareCurrency}
+                        </span>
                       </div>
                       <p className="text-[10px] text-[#667085] mt-0.5">
                         Hasta 3 pasajeros o carga / bolsas
@@ -642,7 +688,7 @@ export function PublicClient({
                     <span>Tarifa estimada (Urbano Ivirgarzama):</span>
                   </div>
                   <span className="font-black text-sm text-[#482957]">
-                    {rideVehicle === "MOTO" ? "4.00 Bs." : "5.00 Bs."}
+                    {estimatedRideFare.toFixed(2)} {fareCurrency}
                   </span>
                 </div>
 
