@@ -74,9 +74,9 @@ export class LocalSimulatorAdapter implements IAAdapter {
       lower.includes("de acuerdo, envialo")
     ) {
       responseContent =
-        "Para registrar un pedido real necesito una cotización oficial de esta conversación y tu confirmación explícita. " +
-        "El simulador no crea pedidos en la base de datos. Si estás en WhatsApp, responde *\"Sí, confirmo\"* después de ver el resumen; " +
-        "si aún no viste el resumen, indícame comercio, productos, cantidades y dirección para prepararlo.";
+        "Para registrar el pedido necesito que confirmes el resumen oficial. " +
+        "Si ya viste el resumen, responde *\"Sí, confirmo\"* y el sistema registrará tu pedido automáticamente. " +
+        "Si aún no viste el resumen, indícame comercio, productos, cantidades y dirección para prepararlo.";
     }
     // 4. Cancelación de pedido antes de confirmar
     else if (lower.includes("cancelar") || lower.includes("ya no quiero") || lower.includes("cancela el pedido")) {

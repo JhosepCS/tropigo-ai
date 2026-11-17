@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Send,
   RotateCcw,
@@ -36,15 +36,38 @@ export function Simulator() {
   const [input, setInput] = useState("");
   const [safeMode, setSafeMode] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [customerName, setCustomerName] = useState("Cliente de prueba");
+  const [customerPhone, setCustomerPhone] = useState("+59170000000");
+  const [identityLoaded, setIdentityLoaded] = useState(false);
+  const [identityOpen, setIdentityOpen] = useState(false);
   const [timelineSteps, setTimelineSteps] = useState<any[]>([
     {
       title: "Asistente Inicializado",
       tool: "identidad",
       status: "ready",
-      details: "TropiBot (Groq / GPT-OSS 120B) listo para Ivirgarzama (Trópico de Cochabamba).",
+      details: "TropiBot listo para Ivirgarzama (Trópico de Cochabamba).",
       time: "Ahora",
     },
   ]);
+
+  // Identidad del cliente de prueba: se recuerda entre sesiones del simulador.
+  useEffect(() => {
+    try {
+      const savedName = window.localStorage.getItem("tropigo_sim_customer_name");
+      const savedPhone = window.localStorage.getItem("tropigo_sim_customer_phone");
+      if (savedName) setCustomerName(savedName);
+      if (savedPhone) setCustomerPhone(savedPhone);
+    } catch {}
+    setIdentityLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!identityLoaded) return;
+    try {
+      window.localStorage.setItem("tropigo_sim_customer_name", customerName);
+      window.localStorage.setItem("tropigo_sim_customer_phone", customerPhone);
+    } catch {}
+  }, [customerName, customerPhone, identityLoaded]);
 
   const handleSend = async (textToSend?: string) => {
     const text = textToSend || input;
@@ -62,6 +85,8 @@ export function Simulator() {
         body: JSON.stringify({
           messages: newMsgs.map((m) => ({ role: m.role, content: m.content })),
           safeMode,
+          customerName,
+          customerPhone,
         }),
       });
 
@@ -144,9 +169,9 @@ export function Simulator() {
   };
 
   const quickChips = [
-    "¿Qué platos tienen en Pollería El Pahuichi?",
+    "Hola, me llamo Jhosep. Quiero 1 cuarto de pollo broaster a Av. Mortensen",
     "¿Cuánto cuesta el envío urbano en Ivirgarzama?",
-    "Quiero 2 cuartos de pollo broaster a Av. Mortensen",
+    "Sí, confirmo",
     "Necesito una mototaxi del Mercado Central a la Terminal",
     "Tengo una queja con mi pedido, pásame con alguien",
   ];
@@ -167,7 +192,7 @@ export function Simulator() {
                   TropiBot Simulator
                 </span>
                 <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full">
-                  Groq GPT-OSS
+                  IA conectada
                 </span>
               </div>
               <p className="text-[11px] text-[#667085]">
@@ -177,6 +202,24 @@ export function Simulator() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Identidad del cliente de prueba */}
+            <button
+              type="button"
+              onClick={() => setIdentityOpen((value) => !value)}
+              className="flex max-w-[220px] items-center gap-1.5 rounded-xl border border-[#EAECF0] bg-white px-2.5 py-1.5 text-left shadow-2xs transition-colors hover:border-emerald-300"
+              title="Número y nombre del cliente simulado"
+            >
+              <User className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+              <span className="min-w-0">
+                <span className="block truncate text-[11px] font-bold text-[#101828]">
+                  {customerName || "Cliente de prueba"}
+                </span>
+                <span className="block truncate text-[10px] text-[#667085]">
+                  {customerPhone || "Configura un número"}
+                </span>
+              </span>
+            </button>
+
             {/* Switch Modo Seguro */}
             <div className="flex items-center gap-2 bg-white px-2.5 py-1 rounded-xl border border-[#EAECF0] shadow-2xs">
               <span className="text-[11px] font-semibold text-[#344054]">
@@ -206,6 +249,42 @@ export function Simulator() {
             </button>
           </div>
         </div>
+
+        {/* Panel de identidad del cliente simulado */}
+        {identityOpen && (
+          <div className="border-b border-[#EAECF0] bg-emerald-50/40 px-4 py-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+              Cliente simulado · el número es su identidad, sin registro
+            </p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <label className="text-[10px] font-semibold text-[#475467]">
+                Nombre
+                <input
+                  type="text"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="Ej: Jhosep"
+                  className="mt-0.5 w-full rounded-lg border border-[#D0D5DD] bg-white px-2.5 py-1.5 text-xs font-medium text-[#101828] focus:border-emerald-500 focus:outline-none"
+                />
+              </label>
+              <label className="text-[10px] font-semibold text-[#475467]">
+                WhatsApp de prueba
+                <input
+                  type="tel"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  placeholder="+591 70000000"
+                  className="mt-0.5 w-full rounded-lg border border-[#D0D5DD] bg-white px-2.5 py-1.5 text-xs font-medium text-[#101828] focus:border-emerald-500 focus:outline-none"
+                />
+              </label>
+            </div>
+            <p className="mt-1.5 text-[10px] leading-relaxed text-[#667085]">
+              Los pedidos del simulador se guardan en la base de datos con este
+              número, igual que un cliente real de WhatsApp. No se pide cuenta ni
+              contraseña.
+            </p>
+          </div>
+        )}
 
         {/* Mensajes */}
         <div className="flex-1 p-4 overflow-y-auto space-y-4">
@@ -253,7 +332,7 @@ export function Simulator() {
           {loading && (
             <div className="flex gap-2 items-center text-xs text-[#667085] p-2">
               <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping"></span>
-              <span>TropiBot está procesando con Groq...</span>
+              <span>TropiBot está procesando...</span>
             </div>
           )}
         </div>

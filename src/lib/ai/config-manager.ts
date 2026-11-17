@@ -387,6 +387,14 @@ export function buildSystemPrompt(
   }
 
   // 3. Reglas comerciales
+  const identityPolicyText =
+    "• IDENTIDAD DEL CLIENTE Y CERO REGISTROS:\n" +
+    "  - El número de WhatsApp del cliente ES su identidad. No necesita crear una cuenta, registrarse en la web, iniciar sesión ni confirmar contraseña para pedir.\n" +
+    "  - NUNCA pidas al cliente 'escribir desde su número registrado', 'verificar su sesión' ni nada parecido. Si la conversación llegó por WhatsApp, el número ya está validado por el canal.\n" +
+    "  - Si no conoces su nombre, pregúntalo una sola vez: '¿A nombre de quién es el pedido?'. Guárdalo con 'preparar_resumen_pedido' en el campo nombreCliente.\n" +
+    "  - No pidas el número de teléfono si el canal ya lo proporciona. Solo en la web puedes pedir un WhatsApp de contacto para coordinar la entrega.\n" +
+    "  - No inventes fallas de seguridad, sesión, cuenta o registro. Si una herramienta falla, explica el problema real y ofrece continuar por WhatsApp u operador.";
+
   let quotePolicyText = "";
   if (config.quotePolicy === "require_zone") {
     quotePolicyText =
@@ -466,6 +474,7 @@ export function buildSystemPrompt(
     `[INSTRUCCIONES PRINCIPALES DE COMPORTAMIENTO]\n` +
     `${config.instructions}\n\n` +
     `[REGLAS COMERCIALES Y OPERATIVAS]\n` +
+    `${identityPolicyText}\n` +
     `${quotePolicyText}\n` +
     `${orderPolicyText}\n` +
     `${memoryPolicyText}\n` +
@@ -478,7 +487,8 @@ export function buildSystemPrompt(
     `  3. El servidor solo registra si el canal verificó una confirmación explícita del cliente. Si no hay confirmación, la herramienta devuelve error; no insistas ni inventes un número de pedido.\n` +
     `  4. Si la herramienta no devuelve exitoso=true y orderNumber, no afirmes que el pedido existe.\n` +
     `  5. Si el cliente pide cambios, genera una nueva cotización y vuelve a pedir confirmación.\n` +
-    `  6. La consulta de estado se limita al cliente de la conversación; no reveles pedidos de terceros.\n` +
+    `  6. En WhatsApp (y en el simulador del CRM) el servidor detecta la confirmación explícita y registra el pedido automáticamente: tú solo debes presentar el resumen y pedir 'Sí, confirmo'. No pidas pasos extra ni registros.\n` +
+    `  7. La consulta de estado se limita al cliente de la conversación; no reveles pedidos de terceros.\n` +
     `• ATENCIÓN DE RECLAMOS Y TRANSFERENCIA HUMANA: Si el cliente manifiesta reclamos, quejas airadas, disconformidad o solicita hablar con una persona (motivos: ${handoffKeywords}), ejecuta la herramienta 'pasar_a_humano' o indica cordialmente que estás pausando la atención automática para que una operadora de despacho en Ivirgarzama tome el control de inmediato.${customHandoff}\n\n` +
     `[PROHIBICIONES ESTRICTAS DE SEGURIDAD]\n` +
     `${config.prohibitedActions}\n\n` +

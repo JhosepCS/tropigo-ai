@@ -52,6 +52,7 @@ export interface CreateQuoteInput {
   longitud?: number;
   metodoPago?: string;
   notasCliente?: string;
+  nombreCliente?: string;
 }
 
 export interface QuoteSnapshotItem {
@@ -272,6 +273,69 @@ export async function isMerchantOpenNow(merchant: {
   };
 }
 
+/**
+ * Normaliza un teléfono boliviano al formato +591XXXXXXXX.
+ * Acepta números con o sin prefijo, espacios, guiones o el signo +.
+ */
+export function normalizeCustomerPhone(phone: string): {
+  rawDigits: string;
+  e164: string;
+} {
+  const rawDigits = String(phone || "").replace(/\D/g, "");
+  const national = rawDigits.startsWith("591") ? rawDigits.slice(3) : rawDigits;
+  return {
+    rawDigits,
+    e164: national ? `+591${national}` : "",
+  };
+}
+
+/**
+ * Busca el cliente por su número de WhatsApp y lo crea si no existe.
+ * El número del canal es la identidad del cliente: no requiere registro,
+ * cuenta ni inicio de sesión en la web.
+ */
+export async function findOrCreateCustomerByPhone(
+  phone: string,
+  name?: string | null
+) {
+  const { rawDigits, e164 } = normalizeCustomerPhone(phone);
+  if (!e164) return null;
+
+  const select = {
+    id: true,
+    phone: true,
+    name: true,
+    savedLatitude: true,
+    savedLongitude: true,
+    lastLocationLabel: true,
+  } as const;
+
+  let customer = await prisma.customer.findFirst({
+    where: {
+      OR: [{ phone }, { phone: rawDigits }, { phone: e164 }],
+    },
+    select,
+  });
+
+  const cleanName = (name || "").trim();
+
+  if (!customer) {
+    customer = await prisma.customer.create({
+      data: {
+        phone: e164,
+        name: cleanName || `Cliente WhatsApp (${e164})`,
+      },
+      select,
+    });
+    return customer;
+  }
+
+  // El nombre conversacional se actualiza desde la cotización
+  // (nombreCliente), no desde el número del canal: así no se sobrescribe
+  // lo que el cliente dijo en el chat.
+  return customer;
+}
+
 async function resolveCustomer(
   context: OrderToolContext,
   phone?: string
@@ -299,41 +363,7 @@ async function resolveCustomer(
 
   if (!phone) return null;
 
-  const rawDigits = phone.replace(/\D/g, "");
-  const e164 = rawDigits.startsWith("591") ? `+${rawDigits}` : `+591${rawDigits}`;
-
-  let customer = await prisma.customer.findFirst({
-    where: {
-      OR: [{ phone }, { phone: rawDigits }, { phone: e164 }],
-    },
-    select: {
-      id: true,
-      phone: true,
-      name: true,
-      savedLatitude: true,
-      savedLongitude: true,
-      lastLocationLabel: true,
-    },
-  });
-
-  if (!customer) {
-    customer = await prisma.customer.create({
-      data: {
-        phone: e164,
-        name: `Cliente WhatsApp (+${rawDigits})`,
-      },
-      select: {
-        id: true,
-        phone: true,
-        name: true,
-        savedLatitude: true,
-        savedLongitude: true,
-        lastLocationLabel: true,
-      },
-    });
-  }
-
-  return customer;
+  return findOrCreateCustomerByPhone(phone);
 }
 
 // =================================================================
@@ -366,8 +396,20 @@ export async function createOrderQuote(input: CreateQuoteInput, context: OrderTo
     if (!customer) {
       return {
         error:
-          "No se pudo identificar al cliente de la conversación. Solicita que escriba desde su WhatsApp registrado.",
+          "No se pudo identificar el número del cliente en este canal. " +
+          "No le pidas registrarse ni crear una cuenta: en WhatsApp el número llega automáticamente y en el simulador se configura un teléfono de prueba.",
+        requiereIdentidad: true,
       };
+    }
+
+    // El nombre que el cliente dio en la conversación se guarda en su perfil.
+    if (input.nombreCliente && input.nombreCliente.trim()) {
+      await prisma.customer
+        .update({
+          where: { id: customer.id },
+          data: { name: input.nombreCliente.trim().slice(0, 80) },
+        })
+        .catch(() => {});
     }
 
     const allMerchants = await prisma.merchant.findMany({

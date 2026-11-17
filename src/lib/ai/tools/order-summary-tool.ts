@@ -75,6 +75,11 @@ export const orderSummaryTool: IAssistantTool = {
         type: "string",
         description: "Notas adicionales del cliente para la entrega.",
       },
+      nombreCliente: {
+        type: "string",
+        description:
+          "Nombre del cliente tal como lo dio en la conversación (ej: 'Jhosep'). Se guarda en su perfil. No pidas registros ni cuentas: el número de WhatsApp ya identifica al cliente.",
+      },
     },
     required: ["comercio", "items", "direccionEntrega"],
   },
