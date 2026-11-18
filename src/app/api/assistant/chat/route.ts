@@ -121,6 +121,32 @@ export async function POST(req: NextRequest) {
       .reverse()
       .find((m) => m.role === "user")?.content;
 
+    // Modo Seguro: se permite conversar y cotizar, pero no registrar pedidos
+    // reales. Se explica de forma determinística para no confundir al operador.
+    if (safeMode && lastUserText && isSafeExplicitConfirmation(lastUserText)) {
+      return NextResponse.json({
+        success: true,
+        result: {
+          content:
+            "🛡️ *Modo Seguro activo:* no registré el pedido en la base de datos. " +
+            "Desactiva el interruptor *Modo Seguro* y vuelve a confirmar para crear el pedido real, " +
+            "igual que lo haría un cliente por WhatsApp.",
+          provider: "server",
+          model: "modo-seguro",
+          latencyMs: 0,
+          toolCalls: [],
+        },
+        assistantInfo: {
+          name: effectiveConfig.name,
+          avatarUrl: effectiveConfig.avatarUrl,
+          tone: effectiveConfig.tone,
+          activeProvider: effectiveConfig.activeProvider,
+          activeModel: effectiveConfig.activeModel,
+        },
+        customer: { id: customer.id, name: customer.name, phone: customer.phone },
+      });
+    }
+
     if (!safeMode && lastUserText && isSafeExplicitConfirmation(lastUserText)) {
       const pendingQuote = await prisma.orderQuote.findFirst({
         where: {

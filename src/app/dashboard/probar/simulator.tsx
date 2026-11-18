@@ -221,13 +221,21 @@ export function Simulator() {
             </button>
 
             {/* Switch Modo Seguro */}
-            <div className="flex items-center gap-2 bg-white px-2.5 py-1 rounded-xl border border-[#EAECF0] shadow-2xs">
+            <div
+              className="flex items-center gap-2 bg-white px-2.5 py-1 rounded-xl border border-[#EAECF0] shadow-2xs"
+              title={
+                safeMode
+                  ? "Modo Seguro activo: la IA responde pero NO registra pedidos reales en la base de datos."
+                  : "Modo Seguro apagado: al confirmar, el pedido se registra en la base de datos como en WhatsApp."
+              }
+            >
               <span className="text-[11px] font-semibold text-[#344054]">
                 Modo Seguro
               </span>
               <button
                 type="button"
                 onClick={() => setSafeMode(!safeMode)}
+                aria-label="Alternar Modo Seguro"
                 className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors ${
                   safeMode ? "bg-emerald-600" : "bg-gray-300"
                 }`}
