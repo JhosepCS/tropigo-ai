@@ -28,6 +28,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const rider = await prisma.rider.findUnique({
+      where: { id: targetRiderId },
+      select: { isActive: true, status: true },
+    });
+    if (!rider) {
+      return NextResponse.json(
+        { error: "Repartidor no encontrado." },
+        { status: 404 }
+      );
+    }
+
+    // Un repartidor apagado por la central no puede ponerse en turno solo.
+    if (Boolean(isAvailable) && (!rider.isActive || rider.status !== "ACTIVO")) {
+      return NextResponse.json(
+        {
+          error:
+            "Tu cuenta está apagada por la central. Pide que te enciendan para volver a recibir carreras.",
+        },
+        { status: 409 }
+      );
+    }
+
     await prisma.rider.update({
       where: { id: targetRiderId },
       data: { isAvailable: Boolean(isAvailable) },

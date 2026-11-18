@@ -12,7 +12,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const [trip, rider] = await Promise.all([
+    const rider = await prisma.rider.findUnique({
+      where: { id: riderId },
+      select: { id: true, isActive: true, status: true },
+    });
+    if (!rider) {
+      return NextResponse.json(
+        { error: "Conductor no encontrado." },
+        { status: 404 }
+      );
+    }
+    if (!rider.isActive || rider.status !== "ACTIVO") {
+      return NextResponse.json(
+        {
+          error:
+            "El conductor está apagado o no aprobado. Enciéndelo desde el CRM antes de asignarle una carrera.",
+        },
+        { status: 409 }
+      );
+    }
+
+    const [trip, riderUpdated] = await Promise.all([
       prisma.rideTrip.update({
         where: { id: tripId },
         data: {
@@ -32,19 +52,19 @@ export async function POST(req: NextRequest) {
 
     await prisma.activityLog.create({
       data: {
-        action: `Conductor ${rider.name} asignado a carrera ${trip.tripNumber}`,
+        action: `Conductor ${riderUpdated.name} asignado a carrera ${trip.tripNumber}`,
         provider: "mototaxi_dispatch",
         channel: "system",
         status: "success",
         detailsJson: JSON.stringify({
           tripNumber: trip.tripNumber,
-          conductor: rider.name,
-          vehiculo: rider.vehicleType,
+          conductor: riderUpdated.name,
+          vehiculo: riderUpdated.vehicleType,
         }),
       },
     });
 
-    return NextResponse.json({ success: true, trip, rider });
+    return NextResponse.json({ success: true, trip, rider: riderUpdated });
   } catch (error: any) {
     console.error("Error al asignar conductor:", error);
     return NextResponse.json(
