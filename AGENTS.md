@@ -75,6 +75,11 @@ con QR personal.
 - El pedido confirmado avisa por WhatsApp al comercio; al asignar repartidor se
   avisa al rider y al cliente. El cliente sigue el pedido en `/seguimiento/[id]`.
 - Worker de Render opcional para el modo QR no oficial.
+- Cierre de caja y liquidaciones de repartidores en `/dashboard/liquidaciones`:
+  auditoría en tiempo real de entregas y carreras de mototaxi, cruce automático de
+  efectivo vs digital (QR Simple/transferencias), conciliación de subtotales de
+  comida con restaurantes, balances netos (a rendir o a cobrar), envío de resumen
+  formateado para WhatsApp y registro oficial en `RiderSettlement` con un clic.
 - Modelos de IA vigentes (noviembre 2026): Gemini `gemini-3.1-flash-lite`,
   Groq `openai/gpt-oss-120b` y OpenRouter `openrouter/free`. Los IDs retirados
   (`llama-3.3-70b-versatile`, `meta-llama/llama-3.3-70b-instruct:free`) se
@@ -144,6 +149,9 @@ src/lib/rides/fare.ts                           Tarifas de mototaxi
 src/worker/index.ts                             Worker Baileys opcional
 src/app/dashboard/ajustes/                      Tarifas, pagos, distancia y fidelidad
 src/app/dashboard/repartidores/                 Riders + QR personal de cobro
+src/app/dashboard/liquidaciones/                Cierre de caja y liquidaciones de flota
+src/app/api/admin/settlements/                  API de liquidaciones y auditoría en vivo
+src/lib/settlements/service.ts                  Cálculo de balances, conciliación y WhatsApp
 src/app/api/admin/riders/[id]/payment-qr/       Guardar QR de cobro del rider
 src/app/dashboard/fidelidad/                    Tarjetas, QR, sellos y canje
 src/app/fidelidad/[code]/page.tsx               Tarjeta pública

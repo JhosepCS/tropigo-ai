@@ -17,6 +17,7 @@ import {
   Store,
   UtensilsCrossed,
   Users,
+  Wallet,
 } from "lucide-react";
 
 export type CrmSectionBadge = "orders" | "conversations";
@@ -191,6 +192,21 @@ export const CRM_SECTIONS: CrmSection[] = [
     ],
     tip: "La asignación automática elige al repartidor activo con menos entregas.",
     icon: Bike,
+    group: "Negocio y logística",
+  },
+  {
+    href: "/dashboard/liquidaciones",
+    name: "Caja & Liquidaciones",
+    title: "Liquidaciones y Cierre de Caja",
+    description:
+      "Auditoría y conciliación de cobranza de repartidores, cruce de efectivo vs pagos digitales (QR) y rendición de cuentas con comercios.",
+    steps: [
+      "Revisa las carreras y pedidos entregados por cada repartidor en el periodo.",
+      "Audita el efectivo en mano que cobró el chofer frente a los subtotales de comida adeudados a cocina.",
+      "Genera el cierre de caja, envía el resumen por WhatsApp y marca la liquidación como pagada.",
+    ],
+    tip: "Si el cliente pagó en efectivo, el repartidor rinde el subtotal del restaurante y retiene su tarifa de entrega.",
+    icon: Wallet,
     group: "Negocio y logística",
   },
   {
