@@ -9,7 +9,6 @@ import {
   OrderAccessError,
   OrderTransitionError,
 } from "@/lib/orders/order-service";
-import { sendOrderStatusNotification } from "@/lib/whatsapp/notifications";
 
 /**
  * POST /api/orders/assign-rider
@@ -36,9 +35,8 @@ export async function POST(req: NextRequest) {
       actorUserId: session.userId,
     });
 
-    // Notificar al cliente por WhatsApp de la asignación y link de seguimiento/pago
-    sendOrderStatusNotification(order, "ASIGNADO").catch(() => {});
-
+    // Las notificaciones al cliente y al repartidor se envían dentro del
+    // servicio central para cubrir también la asignación automática.
     return NextResponse.json({ success: true, order });
   } catch (error: any) {
     if (error instanceof UnauthorizedError) {

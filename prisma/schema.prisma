@@ -216,6 +216,9 @@ model Merchant {
   nit                String?
   description        String?
   phone              String?
+  // Token de acceso rápido para que el comercio abra su panel de cocina
+  // desde un enlace de WhatsApp, sin correo ni contraseña.
+  accessToken        String?             @unique
   address            String?
   commissionRate     Float               @default(0.10) // 10% estándar
   rating             Float               @default(4.8)
@@ -407,6 +410,12 @@ model Order {
   longitude            Float?
   customerNotes        String?
   notes                String? // Compatible con vistas previas
+  // Confirmaciones del repartidor desde su enlace de acceso rápido.
+  riderAcceptedAt      DateTime?
+  riderArrivedAt       DateTime?
+  // Marcas de notificación para no duplicar avisos por WhatsApp.
+  merchantNotifiedAt   DateTime?
+  riderNotifiedAt      DateTime?
   cancellationReason   String?
   cancelledBy          String?
   createdAt            DateTime      @default(now())
@@ -552,6 +561,11 @@ model Rider {
   rating           Float     @default(5.0)
   isActive         Boolean   @default(true)
   isAvailable      Boolean   @default(true)
+  // Estado del registro: ACTIVO, PENDIENTE_APROBACION, RECHAZADO, SUSPENDIDO.
+  status           String    @default("ACTIVO")
+  // Enlace de acceso rápido (sin contraseña) enviado por WhatsApp.
+  accessToken      String?   @unique
+  registeredViaWeb Boolean   @default(false)
   currentLocation  String?
   currentLatitude  Float?
   currentLongitude Float?
@@ -571,6 +585,7 @@ model Rider {
 
   @@index([cityId, isActive, isAvailable])
   @@index([vehicleType])
+  @@index([status])
 }
 
 model RideTrip {

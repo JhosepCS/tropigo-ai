@@ -61,6 +61,9 @@ export function MerchantDetailClient({
   const [category, setCategory] = useState(merchant.category || "Restaurante");
   const [cityId, setCityId] = useState(merchant.cityId || "");
   const [phone, setPhone] = useState(merchant.phone || "");
+  const [kitchenLink, setKitchenLink] = useState<string | null>(null);
+  const [kitchenLinkBusy, setKitchenLinkBusy] = useState(false);
+  const [kitchenLinkMessage, setKitchenLinkMessage] = useState<string | null>(null);
   const [address, setAddress] = useState(merchant.address || "");
   const [description, setDescription] = useState(merchant.description || "");
   const [commissionRate, setCommissionRate] = useState(
@@ -138,6 +141,35 @@ export function MerchantDetailClient({
       alert(err.message || "Error al actualizar información");
     } finally {
       setIsSavingInfo(false);
+    }
+  };
+
+  const handleKitchenLink = async (regenerate = false) => {
+    setKitchenLinkBusy(true);
+    setKitchenLinkMessage(null);
+    try {
+      const res = await fetch(`/api/admin/merchants/${merchant.id}/access-link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ regenerate }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "No se pudo generar el enlace.");
+      setKitchenLink(data.accessUrl);
+      try {
+        await navigator.clipboard?.writeText(data.accessUrl);
+      } catch {
+        // Si el navegador bloquea el portapapeles, el enlace queda visible.
+      }
+      setKitchenLinkMessage(
+        regenerate
+          ? "Enlace regenerado y copiado. El anterior ya no funciona."
+          : "Enlace de cocina listo y copiado al portapapeles."
+      );
+    } catch (error: any) {
+      setKitchenLinkMessage(error?.message || "No se pudo generar el enlace.");
+    } finally {
+      setKitchenLinkBusy(false);
     }
   };
 
@@ -536,6 +568,57 @@ export function MerchantDetailClient({
                 </Button>
               </div>
             </form>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-black text-slate-900">
+                    Enlace de cocina (sin contraseña)
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
+                    Comparte este enlace con el comercio para que acepte pedidos y
+                    marque &quot;listo para recojo&quot; desde el celular. Cada pedido
+                    nuevo también llega por WhatsApp con este botón.
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleKitchenLink(false)}
+                    disabled={kitchenLinkBusy}
+                    className="rounded-xl bg-slate-900 px-3 py-2 text-[11px] font-black text-white hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    {kitchenLinkBusy ? "Generando..." : "Generar enlace"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleKitchenLink(true)}
+                    disabled={kitchenLinkBusy}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                  >
+                    Regenerar
+                  </button>
+                </div>
+              </div>
+
+              {kitchenLink && (
+                <div className="mt-3 rounded-xl border border-slate-200 bg-white p-2.5">
+                  <a
+                    href={kitchenLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block break-all text-[11px] font-semibold text-emerald-700 hover:underline"
+                  >
+                    {kitchenLink}
+                  </a>
+                </div>
+              )}
+              {kitchenLinkMessage && (
+                <p className="mt-2 text-[10px] font-semibold text-slate-600">
+                  {kitchenLinkMessage}
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}

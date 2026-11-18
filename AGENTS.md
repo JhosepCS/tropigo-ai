@@ -59,6 +59,18 @@ con QR personal.
   historial reciente y contexto proactivo para la IA.
 - Webhook de Meta verificado. El canal está en `DISCONNECTED` hasta cargar las
   credenciales oficiales en **Canales**.
+- Registro público de repartidores en `/registro/repartidor` (nombre, WhatsApp,
+  vehículo, placa y QR de cobro opcional). Quedan `PENDIENTE_APROBACION` y se
+  aprueban desde **CRM → Repartidores**.
+- Paneles de acceso rápido por token, sin correo ni contraseña:
+  - `/repartidor/acceso/[token]`: carreras del rider con botones de 1 toque
+    (aceptar, estoy en el local, recogí el pedido, entregado) y GPS en vivo.
+  - `/comercio/acceso/[token]`: pedidos del comercio con botones para aceptar
+    (en cocina), marcar listo para recojo o cancelar.
+  - Los enlaces se envían por WhatsApp al aprobar al rider y al asignarle una
+    carrera; el comercio recibe su enlace con cada pedido nuevo.
+- El pedido confirmado avisa por WhatsApp al comercio; al asignar repartidor se
+  avisa al rider y al cliente. El cliente sigue el pedido en `/seguimiento/[id]`.
 - Worker de Render opcional para el modo QR no oficial.
 - Modelos de IA vigentes (noviembre 2026): Gemini `gemini-3.1-flash-lite`,
   Groq `openai/gpt-oss-120b` y OpenRouter `openrouter/free`. Los IDs retirados
@@ -111,6 +123,13 @@ src/lib/geo/reverse-geocode.ts                  Dirección aproximada (Nominatim
 src/lib/calendar/google-calendar.ts             Agendamiento automático en Google Calendar
 src/lib/tracking/service.ts                     Datos de seguimiento y mapa
 src/lib/whatsapp/notifications.ts               Notificaciones automáticas por WhatsApp al cliente
+src/lib/access/tokens.ts                        Tokens de acceso rápido para riders y comercios
+src/app/registro/repartidor/                    Registro público de repartidores
+src/app/repartidor/acceso/[token]/              Panel del rider por enlace de WhatsApp
+src/app/comercio/acceso/[token]/                Panel de cocina por enlace de WhatsApp
+src/app/api/public/registro/repartidor/         API del registro público
+src/app/api/repartidor/acceso/[token]/action/   Acciones de 1 toque del rider
+src/app/api/comercio/acceso/[token]/action/     Acciones de 1 toque del comercio
 src/lib/app-url.ts                              URL pública para enlaces
 src/lib/ai/config-manager.ts                    System prompt
 src/lib/loyalty/service.ts                      Sellos, premios, QR, canje

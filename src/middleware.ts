@@ -25,9 +25,14 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/reset-password") ||
     pathname.startsWith("/tracking") ||
     pathname.startsWith("/fidelidad") ||
+    pathname.startsWith("/registro") ||
+    pathname.startsWith("/repartidor/acceso") ||
+    pathname.startsWith("/comercio/acceso") ||
     pathname.startsWith("/design-system") ||
     pathname.startsWith("/demo") ||
     pathname.startsWith("/api/public") ||
+    pathname.startsWith("/api/repartidor/acceso") ||
+    pathname.startsWith("/api/comercio/acceso") ||
     pathname.startsWith("/api/whatsapp") ||
     pathname.startsWith("/api/auth/login") ||
     pathname.startsWith("/api/auth/logout") ||

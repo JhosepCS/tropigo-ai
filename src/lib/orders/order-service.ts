@@ -19,6 +19,11 @@ import {
   restoreLoyaltyOnCancellation,
 } from "../loyalty/service";
 import { createOrderCalendarEvent } from "../calendar/google-calendar";
+import {
+  notifyMerchantNewOrder,
+  notifyRiderNewOrder,
+  sendOrderStatusNotification,
+} from "../whatsapp/notifications";
 
 // =================================================================
 // TIPOS PÚBLICOS
@@ -1235,6 +1240,12 @@ export async function confirmAndCreateOrder(
       estimatedDeliveryMinutes: etaMinutos,
     }).catch(() => {});
 
+    // Avisar al comercio por WhatsApp para que acepte el pedido desde su
+    // enlace de acceso rápido. No bloquea la respuesta al cliente.
+    if (!result.duplicate) {
+      notifyMerchantNewOrder(order.id).catch(() => {});
+    }
+
     return {
       exitoso: true,
       duplicado: result.duplicate,
@@ -1385,10 +1396,16 @@ async function getActor(actorUserId: string) {
   return user;
 }
 
+export type OrderTokenActor =
+  | { role: "RIDER"; riderId: string; name?: string }
+  | { role: "MERCHANT_OWNER"; merchantId: string; name?: string };
+
 export async function transitionOrderStatus(input: {
   orderId: string;
   nextStatus: string;
-  actorUserId: string;
+  actorUserId?: string;
+  /** Identidad validada por enlace de acceso rápido (sin contraseña). */
+  tokenActor?: OrderTokenActor;
   comment?: string;
   cancellationReason?: string;
 }) {
@@ -1399,16 +1416,42 @@ export async function transitionOrderStatus(input: {
 
   if (!order) throw new OrderTransitionError("Pedido no encontrado.");
 
-  const actor = await getActor(input.actorUserId);
-  const isAdmin = ["SUPERADMIN", "ADMIN", "OPERATOR"].includes(actor.role);
-  const isMerchantOwner =
-    actor.role === "MERCHANT_OWNER" &&
-    Boolean(order.merchantId) &&
-    actor.ownedMerchants.some((merchant) => merchant.id === order.merchantId);
-  const isAssignedRider =
-    actor.role === "RIDER" &&
-    Boolean(order.assignedRiderId) &&
-    actor.riderProfile?.id === order.assignedRiderId;
+  let isAdmin = false;
+  let isMerchantOwner = false;
+  let isAssignedRider = false;
+
+  if (input.tokenActor) {
+    if (input.tokenActor.role === "RIDER") {
+      const rider = await prisma.rider.findUnique({
+        where: { id: input.tokenActor.riderId },
+        select: { isActive: true, status: true },
+      });
+      if (!rider || !rider.isActive || rider.status !== "ACTIVO") {
+        throw new OrderAccessError("El repartidor no está activo.");
+      }
+      isAssignedRider =
+        Boolean(order.assignedRiderId) &&
+        order.assignedRiderId === input.tokenActor.riderId;
+    } else {
+      isMerchantOwner =
+        Boolean(order.merchantId) &&
+        order.merchantId === input.tokenActor.merchantId;
+    }
+  } else {
+    if (!input.actorUserId) {
+      throw new OrderAccessError("No se pudo identificar al operador.");
+    }
+    const actor = await getActor(input.actorUserId);
+    isAdmin = ["SUPERADMIN", "ADMIN", "OPERATOR"].includes(actor.role);
+    isMerchantOwner =
+      actor.role === "MERCHANT_OWNER" &&
+      Boolean(order.merchantId) &&
+      actor.ownedMerchants.some((merchant) => merchant.id === order.merchantId);
+    isAssignedRider =
+      actor.role === "RIDER" &&
+      Boolean(order.assignedRiderId) &&
+      actor.riderProfile?.id === order.assignedRiderId;
+  }
 
   if (!isAdmin && !isMerchantOwner && !isAssignedRider) {
     throw new OrderAccessError("No tienes permiso para actualizar este pedido.");
@@ -1463,7 +1506,10 @@ export async function transitionOrderStatus(input: {
         ...(input.nextStatus === "CANCELADO"
           ? {
               cancellationReason: input.cancellationReason || input.comment || "Cancelado por operador",
-              cancelledBy: input.actorUserId,
+              cancelledBy:
+                input.actorUserId ||
+                input.tokenActor?.name ||
+                (input.tokenActor?.role === "RIDER" ? "Repartidor" : "Comercio"),
             }
           : {}),
       },
@@ -1474,7 +1520,7 @@ export async function transitionOrderStatus(input: {
         orderId: order.id,
         fromStatus: order.status,
         toStatus: input.nextStatus,
-        changedByUserId: input.actorUserId,
+        changedByUserId: input.actorUserId || null,
         comment: input.comment || `Estado actualizado a ${input.nextStatus}`,
       },
     });
@@ -1517,11 +1563,11 @@ export async function transitionOrderStatus(input: {
 
     await tx.activityLog.create({
       data: {
-        userId: input.actorUserId,
+        userId: input.actorUserId || null,
         action: "ORDER_STATUS_CHANGED",
         entityName: "Order",
         entityId: order.id,
-        provider: "crm",
+        provider: input.tokenActor ? "access_link" : "crm",
         channel: "system",
         status: "success",
         detailsJson: JSON.stringify({
@@ -1529,6 +1575,20 @@ export async function transitionOrderStatus(input: {
           fromStatus: order.status,
           toStatus: input.nextStatus,
           comment: input.comment || null,
+          actor: input.tokenActor
+            ? {
+                role: input.tokenActor.role,
+                name: input.tokenActor.name || null,
+                riderId:
+                  input.tokenActor.role === "RIDER"
+                    ? input.tokenActor.riderId
+                    : null,
+                merchantId:
+                  input.tokenActor.role === "MERCHANT_OWNER"
+                    ? input.tokenActor.merchantId
+                    : null,
+              }
+            : { role: "USER", userId: input.actorUserId || null },
         }),
       },
     });
@@ -1626,7 +1686,10 @@ export async function assignRiderToOrder(input: {
     throw new OrderTransitionError("El repartidor no está disponible.");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const wasAlreadyAssigned =
+    order.status === "ASIGNADO" && order.assignedRiderId === rider.id;
+
+  const updated = await prisma.$transaction(async (tx) => {
     const updated = await tx.order.update({
       where: { id: order.id },
       data: {
@@ -1671,4 +1734,122 @@ export async function assignRiderToOrder(input: {
 
     return updated;
   }, { timeout: 20000, maxWait: 10000 });
+
+  if (!wasAlreadyAssigned) {
+    // El cliente recibe el nombre del repartidor y su enlace de seguimiento.
+    sendOrderStatusNotification(updated, "ASIGNADO").catch(() => {});
+    // El repartidor recibe la carrera y su enlace de acceso rápido.
+    notifyRiderNewOrder(updated.id).catch(() => {});
+  }
+
+  return updated;
+}
+
+// =================================================================
+// ACCIONES DEL REPARTIDOR DESDE SU ENLACE DE ACCESO RÁPIDO
+// =================================================================
+
+async function getActiveRiderForAccess(riderId: string) {
+  const rider = await prisma.rider.findUnique({
+    where: { id: riderId },
+    select: { id: true, name: true, isActive: true, status: true },
+  });
+  if (!rider || !rider.isActive || rider.status !== "ACTIVO") {
+    throw new OrderAccessError("El repartidor no está activo.");
+  }
+  return rider;
+}
+
+async function getRiderOrderForAccess(riderId: string, orderId: string) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: {
+      id: true,
+      orderNumber: true,
+      status: true,
+      assignedRiderId: true,
+      riderAcceptedAt: true,
+      riderArrivedAt: true,
+    },
+  });
+  if (!order) throw new OrderTransitionError("Pedido no encontrado.");
+  if (order.assignedRiderId !== riderId) {
+    throw new OrderAccessError("Este pedido no está asignado a ti.");
+  }
+  return order;
+}
+
+/** El repartidor confirma que acepta la carrera desde su enlace de WhatsApp. */
+export async function acceptOrderAsRider(riderId: string, orderId: string) {
+  const rider = await getActiveRiderForAccess(riderId);
+  const order = await getRiderOrderForAccess(riderId, orderId);
+
+  if (!["ASIGNADO", "EN_CAMINO"].includes(order.status)) {
+    throw new OrderTransitionError(
+      "El pedido ya no está disponible para aceptar."
+    );
+  }
+  if (order.riderAcceptedAt) return order;
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.order.update({
+      where: { id: order.id },
+      data: { riderAcceptedAt: new Date() },
+    });
+    await tx.activityLog.create({
+      data: {
+        action: "RIDER_ACCEPTED_ORDER",
+        entityName: "Order",
+        entityId: order.id,
+        provider: "access_link",
+        channel: "system",
+        status: "success",
+        detailsJson: JSON.stringify({
+          orderNumber: order.orderNumber,
+          riderId: rider.id,
+          riderName: rider.name,
+        }),
+      },
+    });
+    return updated;
+  });
+}
+
+/** El repartidor marca que ya llegó al local a recoger el pedido. */
+export async function markRiderArrivedAtMerchant(
+  riderId: string,
+  orderId: string
+) {
+  const rider = await getActiveRiderForAccess(riderId);
+  const order = await getRiderOrderForAccess(riderId, orderId);
+
+  if (!["ASIGNADO", "EN_CAMINO"].includes(order.status)) {
+    throw new OrderTransitionError(
+      "El pedido ya no está en una etapa de recojo."
+    );
+  }
+  if (order.riderArrivedAt) return order;
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.order.update({
+      where: { id: order.id },
+      data: { riderArrivedAt: new Date() },
+    });
+    await tx.activityLog.create({
+      data: {
+        action: "RIDER_ARRIVED_AT_MERCHANT",
+        entityName: "Order",
+        entityId: order.id,
+        provider: "access_link",
+        channel: "system",
+        status: "success",
+        detailsJson: JSON.stringify({
+          orderNumber: order.orderNumber,
+          riderId: rider.id,
+          riderName: rider.name,
+        }),
+      },
+    });
+    return updated;
+  });
 }

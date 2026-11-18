@@ -997,10 +997,10 @@ export default async function HomePage() {
                   autos, camionetas y furgones. Tú eliges cuándo conectarte.
                 </p>
                 <Link
-                  href="/login"
-                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-[#E0CCE9] bg-[#F8F4FA] px-4 py-2.5 text-xs font-bold text-[#5C3470] transition-colors hover:bg-[#F0E6F4]"
+                  href="/registro/repartidor"
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700"
                 >
-                  Quiero conducir
+                  Registrarme como repartidor
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               </div>
@@ -1215,14 +1215,9 @@ export default async function HomePage() {
                   </Link>
                 </li>
                 <li>
-                  <a
-                    href={whatsapp}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-[#331E39]"
-                  >
+                  <Link href="/registro/repartidor" className="hover:text-[#331E39]">
                     Trabaja con nosotros
-                  </a>
+                  </Link>
                 </li>
               </ul>
             </div>
