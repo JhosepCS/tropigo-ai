@@ -1628,7 +1628,7 @@ async function tryAutoAssignRider(orderId: string): Promise<void> {
   if (!order || order.status !== "LISTO_RECOJO" || order.assignedRiderId) return;
 
   const rider = await prisma.rider.findFirst({
-    where: { isActive: true, isAvailable: true },
+    where: { isActive: true, isAvailable: true, status: "ACTIVO" },
     orderBy: [{ totalDeliveries: "asc" }, { createdAt: "asc" }],
     select: { id: true },
   });

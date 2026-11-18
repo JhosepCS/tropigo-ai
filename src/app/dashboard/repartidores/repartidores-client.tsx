@@ -23,6 +23,7 @@ import {
   Copy,
   ExternalLink,
   Clock3,
+  Power,
 } from "lucide-react";
 import {
   emptyRiderPaymentQr,
@@ -124,6 +125,15 @@ export function RepartidoresClient({ riders }: { riders: any[] }) {
   };
 
   const changeStatus = async (riderId: string, action: string) => {
+    const target = ridersState.find((rider) => rider.id === riderId);
+
+    if (action === "deactivate") {
+      const confirmed = window.confirm(
+        `¿Apagar a ${target?.name || "este repartidor"}? No recibirá carreras nuevas ni podrá abrir su panel hasta que lo enciendas de nuevo.`
+      );
+      if (!confirmed) return;
+    }
+
     setStatusBusy(`${riderId}:${action}`);
     setFeedback(null);
     try {
@@ -154,9 +164,17 @@ export function RepartidoresClient({ riders }: { riders: any[] }) {
                 ...rider,
                 status: nextStatus || rider.status,
                 isActive:
-                  nextStatus === "ACTIVO" ? true : nextStatus ? false : rider.isActive,
+                  typeof data?.isActive === "boolean"
+                    ? data.isActive
+                    : nextStatus === "ACTIVO"
+                    ? true
+                    : nextStatus
+                    ? false
+                    : rider.isActive,
                 isAvailable:
-                  nextStatus === "ACTIVO"
+                  typeof data?.isAvailable === "boolean"
+                    ? data.isAvailable
+                    : nextStatus === "ACTIVO"
                     ? rider.isAvailable
                     : nextStatus
                     ? false
@@ -179,6 +197,9 @@ export function RepartidoresClient({ riders }: { riders: any[] }) {
         approve: "Repartidor aprobado. Se envió su enlace de acceso por WhatsApp.",
         reject: "Registro rechazado. El repartidor puede escribir para más detalles.",
         suspend: "Repartidor suspendido. Ya no recibirá carreras.",
+        activate: "Repartidor encendido. Ya puede recibir carreras con su mismo enlace.",
+        deactivate:
+          "Repartidor apagado. No recibirá carreras hasta que lo enciendas de nuevo.",
         "send-link": "Enlace de acceso enviado por WhatsApp.",
         "regenerate-link":
           "Enlace regenerado. El anterior quedó revocado y el nuevo se copió al portapapeles.",
@@ -207,7 +228,8 @@ export function RepartidoresClient({ riders }: { riders: any[] }) {
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             Conductores de delivery en Ivirgarzama. Aprueba los registros web,
-            envía su enlace por WhatsApp y carga el QR personal de cobro.
+            enciende o apaga su turno, envía su enlace por WhatsApp y carga el
+            QR personal de cobro.
           </p>
           <a
             href="/registro/repartidor"
@@ -279,6 +301,8 @@ export function RepartidoresClient({ riders }: { riders: any[] }) {
                       ? "bg-amber-100 text-amber-800 border-amber-200"
                       : r.status === "RECHAZADO" || r.status === "SUSPENDIDO"
                       ? "bg-red-50 text-red-700 border-red-200"
+                      : r.status === "ACTIVO" && !r.isActive
+                      ? "bg-slate-800 text-white border-slate-700"
                       : r.isAvailable
                       ? "bg-emerald-100 text-emerald-800 border-emerald-200"
                       : "bg-slate-100 text-slate-600 border-slate-200"
@@ -290,6 +314,8 @@ export function RepartidoresClient({ riders }: { riders: any[] }) {
                         ? "bg-amber-500"
                         : r.status === "RECHAZADO" || r.status === "SUSPENDIDO"
                         ? "bg-red-500"
+                        : r.status === "ACTIVO" && !r.isActive
+                        ? "bg-slate-300"
                         : r.isAvailable
                         ? "bg-emerald-500 animate-pulse"
                         : "bg-slate-400"
@@ -301,6 +327,8 @@ export function RepartidoresClient({ riders }: { riders: any[] }) {
                     ? "Rechazado"
                     : r.status === "SUSPENDIDO"
                     ? "Suspendido"
+                    : r.status === "ACTIVO" && !r.isActive
+                    ? "Apagado"
                     : r.isAvailable
                     ? "En Turno"
                     : "Fuera de Turno"}
@@ -384,6 +412,31 @@ export function RepartidoresClient({ riders }: { riders: any[] }) {
                     </>
                   ) : (
                     <>
+                      {r.status === "ACTIVO" && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            changeStatus(r.id, r.isActive ? "deactivate" : "activate")
+                          }
+                          disabled={
+                            statusBusy === `${r.id}:deactivate` ||
+                            statusBusy === `${r.id}:activate`
+                          }
+                          className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[10px] font-black transition disabled:opacity-60 ${
+                            r.isActive
+                              ? "border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                              : "bg-emerald-600 text-white hover:bg-emerald-700"
+                          }`}
+                        >
+                          {statusBusy === `${r.id}:deactivate` ||
+                          statusBusy === `${r.id}:activate` ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Power className="h-3 w-3" />
+                          )}
+                          {r.isActive ? "Apagar repartidor" : "Encender repartidor"}
+                        </button>
+                      )}
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"

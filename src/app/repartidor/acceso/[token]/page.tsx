@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { RiderAccessClient } from "./rider-access-client";
-import { AlertTriangle, Clock3, MessageCircle, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Clock3, MessageCircle, Power, ShieldCheck } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -56,22 +56,39 @@ export default async function RiderAccessPage({
   }
 
   if (rider.status !== "ACTIVO" || !rider.isActive) {
+    const paused = rider.status === "ACTIVO" && !rider.isActive;
     const rejected = rider.status === "RECHAZADO" || rider.status === "SUSPENDIDO";
     return (
-      <AccessShell title="Registro en revisión">
+      <AccessShell title={paused ? "Cuenta en pausa" : "Registro en revisión"}>
         <div className="rounded-3xl border border-[#E0CCE9] bg-white p-8 text-center shadow-sm">
           <div
             className={`mx-auto flex h-14 w-14 items-center justify-center rounded-2xl ${
-              rejected ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"
+              paused
+                ? "bg-slate-100 text-slate-600"
+                : rejected
+                ? "bg-red-50 text-red-600"
+                : "bg-amber-50 text-amber-600"
             }`}
           >
-            {rejected ? <AlertTriangle className="h-7 w-7" /> : <Clock3 className="h-7 w-7" />}
+            {paused ? (
+              <Power className="h-7 w-7" />
+            ) : rejected ? (
+              <AlertTriangle className="h-7 w-7" />
+            ) : (
+              <Clock3 className="h-7 w-7" />
+            )}
           </div>
           <h1 className="mt-4 text-xl font-black text-[#1E1523]">
-            {rejected ? "Tu registro no está activo" : `Hola ${rider.name.split(" ")[0]}, estamos revisando tu registro`}
+            {paused
+              ? `Hola ${rider.name.split(" ")[0]}, tu cuenta está en pausa`
+              : rejected
+              ? "Tu registro no está activo"
+              : `Hola ${rider.name.split(" ")[0]}, estamos revisando tu registro`}
           </h1>
           <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-[#6B5A72]">
-            {rejected
+            {paused
+              ? "La central de TropiGO te desconectó por ahora. Cuando te vuelvan a encender, este mismo enlace funcionará y recibirás carreras por WhatsApp."
+              : rejected
               ? "Un operador de TropiGO revisará tu caso. Escríbenos por WhatsApp para conocer el motivo o volver a postularte."
               : "Un operador de TropiGO validará tus datos y tu vehículo. Apenas esté aprobado, este mismo enlace se activará y te llegarán las carreras por WhatsApp."}
           </p>

@@ -61,7 +61,10 @@ con QR personal.
   credenciales oficiales en **Canales**.
 - Registro público de repartidores en `/registro/repartidor` (nombre, WhatsApp,
   vehículo, placa y QR de cobro opcional). Quedan `PENDIENTE_APROBACION` y se
-  aprueban desde **CRM → Repartidores**.
+  aprueban desde **CRM → Repartidores**. Desde el mismo CRM se pueden
+  **apagar/encender**: apagar lo saca de turno sin suspenderlo, no recibe
+  carreras nuevas y su enlace muestra “cuenta en pausa”. No se permite apagarlo
+  si tiene carreras `ASIGNADO` o `EN_CAMINO`.
 - Paneles de acceso rápido por token, sin correo ni contraseña:
   - `/repartidor/acceso/[token]`: carreras del rider con botones de 1 toque
     (aceptar, estoy en el local, recogí el pedido, entregado) y GPS en vivo.

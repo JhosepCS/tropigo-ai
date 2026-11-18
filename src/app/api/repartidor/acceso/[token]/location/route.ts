@@ -30,7 +30,7 @@ export async function POST(
     }
     if (!rider.isActive || rider.status !== "ACTIVO") {
       return NextResponse.json(
-        { error: "Tu registro todavía no está aprobado." },
+        { error: "Tu cuenta está en pausa o todavía no está aprobada." },
         { status: 403 }
       );
     }
