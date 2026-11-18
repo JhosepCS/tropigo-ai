@@ -24,6 +24,7 @@ type AccessOrder = {
   totalAmount: number;
   deliveryFee: number;
   paymentMethod: string;
+  paymentStatus: string;
   riderAcceptedAt: string | null;
   riderArrivedAt: string | null;
   customerName: string;
@@ -287,6 +288,7 @@ export function RiderAccessClient({
           const accepted = Boolean(order.riderAcceptedAt);
           const arrived = Boolean(order.riderArrivedAt);
           const enCamino = order.status === "EN_CAMINO";
+          const paid = order.paymentStatus === "PAGADO_VERIFICADO";
           const busyKey = (action: string) => busy === `${order.id}:${action}`;
           const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
             `${order.deliveryAddressText}, ${rider.cityName}, Bolivia`
@@ -388,10 +390,14 @@ export function RiderAccessClient({
                 <div className="flex items-center justify-between rounded-2xl bg-[#331E39] px-3 py-2.5 text-white">
                   <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-[#C8A2D8]">
                     <Wallet className="h-3.5 w-3.5" />
-                    {order.paymentMethod === "EFECTIVO" ? "Cobrar al entregar" : "Pago digital"}
+                    {paid
+                      ? "Pago verificado"
+                      : order.paymentMethod === "EFECTIVO"
+                      ? "Cobrar al entregar"
+                      : "Cobro pendiente"}
                   </span>
                   <span className="text-sm font-black">
-                    {order.paymentMethod === "EFECTIVO" ? money(order.totalAmount) : "Ya pagado"}
+                    {paid ? "Pagado" : money(order.totalAmount)}
                   </span>
                 </div>
 

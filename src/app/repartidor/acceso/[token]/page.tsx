@@ -143,6 +143,7 @@ export default async function RiderAccessPage({
           totalAmount: order.totalAmount,
           deliveryFee: order.deliveryFee,
           paymentMethod: order.paymentMethod,
+          paymentStatus: order.paymentStatus,
           riderAcceptedAt: order.riderAcceptedAt?.toISOString() || null,
           riderArrivedAt: order.riderArrivedAt?.toISOString() || null,
           customerName: order.customer?.name || "Cliente",

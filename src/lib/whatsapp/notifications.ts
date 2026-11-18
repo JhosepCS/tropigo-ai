@@ -133,9 +133,13 @@ function buildRiderNewOrderMessage(order: any, url: string): string {
       order.referencePoint ? ` (Ref: ${order.referencePoint})` : ""
     }\n` +
     `💵 *Envío:* ${money(order.deliveryFee)}\n` +
-    `💰 *Cobrar al cliente:* ${money(order.totalAmount)} (${paymentMethodLabel(
-      order.paymentMethod
-    )})\n\n` +
+    (order.paymentStatus === "PAGADO_VERIFICADO"
+      ? `✅ *Pago verificado:* no cobrar al cliente (${paymentMethodLabel(
+          order.paymentMethod
+        )}).\n\n`
+      : `💰 *Cobrar al cliente:* ${money(order.totalAmount)} (${paymentMethodLabel(
+          order.paymentMethod
+        )})\n\n`) +
     `👉 *Toca aquí para aceptar y ver el mapa:*\n${url}`
   );
 }
