@@ -16,9 +16,14 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
+    "cap:open": "cap open android",
+    "cap:sync": "cap sync android",
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/cli": "^8.6.2",
+    "@capacitor/core": "^8.6.2",
     "@electric-sql/pglite": "^0.2.14",
     "@prisma/client": "^6.4.1",
     "@whiskeysockets/baileys": "^6.7.9",
