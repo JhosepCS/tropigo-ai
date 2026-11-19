@@ -32,6 +32,7 @@ interface Product {
   price: number;
   category: string | null;
   merchantId: string;
+  imageUrl?: string | null;
 }
 
 interface Merchant {
@@ -57,6 +58,7 @@ interface CartItem {
   product: Product;
   quantity: number;
   merchantName: string;
+  notes?: string;
 }
 
 type PortalTab = "delivery" | "mototaxi" | "rastreo";
@@ -100,6 +102,24 @@ export function PedirClient({
   const [paymentMethod, setPaymentMethod] = useState<"EFECTIVO" | "QR_BANCO">("EFECTIVO");
   const [createdOrderCode, setCreatedOrderCode] = useState<string | null>(null);
 
+  // Modal de Detalle de Producto estilo PedidosYa
+  const [selectedProductForModal, setSelectedProductForModal] = useState<{
+    product: Product;
+    merchantName: string;
+  } | null>(null);
+  const [modalQuantity, setModalQuantity] = useState(1);
+  const [modalNotes, setModalNotes] = useState("");
+
+  // Puntos Frecuentes Ivirgarzama (POIs estilo Yango)
+  const ivirgarzamaPOIs = [
+    "Plaza Principal de Ivirgarzama",
+    "Hospital de Segundo Nivel",
+    "Mercado Central",
+    "Mercado Campesino",
+    "Terminal de Buses",
+    "Cruce Mariposas",
+  ];
+
   // Formulario Mototaxi
   const [rideOrigin, setRideOrigin] = useState("Mercado Central de Ivirgarzama");
   const [rideDestination, setRideDestination] = useState("Terminal de Buses");
@@ -129,7 +149,33 @@ export function PedirClient({
     return matchMerchant || matchProduct;
   });
 
-  // Manejo de Carrito
+  // Manejo de Carrito y Modal estilo PedidosYa
+  const openProductModal = (product: Product, merchantName: string) => {
+    setSelectedProductForModal({ product, merchantName });
+    const existing = cart.find((item) => item.product.id === product.id);
+    setModalQuantity(existing ? existing.quantity : 1);
+    setModalNotes(existing?.notes || "");
+  };
+
+  const handleAddFromModal = () => {
+    if (!selectedProductForModal) return;
+    const { product, merchantName } = selectedProductForModal;
+    setCart((prev) => {
+      const filtered = prev.filter((item) => item.product.id !== product.id);
+      return [
+        ...filtered,
+        {
+          product,
+          quantity: modalQuantity,
+          merchantName,
+          notes: modalNotes.trim() || undefined,
+        },
+      ];
+    });
+    setSelectedProductForModal(null);
+    setIsCartOpen(true);
+  };
+
   const addToCart = (product: Product, merchantName: string) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
@@ -162,19 +208,42 @@ export function PedirClient({
   };
 
   const subtotal = cart.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
-  // El envío real depende de la zona y se cotiza en WhatsApp. No se muestra
-  // una tarifa inventada en el portal público.
   const totalAmount = subtotal;
   const totalItemsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
-  // El portal público no crea pedidos: el flujo oficial es WhatsApp.
+  // Enviar Pedido formateado directamente a WhatsApp con TropiBot
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!customerName.trim() || !customerPhone.trim() || !deliveryAddress.trim()) {
+      alert("Por favor completa tu nombre, teléfono y dirección de entrega.");
+      return;
+    }
+
+    const itemsDetail = cart
+      .map(
+        (it) =>
+          `• ${it.quantity}x ${it.product.name} (${(it.product.price * it.quantity).toFixed(2)} Bs.)${
+            it.notes ? `\n   ↳ _Nota: ${it.notes}_` : ""
+          }`
+      )
+      .join("\n");
+
+    const message =
+      `🌴 *NUEVO PEDIDO DESDE TROPIGO WEB / APP*\n\n` +
+      `👤 *Cliente:* ${customerName.trim()}\n` +
+      `📱 *WhatsApp:* ${customerPhone.trim()}\n` +
+      `📍 *Dirección de entrega:* ${deliveryAddress.trim()}\n` +
+      (referencePoint.trim() ? `🏠 *Referencia:* ${referencePoint.trim()}\n` : "") +
+      `💳 *Forma de pago:* ${paymentMethod === "EFECTIVO" ? "💵 Efectivo al recibir" : "📲 QR Simple Bancario"}\n\n` +
+      `📋 *DETALLE DEL PEDIDO:*\n${itemsDetail}\n\n` +
+      `💰 *Subtotal Comida:* ${subtotal.toFixed(2)} Bs.\n` +
+      `🛵 *Envío:* Cotizar según distancia desde Plaza Principal\n\n` +
+      `¡Hola TropiBot! Por favor confirma mi pedido y cotízame el envío exacto.`;
+
+    const encoded = encodeURIComponent(message);
+    const waUrl = `https://wa.me/59174389012?text=${encoded}`;
+    window.open(waUrl, "_blank");
     setIsCheckoutOpen(false);
-    alert(
-      "Los pedidos se cotizan y confirman por WhatsApp con TropiBot. " +
-        "Escríbenos al +591 74389012 para elegir productos, zona de entrega y confirmar el total."
-    );
   };
 
   // Enviar Carrera de Mototaxi
@@ -452,7 +521,7 @@ export function PedirClient({
                       </div>
                     </div>
 
-                    {/* Grilla de Productos */}
+                    {/* Grilla de Productos estilo PedidosYa */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {merchant.products.map((product) => {
                         const inCart = cart.find((it) => it.product.id === product.id);
@@ -460,20 +529,26 @@ export function PedirClient({
                         return (
                           <div
                             key={product.id}
-                            className="bg-[#F8F9FA] rounded-xl border border-[#EAECF0] p-4 flex flex-col justify-between gap-3 hover:border-[#C9A7D8] transition-colors"
+                            onClick={() => openProductModal(product, merchant.name)}
+                            className="group cursor-pointer bg-[#F8F9FA] hover:bg-white rounded-2xl border border-[#EAECF0] hover:border-[#8E58A6] p-4 flex flex-col justify-between gap-3 shadow-2xs hover:shadow-md transition-all duration-200"
                           >
                             <div>
                               <div className="flex items-start justify-between gap-2">
-                                <h3 className="font-bold text-xs text-[#101828]">
+                                <h3 className="font-bold text-xs text-[#101828] group-hover:text-[#482957] transition-colors">
                                   {product.name}
                                 </h3>
-                                <span className="font-black text-sm text-[#5C3470] whitespace-nowrap">
+                                <span className="font-black text-sm text-[#5C3470] whitespace-nowrap bg-[#F3EAF7] px-2 py-0.5 rounded-lg">
                                   {product.price.toFixed(2)} Bs.
                                 </span>
                               </div>
                               {product.description && (
                                 <p className="text-[11px] text-[#667085] line-clamp-2 mt-1">
                                   {product.description}
+                                </p>
+                              )}
+                              {inCart?.notes && (
+                                <p className="text-[10px] text-[#5C3470] bg-[#E6D2F0]/40 px-2 py-0.5 rounded-md mt-1.5 italic">
+                                  Nota: {inCart.notes}
                                 </p>
                               )}
                             </div>
@@ -484,7 +559,10 @@ export function PedirClient({
                               </span>
 
                               {inCart ? (
-                                <div className="flex items-center gap-2 bg-white px-2 py-1 rounded-lg border border-[#C9A7D8]">
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="flex items-center gap-2 bg-white px-2 py-1 rounded-lg border border-[#C9A7D8]"
+                                >
                                   <button
                                     onClick={() => updateQuantity(product.id, -1)}
                                     className="text-[#5C3470] hover:text-[#331E39]"
@@ -503,11 +581,14 @@ export function PedirClient({
                                 </div>
                               ) : (
                                 <button
-                                  onClick={() => addToCart(product, merchant.name)}
-                                  className="flex items-center gap-1 bg-[#331E39] hover:bg-[#482957] text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-2xs transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openProductModal(product, merchant.name);
+                                  }}
+                                  className="flex items-center gap-1 bg-[#331E39] hover:bg-[#482957] text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-2xs transition-colors"
                                 >
                                   <Plus className="w-3.5 h-3.5" />
-                                  <span>Agregar</span>
+                                  <span>Elegir</span>
                                 </button>
                               )}
                             </div>
@@ -570,52 +651,96 @@ export function PedirClient({
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleRequestRide} className="space-y-4">
-                {/* Tipo de Vehículo */}
-                <div className="space-y-1.5">
+              <form onSubmit={handleRequestRide} className="space-y-5">
+                {/* Radar estilo Yango */}
+                <div className="bg-gradient-to-r from-[#F3EAF7] to-[#E6D2F0] border border-[#E0CCE9] p-3.5 rounded-2xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#8E58A6] opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-[#5C3470]"></span>
+                    </span>
+                    <div>
+                      <p className="text-xs font-bold text-[#331E39]">Radar activo en Ivirgarzama</p>
+                      <p className="text-[10px] text-[#5C3470]">Conductores en línea • Despacho en 2 a 4 min</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-wider bg-[#331E39] text-white px-2 py-0.5 rounded-full">
+                    GPS Listo
+                  </span>
+                </div>
+
+                {/* Selector de Vehículo estilo Yango */}
+                <div className="space-y-2">
                   <label className="text-xs font-bold text-[#344054]">
-                    Tipo de Vehículo
+                    Selecciona tu Vehículo
                   </label>
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       type="button"
                       onClick={() => setRideVehicle("MOTO")}
-                      className={`p-3 rounded-xl border text-left transition-all ${
+                      className={`p-3.5 rounded-2xl border text-left transition-all ${
                         rideVehicle === "MOTO"
-                          ? "border-[#8E58A6] bg-[#F3EAF7] text-[#331E39] shadow-2xs font-bold"
+                          ? "border-[#8E58A6] bg-[#F3EAF7] text-[#331E39] ring-2 ring-[#8E58A6]/20 font-bold shadow-2xs"
                           : "border-[#EAECF0] hover:bg-[#F9FAFB] text-[#475467]"
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-xs">🛵 Mototaxi Rápida</span>
+                        <span className="text-xs font-bold flex items-center gap-1.5">
+                          <span>🛵</span> Moto Flash
+                        </span>
                         <span className="text-xs font-black text-[#5C3470]">
                           {motoFare.toFixed(2)} {fareCurrency}
                         </span>
                       </div>
-                      <p className="text-[10px] text-[#667085] mt-0.5">
-                        1 pasajero, ágil por la ciudad
+                      <p className="text-[10px] text-[#667085] mt-1">
+                        1 pasajero • Rápido y ágil
                       </p>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setRideVehicle("TORITO")}
-                      className={`p-3 rounded-xl border text-left transition-all ${
+                      className={`p-3.5 rounded-2xl border text-left transition-all ${
                         rideVehicle === "TORITO"
-                          ? "border-[#8E58A6] bg-[#F3EAF7] text-[#331E39] shadow-2xs font-bold"
+                          ? "border-[#8E58A6] bg-[#F3EAF7] text-[#331E39] ring-2 ring-[#8E58A6]/20 font-bold shadow-2xs"
                           : "border-[#EAECF0] hover:bg-[#F9FAFB] text-[#475467]"
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-xs">🛺 Torito / Trimóvil</span>
+                        <span className="text-xs font-bold flex items-center gap-1.5">
+                          <span>🛺</span> Torito / Trimóvil
+                        </span>
                         <span className="text-xs font-black text-[#5C3470]">
                           {toritoFare.toFixed(2)} {fareCurrency}
                         </span>
                       </div>
-                      <p className="text-[10px] text-[#667085] mt-0.5">
-                        Hasta 3 pasajeros o carga / bolsas
+                      <p className="text-[10px] text-[#667085] mt-1">
+                        Hasta 3 personas • Techo para lluvia ☔
                       </p>
                     </button>
+                  </div>
+                </div>
+
+                {/* Destinos Frecuentes estilo Yango (POIs Ivirgarzama) */}
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-bold text-[#667085]">
+                    Puntos rápidos de destino en Ivirgarzama:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ivirgarzamaPOIs.map((poi) => (
+                      <button
+                        key={poi}
+                        type="button"
+                        onClick={() => setRideDestination(poi)}
+                        className={`text-[10px] px-2.5 py-1 rounded-lg border font-medium transition-colors ${
+                          rideDestination === poi
+                            ? "bg-[#331E39] text-white border-[#331E39]"
+                            : "bg-white text-[#475467] border-[#EAECF0] hover:bg-[#F2F4F7]"
+                        }`}
+                      >
+                        📍 {poi}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -1029,6 +1154,128 @@ export function PedirClient({
                 </button>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 5.5 Modal de Detalle y Personalización de Plato estilo PedidosYa */}
+      {selectedProductForModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-[#EAECF0] flex flex-col max-h-[90vh]">
+            {/* Header del Modal */}
+            <div className="relative bg-gradient-to-br from-[#F3EAF7] via-[#E6D2F0] to-[#D5B8E3] p-6 pb-4">
+              <button
+                onClick={() => setSelectedProductForModal(null)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/80 hover:bg-white text-[#331E39] font-black flex items-center justify-center text-sm shadow-xs transition-colors"
+              >
+                ✕
+              </button>
+              <span className="text-[10px] uppercase tracking-wider font-extrabold bg-[#331E39] text-white px-2.5 py-0.5 rounded-full inline-block mb-2">
+                {selectedProductForModal.merchantName}
+              </span>
+              <h3 className="font-black text-xl text-[#101828] leading-tight">
+                {selectedProductForModal.product.name}
+              </h3>
+              <p className="font-black text-lg text-[#5C3470] mt-1">
+                {selectedProductForModal.product.price.toFixed(2)} Bs.
+              </p>
+            </div>
+
+            {/* Cuerpo del Modal */}
+            <div className="p-6 space-y-5 overflow-y-auto flex-1">
+              {selectedProductForModal.product.description && (
+                <div className="space-y-1">
+                  <h4 className="text-xs font-bold text-[#344054]">Descripción</h4>
+                  <p className="text-xs text-[#667085] leading-relaxed">
+                    {selectedProductForModal.product.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Notas e instrucciones especiales para el restaurante */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#344054] flex items-center justify-between">
+                  <span>Notas especiales para el restaurante</span>
+                  <span className="text-[10px] font-normal text-[#98A2B3]">Opcional</span>
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Ej: Sin cebolla, bastante llajwa, extra mayonesa..."
+                  value={modalNotes}
+                  onChange={(e) => setModalNotes(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-[#F8F9FA] border border-[#D0D5DD] rounded-xl focus:ring-2 focus:ring-[#8E58A6] focus:outline-none focus:bg-white resize-none"
+                />
+              </div>
+
+              {/* Selector de Cantidad */}
+              <div className="flex items-center justify-between pt-2 border-t border-[#EAECF0]">
+                <span className="text-xs font-bold text-[#344054]">Cantidad</span>
+                <div className="flex items-center gap-3 bg-[#F2F4F7] px-3 py-1 rounded-xl border border-[#D0D5DD]">
+                  <button
+                    onClick={() => setModalQuantity((q) => Math.max(1, q - 1))}
+                    disabled={modalQuantity <= 1}
+                    className="text-[#5C3470] hover:text-[#331E39] disabled:opacity-30 p-1"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <span className="font-black text-sm text-[#101828] min-w-5 text-center">
+                    {modalQuantity}
+                  </span>
+                  <button
+                    onClick={() => setModalQuantity((q) => q + 1)}
+                    className="text-[#5C3470] hover:text-[#331E39] p-1"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer con Botón de Confirmación */}
+            <div className="p-4 bg-[#F8F9FA] border-t border-[#EAECF0]">
+              <button
+                onClick={handleAddFromModal}
+                className="w-full bg-[#331E39] hover:bg-[#482957] text-white font-bold text-xs sm:text-sm py-3.5 rounded-2xl shadow-sm transition-all flex items-center justify-between px-5"
+              >
+                <span>Agregar al Pedido</span>
+                <span className="bg-white/20 px-2.5 py-1 rounded-lg text-xs font-black">
+                  {(selectedProductForModal.product.price * modalQuantity).toFixed(2)} Bs.
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5.6 Sticky Cart Bar estilo PedidosYa (Barra flotante visible cuando hay productos) */}
+      {cart.length > 0 && !isCartOpen && !isCheckoutOpen && !selectedProductForModal && (
+        <div className="fixed bottom-14 sm:bottom-6 left-4 right-4 max-w-2xl mx-auto z-40 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div
+            onClick={() => setIsCartOpen(true)}
+            className="cursor-pointer bg-gradient-to-r from-[#331E39] via-[#482957] to-[#5C3470] text-white p-3.5 sm:p-4 rounded-2xl shadow-xl flex items-center justify-between gap-3 border border-white/10 hover:scale-[1.01] transition-transform"
+          >
+            <div className="flex items-center gap-3">
+              <div className="relative bg-white/20 p-2 rounded-xl">
+                <ShoppingBag className="w-5 h-5 text-white" />
+                <span className="absolute -top-1.5 -right-1.5 bg-[#FFD700] text-[#331E39] font-black text-[10px] w-5 h-5 rounded-full flex items-center justify-center shadow-xs">
+                  {totalItemsCount}
+                </span>
+              </div>
+              <div>
+                <p className="font-bold text-xs sm:text-sm">Ver tu pedido</p>
+                <p className="text-[11px] text-white/80">
+                  {cart.length} {cart.length === 1 ? "comercio / ítem" : "platos seleccionados"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="font-black text-sm sm:text-base text-[#FFD700]">
+                {subtotal.toFixed(2)} Bs.
+              </span>
+              <div className="bg-white/20 p-1.5 rounded-lg">
+                <ArrowRight className="w-4 h-4 text-white" />
+              </div>
+            </div>
           </div>
         </div>
       )}
