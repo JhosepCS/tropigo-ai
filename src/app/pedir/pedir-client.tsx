@@ -470,6 +470,8 @@ export function PedirClient({
               <div className="relative w-full sm:w-64">
                 <Search className="w-4 h-4 text-[#98A2B3] absolute left-3 top-2.5" />
                 <input
+                  id="searchQuery"
+                  name="searchQuery"
                   type="text"
                   placeholder="Buscar pollo, majadito, farmacia..."
                   value={searchQuery}
@@ -747,10 +749,12 @@ export function PedirClient({
                 {/* Origen y Destino */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#344054]">
+                    <label htmlFor="rideOrigin" className="text-xs font-bold text-[#344054]">
                       Punto de Partida (Origen)
                     </label>
                     <input
+                      id="rideOrigin"
+                      name="rideOrigin"
                       type="text"
                       required
                       placeholder="Ej: Mercado Central, lado ferretería"
@@ -761,10 +765,12 @@ export function PedirClient({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#344054]">
+                    <label htmlFor="rideDestination" className="text-xs font-bold text-[#344054]">
                       Punto de Llegada (Destino)
                     </label>
                     <input
+                      id="rideDestination"
+                      name="rideDestination"
                       type="text"
                       required
                       placeholder="Ej: Terminal de Buses, Surtidor"
@@ -778,10 +784,12 @@ export function PedirClient({
                 {/* Pasajero y Teléfono */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#344054]">
+                    <label htmlFor="ridePassengerName" className="text-xs font-bold text-[#344054]">
                       Tu Nombre
                     </label>
                     <input
+                      id="ridePassengerName"
+                      name="ridePassengerName"
                       type="text"
                       required
                       placeholder="Ej: Roberto Claure"
@@ -792,10 +800,12 @@ export function PedirClient({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#344054]">
+                    <label htmlFor="ridePassengerPhone" className="text-xs font-bold text-[#344054]">
                       Número de WhatsApp
                     </label>
                     <input
+                      id="ridePassengerPhone"
+                      name="ridePassengerPhone"
                       type="tel"
                       required
                       placeholder="Ej: 78901234"
@@ -849,6 +859,8 @@ export function PedirClient({
 
             <form onSubmit={handleSearchTracking} className="flex gap-2">
               <input
+                id="trackingCode"
+                name="trackingCode"
                 type="text"
                 required
                 placeholder="Código TRP-XXXX o VIAJE-XXXX"
@@ -1067,8 +1079,10 @@ export function PedirClient({
             ) : (
               <form onSubmit={handleSubmitOrder} className="space-y-3 text-xs">
                 <div className="space-y-1">
-                  <label className="font-bold text-[#344054]">Nombre Completo</label>
+                  <label htmlFor="customerName" className="font-bold text-[#344054]">Nombre Completo</label>
                   <input
+                    id="customerName"
+                    name="customerName"
                     type="text"
                     required
                     placeholder="Ej: Sandra Mamani"
@@ -1079,8 +1093,10 @@ export function PedirClient({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-[#344054]">Número de WhatsApp</label>
+                  <label htmlFor="customerPhone" className="font-bold text-[#344054]">Número de WhatsApp</label>
                   <input
+                    id="customerPhone"
+                    name="customerPhone"
                     type="tel"
                     required
                     placeholder="Ej: 78901234"
@@ -1091,8 +1107,10 @@ export function PedirClient({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-[#344054]">Dirección de Entrega</label>
+                  <label htmlFor="deliveryAddress" className="font-bold text-[#344054]">Dirección de Entrega</label>
                   <input
+                    id="deliveryAddress"
+                    name="deliveryAddress"
                     type="text"
                     required
                     placeholder="Ej: Av. Mortensen esq. Cochabamba"
@@ -1103,8 +1121,10 @@ export function PedirClient({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-[#344054]">Punto de Referencia</label>
+                  <label htmlFor="referencePoint" className="font-bold text-[#344054]">Punto de Referencia</label>
                   <input
+                    id="referencePoint"
+                    name="referencePoint"
                     type="text"
                     placeholder="Ej: Frente al surtidor central, portón verde"
                     value={referencePoint}
@@ -1194,11 +1214,13 @@ export function PedirClient({
 
               {/* Notas e instrucciones especiales para el restaurante */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#344054] flex items-center justify-between">
+                <label htmlFor="modalNotes" className="text-xs font-bold text-[#344054] flex items-center justify-between">
                   <span>Notas especiales para el restaurante</span>
                   <span className="text-[10px] font-normal text-[#98A2B3]">Opcional</span>
                 </label>
                 <textarea
+                  id="modalNotes"
+                  name="modalNotes"
                   rows={2}
                   placeholder="Ej: Sin cebolla, bastante llajwa, extra mayonesa..."
                   value={modalNotes}
