@@ -45,3 +45,6 @@ tsconfig.tsbuildinfo
 *.tsbuildinfo
 
 .vercel
+
+android/.idea/
+android/.gradle/

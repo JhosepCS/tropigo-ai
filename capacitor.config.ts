@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: "TropiGO",
   webDir: "public",
   server: {
-    url: "https://tropigo-ai.vercel.app",
+    url: "https://tropigo-ai.vercel.app/pedir",
     cleartext: true,
   },
   android: {
