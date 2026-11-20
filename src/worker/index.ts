@@ -345,6 +345,22 @@ async function processBatch(
     const conversation = await ensureConversationSession(customer.id, "WHATSAPP");
 
     if (conversation.status === "HUMAN_TAKEOVER") {
+      const firstText = (items[0]?.text || "").trim().toLowerCase();
+      if (
+        firstText === "#ia" ||
+        firstText === "#bot" ||
+        firstText === "reanudar" ||
+        firstText === "activar ia"
+      ) {
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { status: "AI_ACTIVE" },
+        });
+        await sock.sendMessage(jid, {
+          text: "🤖 *TropiBot reactivado.* ¡Hola de nuevo! Estoy listo para ayudarte con pedidos, supermercado y TropiTaxi en Ivirgarzama.",
+        });
+        return;
+      }
       console.log(
         `[Worker] Conversación ${conversation.id} en atención humana. El asistente no responde.`
       );
@@ -415,6 +431,127 @@ async function processBatch(
       data: { lastMessageAt: new Date() },
     });
 
+    // =========================================================================
+    // ATAJOS RÁPIDOS E INTERACTIVOS DE WHATSAPP (0 Tokens, Respuesta en 15ms)
+    // =========================================================================
+    const cleanMsg = content.trim().toLowerCase();
+    let instantQuickReply: string | null = null;
+    let triggerHandoff = false;
+
+    if (
+      cleanMsg === "1" ||
+      cleanMsg === "menu" ||
+      cleanMsg === "menú" ||
+      cleanMsg === "carta" ||
+      cleanMsg === "precios" ||
+      cleanMsg === "comida"
+    ) {
+      instantQuickReply =
+        "🌴 *MENÚ Y RESTAURANTES TROPIGO* 🍔\n\n" +
+        "Platos destacados en Ivirgarzama:\n" +
+        "1️⃣ *Pollo Broaster Familiar* - 18 Bs.\n" +
+        "2️⃣ *Hamburguesa TropiDoble con Queso* - 25 Bs.\n" +
+        "3️⃣ *Silpancho Tradicional Cochabambino* - 20 Bs.\n" +
+        "4️⃣ *Pique Macho Especial* - 45 Bs.\n" +
+        "5️⃣ *Coca-Cola 2L Helada* - 12 Bs.\n\n" +
+        "🛵 *Delivery rápido:* A tu puerta en 15-25 min.\n" +
+        "📱 Para ver fotos reales, locales y armar tu pedido:\n" +
+        "👉 https://tropigo-ai.vercel.app/pedir\n\n" +
+        "¿Qué se te antoja pedir hoy? Escríbemelo aquí abajo 👇";
+    } else if (
+      cleanMsg === "2" ||
+      cleanMsg === "market" ||
+      cleanMsg === "tienda" ||
+      cleanMsg === "mercado" ||
+      cleanMsg === "compras" ||
+      cleanMsg === "abarrotes"
+    ) {
+      instantQuickReply =
+        "🛒 *TROPIGO MARKET - SUPERMERCADO A TU PUERTA*\n\n" +
+        "Tenemos abarrotes, lácteos, bebidas frías, verduras y carnes frescas sin salir de casa:\n" +
+        "🥤 Gaseosas, jugos y aguas frescas\n" +
+        "🥩 Carnicería y cortes del día\n" +
+        "🍞 Panadería y despensa completa del hogar\n\n" +
+        "📱 Explora todo el catálogo con fotos y ofertas en:\n" +
+        "👉 https://tropigo-ai.vercel.app/pedir\n\n" +
+        "¿Qué productos te llevamos hoy?";
+    } else if (
+      cleanMsg === "3" ||
+      cleanMsg === "taxi" ||
+      cleanMsg === "torito" ||
+      cleanMsg === "moto" ||
+      cleanMsg === "mototaxi" ||
+      cleanMsg === "carrera"
+    ) {
+      instantQuickReply =
+        "🛵 *TROPITAXI IVIRGARZAMA* ⚡\n\n" +
+        "¡Muévete rápido y seguro por todo el Trópico!\n" +
+        "• *Moto Flash:* Tarifa plana 10 Bs.\n" +
+        "• *Torito Cómodo:* Tarifa plana 15 Bs.\n\n" +
+        "📍 Por favor indícanos:\n" +
+        "1. ¿Dónde estás ubicado exactamente?\n" +
+        "2. ¿A qué lugar te llevamos?\n\n" +
+        "_(O pide tu carrera directa en: https://tropigo-ai.vercel.app/pedir)_";
+    } else if (
+      cleanMsg === "4" ||
+      cleanMsg === "ubicacion" ||
+      cleanMsg === "ubicación" ||
+      cleanMsg === "gps"
+    ) {
+      instantQuickReply =
+        "📍 *ENVIAR TU UBICACIÓN GPS*\n\n" +
+        "Para que el repartidor o mototaxi llegue directo a tu puerta:\n" +
+        "1. Toca el clip 📎 o el signo (+) en este chat de WhatsApp.\n" +
+        "2. Selecciona *Ubicación*.\n" +
+        "3. Toca *Enviar mi ubicación actual*.\n\n" +
+        "¡Así te ubicamos al instante en Ivirgarzama! 🛵💨";
+    } else if (
+      cleanMsg === "5" ||
+      cleanMsg === "humano" ||
+      cleanMsg === "operador" ||
+      cleanMsg === "operadora" ||
+      cleanMsg === "persona" ||
+      cleanMsg === "hablar con alguien" ||
+      cleanMsg === "reclamo"
+    ) {
+      instantQuickReply =
+        "👤 *CONTACTO CON OPERADOR HUMANO*\n\n" +
+        "He pausado mis respuestas automáticas. En este momento nuestra operadora humana de despacho TropiGO ha sido notificada para atenderte personalmente.\n\n" +
+        "📞 También puedes llamarnos o escribirnos directamente al: *+591 57770679*";
+      triggerHandoff = true;
+    }
+
+    if (instantQuickReply) {
+      await sock.sendMessage(jid, { text: instantQuickReply });
+      await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          sender: "ASSISTANT",
+          content: instantQuickReply,
+          providerModel: "quick-action/instant",
+          tokensUsed: 0,
+          latencyMs: 15,
+        },
+      });
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastMessageAt: new Date(),
+          ...(triggerHandoff ? { status: "HUMAN_TAKEOVER" } : {}),
+        },
+      });
+      if (triggerHandoff) {
+        await prisma.handoffHistory.create({
+          data: {
+            conversationId: conversation.id,
+            reason: "Cliente seleccionó opción 5 (Atención Humana) en WhatsApp.",
+            action: "TAKEOVER",
+          },
+        });
+      }
+      return;
+    }
+
     try {
       await sock.sendPresenceUpdate("composing", jid);
     } catch {}
@@ -461,9 +598,25 @@ async function processBatch(
       maxToolRounds: 2,
     });
 
-    const reply =
+    let reply =
       aiResponse.content?.trim() ||
       "¡Hola! Soy TropiBot de TropiGO. ¿En qué puedo ayudarte hoy?";
+
+    // Si es saludo o mensaje informativo inicial, adjuntar opciones rápidas
+    const isGreeting =
+      recentMessages.length <= 2 ||
+      /hola|buenos|buenas|inicio|empezar|ayuda|opciones|qué haces|que haces/i.test(content);
+    if (isGreeting && !reply.includes("1️⃣") && !reply.includes("Opciones Rápidas")) {
+      reply +=
+        "\n\n────────────────────\n" +
+        "*Opciones Rápidas:*\n" +
+        "1️⃣ Ver Menú y Precios 🍔\n" +
+        "2️⃣ TropiGO Market (Abarrotes) 🛒\n" +
+        "3️⃣ Pedir TropiTaxi (10 Bs.) 🛵\n" +
+        "4️⃣ Enviar mi Ubicación GPS 📍\n" +
+        "5️⃣ Hablar con Operador Humano 👤\n" +
+        "_(Responde con el número de tu opción)_";
+    }
 
     await sock.sendMessage(jid, { text: reply });
 

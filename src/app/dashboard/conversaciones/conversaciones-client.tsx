@@ -10,6 +10,7 @@ import {
   Phone,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
   Cpu,
   MapPin,
   Mic,
@@ -614,8 +615,12 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
 
       {/* Contenedor del Chat en Vivo estilo WhatsApp Web */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 h-[720px] bg-white rounded-3xl border border-[#EAECF0] shadow-sm overflow-hidden">
-        {/* Columna Izquierda: Lista de Conversaciones */}
-        <div className="lg:col-span-4 border-r border-[#EAECF0] flex flex-col h-full bg-[#FAFAFA]">
+        {/* Columna Izquierda: Lista de Conversaciones (Oculta en móviles si hay un chat abierto) */}
+        <div
+          className={`lg:col-span-4 border-r border-[#EAECF0] flex flex-col h-full bg-[#FAFAFA] ${
+            selectedId ? "hidden lg:flex" : "flex"
+          }`}
+        >
           {/* Buscador y Filtros */}
           <div className="p-3.5 border-b border-[#EAECF0] space-y-2.5 bg-white">
             <div className="relative">
@@ -741,12 +746,25 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
           </div>
         </div>
 
-        {/* Columna Derecha: Hilo de Conversación */}
+        {/* Columna Derecha: Hilo de Conversación (Oculta en móviles si no hay selección) */}
         {activeConversation ? (
-          <div className="lg:col-span-8 flex flex-col h-full bg-[#F0F2F5]">
+          <div
+            className={`lg:col-span-8 flex flex-col h-full bg-[#F0F2F5] ${
+              !selectedId ? "hidden lg:flex" : "flex"
+            }`}
+          >
             {/* Header de la Conversación */}
             <div className="p-3.5 border-b border-[#EAECF0] flex flex-wrap items-center justify-between gap-3 bg-white">
-              <div className="flex items-center gap-3 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                {/* Botón Volver en Móvil */}
+                <button
+                  onClick={() => setSelectedId("")}
+                  className="lg:hidden p-1.5 -ml-1 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 transition-colors"
+                  title="Volver a la lista de chats"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+
                 <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-xs">
                   {(activeConversation.customer || activeConversation.contact)?.name?.[0] || "C"}
                 </div>
