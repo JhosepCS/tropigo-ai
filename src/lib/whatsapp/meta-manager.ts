@@ -433,14 +433,17 @@ export async function initiateMetaCoexistence(): Promise<{
 
     if (!res.ok) {
       let errMsg = data.error?.message || "La cuenta o número no cumple con los requisitos de coexistencia de Meta.";
-      if (data.error?.code === 100 || data.error?.error_subcode === 2388001) {
+      if (data.error?.code === 190 || (data.error?.message && /access token|OAuth/i.test(data.error.message))) {
+        errMsg =
+          "El Token de Acceso de Meta no es válido o está pendiente. Recuerda que tu Verificación de Empresa en Meta está 'En revisión' (demora aprox. 2 días hábiles). Una vez aprobada por Meta, podrás generar el Token permanente de System User con permisos oficiales.";
+      } else if (data.error?.code === 100 || data.error?.error_subcode === 2388001) {
         errMsg =
           "El número debe estar activo en la aplicación WhatsApp Business en tu celular y registrado bajo tu WABA en Meta Business Manager.";
       }
 
       return {
         success: false,
-        error: `Meta Coexistence Error: ${errMsg}`,
+        error: `Respuesta de Meta: ${errMsg}`,
       };
     }
 

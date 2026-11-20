@@ -51,6 +51,7 @@ const processedIds = new Map<string, number>();
 
 let backgroundJobsStarted = false;
 let reconnectTimer: NodeJS.Timeout | null = null;
+let activeSock: any = null;
 
 function scheduleReconnect(delayMs = 5000) {
   if (reconnectTimer) return;
@@ -435,7 +436,7 @@ async function processBatch(
     const recentMessages = await prisma.message.findMany({
       where: { conversationId: conversation.id },
       orderBy: { createdAt: "desc" },
-      take: 12,
+      take: 6,
     });
 
     const chatHistory = recentMessages.reverse().map((m) => ({
@@ -457,7 +458,7 @@ async function processBatch(
         confirmationVerified: false,
         source: "WHATSAPP",
       },
-      maxToolRounds: 3,
+      maxToolRounds: 2,
     });
 
     const reply =
@@ -607,12 +608,61 @@ function startHealthServer() {
   );
 
   const server = http.createServer((req, res) => {
+    // Endpoint para enviar mensajes WhatsApp desde la web/CRM vía Baileys
+    if (req.method === "POST" && (req.url === "/send-message" || req.url === "/api/send")) {
+      let body = "";
+      req.on("data", (chunk: any) => {
+        body += chunk;
+      });
+      req.on("end", async () => {
+        try {
+          const parsed = JSON.parse(body || "{}");
+          const { phone, text, buttons } = parsed;
+          if (!activeSock) {
+            res.writeHead(503, { "Content-Type": "application/json; charset=utf-8" });
+            res.end(
+              JSON.stringify({
+                success: false,
+                error: "WhatsApp Baileys no conectado en este momento.",
+              })
+            );
+            return;
+          }
+          const clean = (phone || "").replace(/\D/g, "");
+          const jid = clean.includes("@s.whatsapp.net") ? clean : `${clean}@s.whatsapp.net`;
+          let sent: any;
+          if (buttons && Array.isArray(buttons) && buttons.length > 0) {
+            let formattedText = `${text}\n\n`;
+            buttons.forEach((btn: any, index: number) => {
+              formattedText += `👉 *${index + 1}.* ${btn.title}\n`;
+            });
+            formattedText += `\n_(Responde con el número de tu opción)_`;
+            sent = await activeSock.sendMessage(jid, { text: formattedText });
+          } else {
+            sent = await activeSock.sendMessage(jid, { text: text || "" });
+          }
+          res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+          res.end(
+            JSON.stringify({
+              success: true,
+              id: sent?.key?.id || "baileys_sent",
+            })
+          );
+        } catch (e: any) {
+          res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ success: false, error: e.message }));
+        }
+      });
+      return;
+    }
+
     if (req.url === "/health" || req.url === "/" || req.url === "/healthz") {
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(
         JSON.stringify({
           status: "ok",
           service: "tropigo-whatsapp-worker",
+          baileysConnected: Boolean(activeSock),
           uptimeSeconds: Math.round(process.uptime()),
           timestamp: new Date().toISOString(),
         })
@@ -688,6 +738,7 @@ async function connectBaileys() {
     }
 
     if (connection === "open") {
+      activeSock = sock;
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
@@ -720,6 +771,7 @@ async function connectBaileys() {
     }
 
     if (connection === "close") {
+      activeSock = null;
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
       const shouldReconnect = !loggedOut;

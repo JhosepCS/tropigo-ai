@@ -6,7 +6,12 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, recipientPhone: explicitPhone, content } = await req.json();
+    const {
+      conversationId,
+      recipientPhone: explicitPhone,
+      content,
+      keepAiActive = false,
+    } = await req.json();
 
     if (!conversationId || !content || !content.trim()) {
       return NextResponse.json(
@@ -85,11 +90,12 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 5. Actualizar conversación a HUMAN_TAKEOVER (operador activo) y timestamp
+    // 5. Actualizar estado de la conversación (respetando si el operador desea mantener la IA activa)
+    const nextStatus = keepAiActive ? "AI_ACTIVE" : "HUMAN_TAKEOVER";
     await prisma.conversation.update({
       where: { id: conversationId },
       data: {
-        status: "HUMAN_TAKEOVER",
+        status: nextStatus,
         lastMessageAt: new Date(),
       },
     });

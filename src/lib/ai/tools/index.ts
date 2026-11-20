@@ -160,7 +160,7 @@ export async function getRealDataContextPrompt(): Promise<string> {
       prisma.merchant.findMany({
         where: { isOpen: true },
         select: { name: true, category: true, phone: true, address: true, isOpen: true },
-        take: 8,
+        take: 4,
       }),
       prisma.product.findMany({
         where: { isAvailable: true },
@@ -170,7 +170,7 @@ export async function getRealDataContextPrompt(): Promise<string> {
           merchant: { select: { name: true } },
           category: true,
         },
-        take: 15,
+        take: 6,
       }),
       prisma.deliveryZone.findMany({
         where: { isActive: true },

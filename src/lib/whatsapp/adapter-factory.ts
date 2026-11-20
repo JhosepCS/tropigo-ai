@@ -3,8 +3,10 @@ import { getActiveMetaAdapter } from "./meta-manager";
 
 export class WhatsAppAdapterFactory {
   /**
-   * Obtiene el proveedor oficial de WhatsApp (Meta Cloud API)
-   * Si no está configurado, retorna un fallback que informa que se debe conectar desde Ajustes.
+   * Obtiene el proveedor oficial de WhatsApp.
+   * Prioridad 1: Meta Cloud API oficial.
+   * Prioridad 2: Worker activo de WhatsApp (Baileys / Celular vinculado).
+   * Prioridad 3: Fallback descriptivo con advertencia clara.
    */
   static async getAdapter(): Promise<IWhatsAppProvider> {
     const metaAdapter = await getActiveMetaAdapter();
@@ -13,31 +15,66 @@ export class WhatsAppAdapterFactory {
       return metaAdapter;
     }
 
-    const fallbackSend = async (to: string, _text: string): Promise<string> => {
+    const workerPort = process.env.WORKER_PORT || 3001;
+    const workerUrl = `http://127.0.0.1:${workerPort}/send-message`;
+
+    const sendViaWorker = async (to: string, text: string, buttons?: any[]): Promise<string> => {
+      try {
+        const res = await fetch(workerUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: to, text, buttons }),
+          signal: AbortSignal.timeout(6000),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            return data.id || "baileys_sent";
+          }
+        }
+      } catch {}
+
       console.warn(
-        `[WhatsAppAdapterFactory] No se pudo enviar mensaje a ${to}. WhatsApp Business Cloud API no está conectado en Ajustes.`
+        `[WhatsAppAdapterFactory] No se pudo enviar mensaje a ${to}. Ni Meta Cloud API ni el worker Baileys respondieron.`
       );
       throw new Error(
-        "WhatsApp Cloud API no está configurado. Ve a Ajustes > Conectar WhatsApp para activar tu número oficial de Meta."
+        "WhatsApp no está activo en este momento. Verifica que el servicio de WhatsApp esté encendido."
       );
     };
 
-    return {
-      sendMessage: fallbackSend,
-      async sendInteractiveButtons(to, text, _buttons) {
-        return fallbackSend(to, text);
+    const provider: IWhatsAppProvider = {
+      async sendMessage(to: string, text: string): Promise<string> {
+        return sendViaWorker(to, text);
       },
-      async sendInteractiveList(to, header, body, _sections) {
-        return fallbackSend(to, `${header}\n\n${body}`);
+
+      async sendInteractiveButtons(to, text, buttons) {
+        return sendViaWorker(to, text, buttons);
       },
+
+      async sendInteractiveList(to, header, body, sections) {
+        let menu = `📋 *${header}*\n\n${body}\n\n`;
+        sections.forEach((sec) => {
+          menu += `*--- ${sec.title.toUpperCase()} ---*\n`;
+          sec.rows.forEach((row) => {
+            menu += `• *${row.title}*${row.description ? ` - ${row.description}` : ""}\n`;
+          });
+          menu += `\n`;
+        });
+        return sendViaWorker(to, menu.trim());
+      },
+
       async sendLocationRequest(to, text) {
-        return fallbackSend(to, text);
+        const msg = `${text}\n\n👉 *Pulsa el clip 📎 o botón (+) > Ubicación > Enviar mi ubicación actual*`;
+        return sendViaWorker(to, msg);
       },
+
       async markAsRead() {},
       async sendPresenceTyping() {},
-      async sendImage(to, _imageUrl, _caption) {
-        return fallbackSend(to, "[imagen]");
+      async sendImage(to, imageUrl, caption) {
+        return sendViaWorker(to, caption ? `${caption}\n${imageUrl}` : imageUrl);
       },
     };
+
+    return provider;
   }
 }

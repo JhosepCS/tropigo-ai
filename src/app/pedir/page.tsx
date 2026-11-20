@@ -38,11 +38,12 @@ export default async function PedirPage({
     tab?: string;
     vehiculo?: string;
     dir?: string;
+    codigo?: string;
   }>;
 }) {
   const params = await searchParams;
 
-  const [merchants, zones, business] = await Promise.all([
+  const [merchants, zones, business, promotions] = await Promise.all([
     prisma.merchant.findMany({
       where: { isOpen: true },
       include: {
@@ -58,7 +59,24 @@ export default async function PedirPage({
       orderBy: { baseDeliveryCost: "asc" },
     }),
     prisma.businessProfile.findFirst(),
+    prisma.promotion.findMany({
+      where: { isActive: true, expiresAt: { gt: new Date() } },
+      include: { merchant: { select: { name: true } } },
+      orderBy: { expiresAt: "asc" },
+      take: 8,
+    }),
   ]);
+
+  const activePromotions = promotions.map((promotion) => ({
+    id: promotion.id,
+    code: promotion.code,
+    title: promotion.title,
+    discountType: promotion.discountType,
+    discountValue: promotion.discountValue,
+    minOrderAmount: promotion.minOrderAmount,
+    expiresAt: promotion.expiresAt.toISOString(),
+    merchantName: promotion.merchant?.name?.replace(/^\[DEMO\]\s*/i, "") ?? null,
+  }));
 
   const fareConfig = normalizeRideFareConfig({
     minFare: business?.rideMinFare,
@@ -85,6 +103,8 @@ export default async function PedirPage({
       initialTab={normalizeTab(params.tab)}
       initialVehicle={params.vehiculo === "TORITO" ? "TORITO" : "MOTO"}
       initialAddress={params.dir ?? ""}
+      initialTrackingCode={params.codigo ?? ""}
+      promotions={activePromotions}
       rideFares={{
         MOTO: motoFare.fare,
         TORITO: toritoFare.fare,

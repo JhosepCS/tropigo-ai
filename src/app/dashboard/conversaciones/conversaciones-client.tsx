@@ -277,7 +277,36 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
   const [lastSync, setLastSync] = useState<Date>(new Date());
   const [isLiveSyncing, setIsLiveSyncing] = useState<boolean>(true);
+  const [isTriggeringAi, setIsTriggeringAi] = useState(false);
+  const [keepAiActive, setKeepAiActive] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const quickActions = [
+    {
+      label: "🍔 Menú y Precios",
+      text: "🌴 ¡Hola! Nuestro menú de hoy incluye:\n1. Pollo Broaster Familiar (18 Bs.)\n2. Hamburguesa Doble Queso (25 Bs.)\n3. Silpancho Especial (20 Bs.)\n¿Cuál te gustaría pedir hoy?",
+    },
+    {
+      label: "🛒 TropiGO Market",
+      text: "🛒 En TropiGO Market tenemos abarrotes, gaseosas y despensa fresca. Revisa nuestro catálogo con fotos y ofertas en: https://tropigo-ai.vercel.app/pedir",
+    },
+    {
+      label: "🛵 Pedir TropiTaxi (10 Bs.)",
+      text: "🛵 ¡Servicio de TropiTaxi disponible! Tarifa plana en Ivirgarzama desde 10 Bs. ¿Desde dónde y hacia dónde necesitas tu viaje?",
+    },
+    {
+      label: "📍 Pedir Ubicación GPS",
+      text: "📍 Por favor compártenos tu ubicación por WhatsApp (toca el clip 📎 > Ubicación > Enviar mi ubicación actual) para calcular tu entrega al instante.",
+    },
+    {
+      label: "💳 QR de Pago",
+      text: "💳 Puedes pagar en Efectivo contra entrega o por QR Simple Bancario a nuestra cuenta oficial TropiGO. ¿Qué método prefieres?",
+    },
+    {
+      label: "📦 Rastrear Pedido",
+      text: "📦 Puedes ver la ruta de tu pedido en vivo con mapa en tiempo real ingresando tu código en: https://tropigo-ai.vercel.app/pedir",
+    },
+  ];
 
   const activeConversation = conversations.find((c) => c.id === selectedId) || conversations[0];
 
@@ -377,6 +406,44 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
     }
   };
 
+  const handleQuickText = (text: string) => {
+    setReplyText(text);
+  };
+
+  const handleTriggerAi = async () => {
+    if (!activeConversation || isTriggeringAi) return;
+    setIsTriggeringAi(true);
+    setSendError(null);
+    try {
+      const res = await fetch("/api/conversations/trigger-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: activeConversation.id }),
+      });
+      const data = await res.json();
+      if (data.success && data.message) {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === activeConversation.id
+              ? {
+                  ...c,
+                  status: "ai_active",
+                  messages: [...c.messages, data.message],
+                  lastMessageAt: new Date().toISOString(),
+                }
+              : c
+          )
+        );
+      } else if (data.error) {
+        setSendError(data.error);
+      }
+    } catch (err: any) {
+      setSendError(err.message || "Error al forzar respuesta de IA");
+    } finally {
+      setIsTriggeringAi(false);
+    }
+  };
+
   const handleSendHumanReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim() || !activeConversation || isSending) return;
@@ -397,12 +464,14 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
       isDemo: activeConversation.isDemo,
     };
 
+    const targetStatus = keepAiActive ? "ai_active" : "human_takeover";
+
     setConversations((prev) =>
       prev.map((c) =>
         c.id === activeConversation.id
           ? {
               ...c,
-              status: "human_takeover",
+              status: targetStatus,
               messages: [...c.messages, newMsg],
               lastMessageAt: new Date().toISOString(),
             }
@@ -421,6 +490,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
             conversationId: activeConversation.id,
             recipientPhone: (activeConversation.customer || activeConversation.contact)?.phone,
             content: textToSend,
+            keepAiActive,
           }),
         });
 
@@ -675,14 +745,14 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
         {activeConversation ? (
           <div className="lg:col-span-8 flex flex-col h-full bg-[#F0F2F5]">
             {/* Header de la Conversación */}
-            <div className="p-3.5 border-b border-[#EAECF0] flex items-center justify-between bg-white">
+            <div className="p-3.5 border-b border-[#EAECF0] flex flex-wrap items-center justify-between gap-3 bg-white">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-xs">
                   {(activeConversation.customer || activeConversation.contact)?.name?.[0] || "C"}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h4 className="font-bold text-xs text-[#101828] truncate">
+                    <h4 className="font-bold text-xs sm:text-sm text-[#101828] truncate">
                       {(activeConversation.customer || activeConversation.contact)?.name || "Cliente WhatsApp"}
                     </h4>
                     {activeConversation.isDemo && (
@@ -692,7 +762,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
                     )}
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-[#667085]">
-                    <span>{(activeConversation.customer || activeConversation.contact)?.phone}</span>
+                    <span className="font-mono">{(activeConversation.customer || activeConversation.contact)?.phone}</span>
                     {activeConversation.customer?.zone && (
                       <>
                         <span>•</span>
@@ -705,27 +775,55 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
                 </div>
               </div>
 
-              {/* Botón de Takeover Humano (Pausa de IA) */}
-              <button
-                onClick={handleToggleTakeover}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs ${
-                  (activeConversation.status || "").toLowerCase().includes("takeover")
-                    ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                    : "bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300"
-                }`}
-              >
+              {/* Controles de Estado de IA y Operador Humano */}
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Badge de Estado Actual */}
                 {(activeConversation.status || "").toLowerCase().includes("takeover") ? (
-                  <>
-                    <Bot className="w-3.5 h-3.5" />
-                    <span>Reanudar Asistente IA</span>
-                  </>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-900 border border-amber-300 shadow-2xs">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    <span>Control Humano (IA Pausada)</span>
+                  </span>
                 ) : (
-                  <>
-                    <UserCheck className="w-3.5 h-3.5 text-amber-800" />
-                    <span>Pausar IA & Tomar Control</span>
-                  </>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>IA Activa (TropiBot)</span>
+                  </span>
                 )}
-              </button>
+
+                {/* Botón de Alternar Modo */}
+                <button
+                  onClick={handleToggleTakeover}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs ${
+                    (activeConversation.status || "").toLowerCase().includes("takeover")
+                      ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200"
+                  }`}
+                  title="Cambiar entre IA automática y Operador Humano"
+                >
+                  {(activeConversation.status || "").toLowerCase().includes("takeover") ? (
+                    <>
+                      <Bot className="w-3.5 h-3.5" />
+                      <span>Reanudar IA</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>Tomar Control</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Botón Para Forzar que la IA Responda Inmediatamente */}
+                <button
+                  onClick={handleTriggerAi}
+                  disabled={isTriggeringAi}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-gradient-to-r from-[#0D7B46] to-[#074423] hover:opacity-95 text-white shadow-xs transition-transform active:scale-95 disabled:opacity-50"
+                  title="Pedir a TropiBot IA que genere y envíe una respuesta ahora mismo por WhatsApp"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+                  <span>{isTriggeringAi ? "IA Generando..." : "Forzar Respuesta IA"}</span>
+                </button>
+              </div>
             </div>
 
             {/* Hilo de Mensajes */}
@@ -886,10 +984,28 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input de Respuesta de Operador Humano */}
-            <div className="p-3.5 border-t border-[#EAECF0] bg-white">
+            {/* Input de Respuesta de Operador Humano y Botones Rápidos */}
+            <div className="p-3 border-t border-[#EAECF0] bg-white space-y-2.5">
+              {/* Barra de Botones Rápidos Interactivos */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-[#0D7B46]" />
+                  <span>Botones Rápidos:</span>
+                </span>
+                {quickActions.map((qa, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleQuickText(qa.text)}
+                    className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#F4EEF2] hover:bg-[#E6F4D7] text-[#1F0E1C] hover:text-[#074423] border border-slate-200 transition-colors shadow-2xs"
+                  >
+                    {qa.label}
+                  </button>
+                ))}
+              </div>
+
               {sendError && (
-                <div className="mb-2.5 bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-xl text-xs flex items-center justify-between">
+                <div className="bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-xl text-xs flex items-center justify-between">
                   <span>⚠️ {sendError}</span>
                   <button
                     onClick={() => setSendError(null)}
@@ -900,44 +1016,48 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
                 </div>
               )}
 
-              {!(activeConversation.status || "").toLowerCase().includes("takeover") ? (
-                <div className="bg-[#F8F9FA] p-2.5 rounded-xl border border-[#EAECF0] flex items-center justify-between text-xs text-[#667085]">
-                  <span className="flex items-center gap-1.5">
-                    <Bot className="w-4 h-4 text-emerald-600" />
-                    El agente de IA está atendiendo automáticamente por WhatsApp.
-                  </span>
-                  <button
-                    onClick={handleToggleTakeover}
-                    className="text-xs font-bold text-emerald-700 hover:underline"
-                  >
-                    Tomar el control para responder
-                  </button>
-                </div>
-              ) : (
-                <form onSubmit={handleSendHumanReply} className="flex items-center gap-2">
+              {/* Formulario de Envío (SIEMPRE DISPONIBLE para el operador) */}
+              <form onSubmit={handleSendHumanReply} className="space-y-1.5">
+                <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
-                    placeholder="Escribe como operador de despacho... (se enviará a WhatsApp)"
-                    className="flex-1 bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-4 py-2.5 text-xs text-[#101828] focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    placeholder="Escribe un mensaje para el cliente... (se enviará directamente a su WhatsApp)"
+                    className="flex-1 bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-4 py-2.5 text-xs text-[#101828] focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-inner"
                   />
                   <button
                     type="submit"
                     disabled={!replyText.trim() || isSending}
-                    className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-[#D0D5DD] text-white p-2.5 rounded-xl transition-colors shrink-0 shadow-xs flex items-center gap-1.5 text-xs font-bold"
+                    className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-[#D0D5DD] text-white px-4 py-2.5 rounded-xl transition-all shrink-0 shadow-sm flex items-center gap-1.5 text-xs font-bold active:scale-95"
                   >
                     {isSending ? (
                       <span className="animate-spin text-xs">⏳</span>
                     ) : (
                       <>
                         <Send className="w-4 h-4" />
-                        <span className="hidden sm:inline">Enviar</span>
+                        <span>Enviar a WhatsApp</span>
                       </>
                     )}
                   </button>
-                </form>
-              )}
+                </div>
+
+                {/* Casilla de verificación: Mantener IA activa */}
+                <div className="flex items-center justify-between pt-0.5 text-[11px] text-[#475467]">
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={keepAiActive}
+                      onChange={(e) => setKeepAiActive(e.target.checked)}
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="font-medium">
+                      Mantener al Asistente IA activo tras enviar este mensaje (no pausar TropiBot)
+                    </span>
+                  </label>
+                  <span className="text-[10px] text-slate-400">Canal: WhatsApp (+591 57770679)</span>
+                </div>
+              </form>
             </div>
           </div>
         ) : (
