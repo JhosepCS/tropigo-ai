@@ -8,6 +8,7 @@ import {
   Navigation,
   MapPin,
   ShoppingBag,
+  ShoppingCart,
   Plus,
   Minus,
   Trash2,
@@ -34,6 +35,15 @@ import {
   Package,
   Layers,
   Info,
+  User,
+  Percent,
+  Receipt,
+  RotateCcw,
+  CreditCard,
+  HelpCircle,
+  Share2,
+  Check,
+  X,
 } from "lucide-react";
 
 interface Product {
@@ -72,7 +82,231 @@ interface CartItem {
   notes?: string;
 }
 
-type PortalTab = "inicio" | "delivery" | "mototaxi" | "rastreo" | "promos";
+type PortalTab =
+  | "inicio"
+  | "mercados"
+  | "promos"
+  | "pedidos"
+  | "perfil"
+  | "delivery"
+  | "mototaxi"
+  | "rastreo";
+
+// Componente Oficial Logo TropiGO (según branding oficial del proyecto)
+function TropiGOLogo({
+  size = 36,
+  bg = "bg-[#0D7B46]",
+  className = "",
+}: {
+  size?: number;
+  bg?: string;
+  className?: string;
+}) {
+  return (
+    <div
+      style={{ width: size, height: size }}
+      className={`rounded-2xl flex items-center justify-center shadow-sm select-none shrink-0 overflow-hidden ${bg} ${className}`}
+    >
+      <svg
+        viewBox="0 0 100 100"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className="w-full h-full p-1.5"
+      >
+        <path
+          d="M20 28C20 23.58 23.58 20 28 20H72C76.42 20 80 23.58 80 28C80 32.42 76.42 36 72 36H57.5L50 82C49.3 86.42 45.4 89.6 40.9 89.1C36.48 88.6 33.3 84.7 34 80.2L41.5 36H28C23.58 36 20 32.42 20 28Z"
+          fill="white"
+        />
+      </svg>
+    </div>
+  );
+}
+
+// Catálogo Real de Supermercado (TropiGO Market estilo PedidosYa Market)
+interface MarketProduct {
+  id: string;
+  name: string;
+  unit: string;
+  price: number;
+  originalPrice: number;
+  discount: string;
+  sales: string;
+  image: string;
+  category: string;
+}
+
+const MARKET_PRODUCTS: MarketProduct[] = [
+  {
+    id: "mkt-1",
+    name: "Tomate Pera Fresco",
+    unit: "/kg",
+    price: 9.25,
+    originalPrice: 18.5,
+    discount: "50% OFF",
+    sales: "+8mil ventas",
+    image: "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=500&q=80",
+    category: "Verduras",
+  },
+  {
+    id: "mkt-2",
+    name: "Coca-Cola Zero Azúcar 2L",
+    unit: "Botella 2L",
+    price: 11.76,
+    originalPrice: 16.8,
+    discount: "30% OFF",
+    sales: "+12mil ventas",
+    image: "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=500&q=80",
+    category: "Bebidas",
+  },
+  {
+    id: "mkt-3",
+    name: "Huevos Sofía Marrón (Docena)",
+    unit: "12 unidades",
+    price: 8.5,
+    originalPrice: 12.0,
+    discount: "25% OFF",
+    sales: "+5mil ventas",
+    image: "https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?auto=format&fit=crop&w=500&q=80",
+    category: "Abarrotes",
+  },
+  {
+    id: "mkt-4",
+    name: "Leche PIL Entera UHT 1 Litro",
+    unit: "Bolsa 1000ml",
+    price: 6.0,
+    originalPrice: 7.5,
+    discount: "20% OFF",
+    sales: "+15mil ventas",
+    image: "https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=500&q=80",
+    category: "Lácteos",
+  },
+  {
+    id: "mkt-5",
+    name: "Pollo Sofía Entero Fresco",
+    unit: "/kg",
+    price: 28.0,
+    originalPrice: 35.0,
+    discount: "20% OFF",
+    sales: "+7mil ventas",
+    image: "https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&w=500&q=80",
+    category: "Carnes",
+  },
+  {
+    id: "mkt-6",
+    name: "Arroz Grano de Oro Superior 1kg",
+    unit: "Bolsa 1kg",
+    price: 8.5,
+    originalPrice: 10.0,
+    discount: "15% OFF",
+    sales: "+4mil ventas",
+    image: "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=500&q=80",
+    category: "Abarrotes",
+  },
+  {
+    id: "mkt-7",
+    name: "Aceite Fino Clásico 900ml",
+    unit: "Botella 900ml",
+    price: 12.0,
+    originalPrice: 14.5,
+    discount: "17% OFF",
+    sales: "+6mil ventas",
+    image: "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?auto=format&fit=crop&w=500&q=80",
+    category: "Abarrotes",
+  },
+  {
+    id: "mkt-8",
+    name: "Cerveza Huari Tradicional 710ml",
+    unit: "Botella 710ml",
+    price: 14.0,
+    originalPrice: 18.0,
+    discount: "22% OFF",
+    sales: "+3mil ventas",
+    image: "https://images.unsplash.com/photo-1608270199920-534a7844005b?auto=format&fit=crop&w=500&q=80",
+    category: "Bebidas",
+  },
+];
+
+// Promociones Reales Destacadas
+const PROMO_PRODUCTS = [
+  {
+    id: "prm-1",
+    name: "Krunchy Bites 5 piezas + Papas Fritas",
+    restaurant: "Pollos El Trópico",
+    price: 46.8,
+    originalPrice: 52.0,
+    discount: "10% DTO",
+    freeDelivery: true,
+    image: "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?auto=format&fit=crop&w=500&q=80",
+  },
+  {
+    id: "prm-2",
+    name: "Silpancho Cochabambino Especial con Huevo y Carne",
+    restaurant: "Palacio del Silpancho",
+    price: 20.0,
+    originalPrice: 28.0,
+    discount: "29% DTO",
+    exclusiveBadge: "Solo en TropiGO",
+    freeDelivery: true,
+    image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=500&q=80",
+  },
+  {
+    id: "prm-3",
+    name: "Doble Smash Cheeseburger con Tocino y Papas",
+    restaurant: "Burger King Ivirgarzama",
+    price: 25.0,
+    originalPrice: 35.0,
+    discount: "30% OFF",
+    freeDelivery: false,
+    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=500&q=80",
+  },
+  {
+    id: "prm-4",
+    name: "Pizza Familiar Pepperoni Suprema con Mozzarella",
+    restaurant: "Pizzería Venecia",
+    price: 50.0,
+    originalPrice: 70.0,
+    discount: "28% OFF",
+    freeDelivery: true,
+    image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=500&q=80",
+  },
+  {
+    id: "prm-5",
+    name: "Sushi Roll Salmón Tropical (10 cortes)",
+    restaurant: "Oishi Sushi Bar",
+    price: 38.0,
+    originalPrice: 45.0,
+    discount: "15% DTO",
+    freeDelivery: false,
+    image: "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?auto=format&fit=crop&w=500&q=80",
+  },
+];
+
+// Historial de Pedidos Realistas estilo PedidosYa
+const ORDER_HISTORY_MOCK = [
+  {
+    id: "ord-1",
+    store: "Tropical Chicken - Hipermaxi Av Juan De L...",
+    date: "mar 29 de sept",
+    status: "Entregado",
+    total: 143,
+    items: [
+      { name: "Combo Broaster Familiar", img: "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?auto=format&fit=crop&w=200&q=80" },
+      { name: "Porción de Arroz Especial", img: "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=200&q=80" },
+      { name: "Mocochinchi Helado 1L", img: "https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&w=200&q=80" },
+    ],
+  },
+  {
+    id: "ord-2",
+    store: "Burger King Ivirgarzama",
+    date: "Ayer 20:15",
+    status: "Entregado",
+    total: 55,
+    items: [
+      { name: "Doble Bacon Burger", img: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=200&q=80" },
+      { name: "Coca-Cola 2L", img: "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=200&q=80" },
+    ],
+  },
+];
 
 // Imágenes reales de comida de alta calidad
 function getProductPhoto(product: Product): string {
@@ -86,6 +320,9 @@ function getProductPhoto(product: Product): string {
   if (name.includes("hamburguesa") || name.includes("burger") || name.includes("lomito")) {
     return "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=500&q=80";
   }
+  if (name.includes("carne") || name.includes("bife") || name.includes("asado") || name.includes("parrilla") || name.includes("churrasco")) {
+    return "https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&w=500&q=80";
+  }
   if (name.includes("majadito") || name.includes("pique") || name.includes("silpancho") || name.includes("arroz")) {
     return "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=500&q=80";
   }
@@ -98,7 +335,10 @@ function getProductPhoto(product: Product): string {
   if (name.includes("pizza")) {
     return "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=500&q=80";
   }
-  if (name.includes("jugo") || name.includes("soda") || name.includes("bebida") || name.includes("gaseosa")) {
+  if (name.includes("coca") || name.includes("cola") || name.includes("soda") || name.includes("gaseosa")) {
+    return "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=500&q=80";
+  }
+  if (name.includes("jugo") || name.includes("bebida") || name.includes("mocochinchi")) {
     return "https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&w=500&q=80";
   }
   return "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=500&q=80";
@@ -146,7 +386,19 @@ export function PedirClient({
 
   // Estado del Portal
   const [activeTab, setActiveTab] = useState<PortalTab>(
-    initialTab === "mototaxi" ? "mototaxi" : initialTab === "rastreo" ? "rastreo" : "inicio"
+    initialTab &&
+      [
+        "inicio",
+        "mercados",
+        "promos",
+        "pedidos",
+        "perfil",
+        "delivery",
+        "mototaxi",
+        "rastreo",
+      ].includes(initialTab)
+      ? initialTab
+      : "inicio"
   );
   const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory);
   const [searchQuery, setSearchQuery] = useState(initialSearch);
@@ -155,12 +407,13 @@ export function PedirClient({
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [promoSlide, setPromoSlide] = useState(0);
+  const [ordersFilter, setOrdersFilter] = useState<"ENTREGADOS" | "CANCELADOS">("ENTREGADOS");
 
   // Formulario Checkout
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState(
-    initialAddress || "Ivirgarzama, Trópico Cochabamba"
+    initialAddress || "Av. Blanco Galindo, Cochabamba"
   );
   const [referencePoint, setReferencePoint] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"EFECTIVO" | "QR_BANCO">("EFECTIVO");
@@ -174,14 +427,18 @@ export function PedirClient({
   const [modalQuantity, setModalQuantity] = useState(1);
   const [modalNotes, setModalNotes] = useState("");
 
-  // Puntos Frecuentes Ivirgarzama (POIs estilo Yango)
+  // Puntos Frecuentes Cochabamba e Ivirgarzama (POIs estilo Yango)
   const ivirgarzamaPOIs = [
+    "Av. Blanco Galindo, Cochabamba",
+    "Plaza Colón, Cochabamba",
+    "Quillacollo Centro, Cochabamba",
+    "Cala Cala, Cochabamba",
     "Plaza Principal de Ivirgarzama",
-    "Hospital de Segundo Nivel",
-    "Mercado Central",
-    "Mercado Campesino",
-    "Terminal de Buses",
-    "Cruce Mariposas",
+    "Hospital de Segundo Nivel Ivirgarzama",
+    "Mercado Central de Ivirgarzama",
+    "Mercado Campesino Ivirgarzama",
+    "Terminal de Buses Ivirgarzama",
+    "Cruce Mariposas, Trópico",
     "Av. Mortensen",
     "Sindicato San Salvador",
   ];
@@ -312,6 +569,54 @@ export function PedirClient({
     setCart((prev) => prev.filter((item) => item.product.id !== productId));
   };
 
+  // Agregar rápido al carrito desde TropiGO Market o Promos (botón "+")
+  const addToCartQuick = (
+    item: { id: string; name: string; price: number; image?: string },
+    merchantName: string
+  ) => {
+    const prod: Product = {
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      description: "",
+      imageUrl: item.image || null,
+      merchantId: "mkt-main",
+      category: "Mercado",
+    };
+    setCart((prev) => {
+      const existing = prev.find((it) => it.product.id === prod.id);
+      if (existing) {
+        return prev.map((it) =>
+          it.product.id === prod.id ? { ...it, quantity: it.quantity + 1 } : it
+        );
+      }
+      return [
+        ...prev,
+        {
+          product: prod,
+          quantity: 1,
+          merchantName,
+        },
+      ];
+    });
+  };
+
+  // Repetir pedido anterior al instante
+  const handleRepeatOrder = (order: (typeof ORDER_HISTORY_MOCK)[0]) => {
+    order.items.forEach((item, idx) => {
+      addToCartQuick(
+        {
+          id: `repeat-${order.id}-${idx}`,
+          name: item.name,
+          price: idx === 0 ? order.total - 15 : 15,
+          image: item.img,
+        },
+        order.store
+      );
+    });
+    setIsCartOpen(true);
+  };
+
   const subtotal = cart.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
   const totalAmount = subtotal;
   const totalItemsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
@@ -413,56 +718,46 @@ export function PedirClient({
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col font-sans pb-24 sm:pb-12">
       {/* ============================================================== */}
-      {/* 1. HEADER ESTILO PEDIDOSYA (CURVO, MORADO OSCURO + VERDE ESMERALDA) */}
+      {/* 1. HEADER VERDE ESMERALDA (EXACTO AL MOCKUP Y BRANDING OFICIAL) */}
       {/* ============================================================== */}
-      <header className="relative bg-gradient-to-b from-[#180A2B] via-[#220E3E] to-[#2B104F] text-white pt-4 pb-10 px-4 sm:px-6 rounded-b-[2.5rem] shadow-xl overflow-hidden">
-        {/* Destellos decorativos verdes y morados */}
-        <div className="absolute -top-16 -right-16 w-64 h-64 bg-[#10B981]/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute top-20 -left-20 w-72 h-72 bg-[#7C3AED]/20 rounded-full blur-3xl pointer-events-none" />
+      <header className="relative bg-[#0D7B46] text-white pt-4 pb-12 px-4 sm:px-6 rounded-b-[2.5rem] shadow-xl overflow-hidden">
+        {/* Destellos sutiles y formas curvas */}
+        <div className="absolute -top-16 -right-16 w-64 h-64 bg-emerald-400/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-20 -left-20 w-72 h-72 bg-[#074423]/40 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="max-w-2xl mx-auto space-y-4 relative z-10">
-          {/* Fila 1: Selector de Dirección + Notificaciones + Carrito */}
+        <div className="max-w-2xl mx-auto space-y-3.5 relative z-10">
+          {/* Fila 1: Selector de Dirección + Carrito estilo Mockup */}
           <div className="flex items-center justify-between gap-3">
             {/* Ubicación / Dirección activa */}
             <button
               onClick={() => setIsAddressModalOpen(true)}
-              className="flex items-center gap-1.5 text-left group"
+              className="flex items-center gap-1.5 text-left group min-w-0"
             >
-              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0 border border-white/10 group-hover:bg-[#10B981]/20 transition-colors">
-                <MapPin className="w-4 h-4 text-[#10B981]" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1">
-                  <span className="text-[11px] font-medium text-emerald-300 uppercase tracking-wider">
-                    Entregar en
-                  </span>
-                  <ChevronDown className="w-3.5 h-3.5 text-emerald-300" />
-                </div>
-                <p className="text-xs sm:text-sm font-bold text-white truncate max-w-[200px] sm:max-w-xs">
-                  {deliveryAddress}
-                </p>
-              </div>
+              <span className="text-sm sm:text-base font-extrabold text-white truncate max-w-[240px] sm:max-w-md">
+                {deliveryAddress}
+              </span>
+              <ChevronDown className="w-4 h-4 text-emerald-200 shrink-0 group-hover:translate-y-0.5 transition-transform" />
             </button>
 
-            {/* Acciones derecha: Campanita y Carrito */}
+            {/* Acciones derecha: Notificación WhatsApp y Carrito de compras */}
             <div className="flex items-center gap-2">
               <Link
-                href="https://wa.me/59157770679?text=Hola%20TropiBot%20necesito%20ayuda"
+                href="https://wa.me/59157770679?text=Hola%20TropiBot%2C%20necesito%20ayuda"
                 target="_blank"
-                className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white border border-white/10 transition-colors"
-                title="Atención al cliente"
+                className="w-10 h-10 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white transition-colors"
+                title="Atención TropiBot WhatsApp 24/7"
               >
-                <Bell className="w-4 h-4 text-emerald-300" />
+                <Bell className="w-4 h-4 text-white" />
               </Link>
 
               <button
                 onClick={() => setIsCartOpen(true)}
-                className="relative w-10 h-10 rounded-full bg-[#10B981] hover:bg-[#059669] flex items-center justify-center text-white shadow-md shadow-emerald-900/40 transition-transform active:scale-95"
-                title="Ver carrito"
+                className="relative w-10 h-10 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white transition-transform active:scale-95"
+                title="Ver carrito de compras"
               >
-                <ShoppingBag className="w-4 h-4" />
+                <ShoppingCart className="w-5 h-5 text-white" />
                 {totalItemsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#180A2B] text-[#10B981] border-2 border-[#10B981] font-black text-[10px] flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#F5C22B] text-slate-950 font-black text-[11px] flex items-center justify-center shadow-md">
                     {totalItemsCount}
                   </span>
                 )}
@@ -470,71 +765,81 @@ export function PedirClient({
             </div>
           </div>
 
-          {/* Fila 2: Buscador tipo Píldora Blanca estilo PedidosYa */}
-          <div className="relative pt-1">
+          {/* Fila 2: Buscador tipo Píldora Blanca: "Locales, platos y productos" */}
+          <div className="relative pt-0.5">
             <div className="relative flex items-center">
               <input
                 id="searchAppInput"
                 name="searchAppInput"
                 type="text"
-                placeholder="Buscar locales, platos o mototaxis..."
+                placeholder="Locales, platos y productos"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white text-slate-800 placeholder-slate-400 text-xs sm:text-sm font-medium py-3.5 pl-4 pr-12 rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-[#10B981]"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && activeTab !== "delivery") {
+                    setActiveTab("delivery");
+                  }
+                }}
+                className="w-full bg-white text-slate-800 placeholder-slate-400 text-xs sm:text-sm font-semibold py-3.5 pl-5 pr-12 rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-emerald-400"
               />
               <button
                 onClick={() => {
                   if (activeTab !== "delivery") setActiveTab("delivery");
                 }}
-                className="absolute right-1.5 w-9 h-9 rounded-full bg-[#10B981] hover:bg-[#059669] text-white flex items-center justify-center shadow-sm transition-colors"
+                className="absolute right-1.5 w-9 h-9 rounded-full bg-[#0D7B46] hover:bg-[#074423] text-white flex items-center justify-center shadow-sm transition-colors"
               >
                 <Search className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {/* Fila 3: Hero Banner / Carrusel Curvo estilo PedidosYa */}
-          <div className="pt-2">
-            <div className="relative rounded-3xl bg-gradient-to-r from-[#2A1149] to-[#144234] border border-white/10 p-5 overflow-hidden shadow-xl">
-              <div className="relative z-10 max-w-[65%] space-y-2">
-                <span className="inline-block bg-[#10B981] text-[#180A2B] font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                  {promoBanners[promoSlide].tag}
-                </span>
-                <h2 className="text-base sm:text-lg font-black text-white leading-tight">
-                  {promoBanners[promoSlide].title}
+          {/* Fila 3: Hero Banner Verde Oscuro #074423 con Logo TropiGO y [XX]% OFF */}
+          <div className="pt-1.5">
+            <div className="relative rounded-3xl bg-[#074423] border border-white/10 p-5 sm:p-6 overflow-hidden shadow-2xl">
+              <div className="relative z-10 max-w-[62%] sm:max-w-[65%] space-y-2">
+                {/* Logo badge TropiGO con "T" */}
+                <div className="flex items-center gap-2">
+                  <TropiGOLogo size={32} bg="bg-[#0D7B46]" />
+                  <span className="text-[11px] font-black text-emerald-300 uppercase tracking-wider">
+                    TropiGO
+                  </span>
+                </div>
+
+                <h2 className="text-base sm:text-xl font-black text-white leading-tight">
+                  Tus compras hasta
                 </h2>
-                <p className="text-[11px] text-slate-200 line-clamp-2">
-                  {promoBanners[promoSlide].desc}
+
+                <div className="inline-block bg-[#F5C22B] text-slate-950 font-black text-base sm:text-xl px-3 py-1 rounded-xl shadow-md tracking-tight">
+                  50% OFF
+                </div>
+
+                <p className="text-[11px] text-emerald-100/90 font-medium line-clamp-1 pt-0.5">
+                  Restaurantes, mercado y despensa fresca
                 </p>
+
                 <button
-                  onClick={promoBanners[promoSlide].action}
-                  className="mt-1 bg-white hover:bg-emerald-50 text-[#180A2B] font-black text-xs px-4 py-2 rounded-full shadow-sm flex items-center gap-1.5 transition-all active:scale-95"
+                  onClick={() => setActiveTab("mercados")}
+                  className="mt-1 bg-white hover:bg-emerald-50 text-[#074423] font-black text-xs px-4 py-2 rounded-full shadow-md flex items-center gap-1.5 transition-all active:scale-95"
                 >
-                  <span>{promoBanners[promoSlide].btnText}</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-[#10B981]" />
+                  <span>Ver TropiGO Market</span>
+                  <ArrowRight className="w-3.5 h-3.5 text-[#0D7B46]" />
                 </button>
               </div>
 
-              {/* Foto apetitosa recortada a la derecha */}
-              <div className="absolute -right-4 -bottom-6 w-36 sm:w-44 h-36 sm:h-44 pointer-events-none">
+              {/* Foto apetitosa recortada a la derecha (Coca-Cola, vegetales, broaster) */}
+              <div className="absolute -right-3 -bottom-3 sm:-right-4 sm:-bottom-4 w-36 sm:w-48 h-36 sm:h-48 pointer-events-none flex items-center justify-center">
                 <img
-                  src={promoBanners[promoSlide].img}
-                  alt="Promo TropiGO"
-                  className="w-full h-full object-cover rounded-full shadow-2xl border-4 border-white/10"
+                  src="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80"
+                  alt="Mercado TropiGO"
+                  className="w-full h-full object-cover rounded-2xl sm:rounded-3xl shadow-2xl border-2 border-white/20 transform rotate-2"
                 />
               </div>
 
               {/* Indicadores de 3 puntos (Dots) */}
               <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-20">
-                {promoBanners.map((_, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setPromoSlide(idx)}
-                    className={`h-1.5 rounded-full transition-all ${
-                      promoSlide === idx ? "w-5 bg-[#10B981]" : "w-1.5 bg-white/40"
-                    }`}
-                  />
-                ))}
+                <span className="w-5 h-1.5 rounded-full bg-[#F5C22B]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-white/40" />
+                <span className="w-1.5 h-1.5 rounded-full bg-white/40" />
               </div>
             </div>
           </div>
@@ -542,109 +847,138 @@ export function PedirClient({
       </header>
 
       {/* ============================================================== */}
-      {/* 2. CUERPO PRINCIPAL (ESTILO PEDIDOSYA CON VERDE & MORADO) */}
+      {/* 2. CUERPO PRINCIPAL */}
       {/* ============================================================== */}
       <main className="max-w-2xl mx-auto px-4 w-full -mt-3 space-y-6 relative z-20">
         {/* ========================================================== */}
-        {/* VISTA 1: INICIO (HOME SUPER-APP ESTILO PEDIDOSYA) */}
+        {/* VISTA 1: INICIO (HOME SUPER-APP EXACTA AL MOCKUP) */}
         {/* ========================================================== */}
         {activeTab === "inicio" && (
           <div className="space-y-6">
-            {/* 2 GRANDES TARJETAS PRINCIPALES (Restaurantes vs TropiTaxi) */}
+            {/* 2x2 GRID DE CATEGORÍAS PRINCIPALES (EXACTO AL MOCKUP) */}
             <div className="grid grid-cols-2 gap-3.5 pt-2">
-              {/* Tarjeta 1: Restaurantes */}
+              {/* Card 1: Restaurantes */}
               <div
                 onClick={() => {
                   setActiveTab("delivery");
                   setSelectedCategory("Restaurante");
                 }}
-                className="group cursor-pointer bg-white rounded-3xl p-4 shadow-sm hover:shadow-md border border-slate-100 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5"
+                className="group cursor-pointer bg-[#F3F4F6] hover:bg-white rounded-3xl p-4 shadow-sm hover:shadow-md border border-slate-200/60 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5"
               >
-                <div className="w-full h-24 sm:h-28 rounded-2xl overflow-hidden mb-3 bg-amber-50">
+                <div className="w-full h-28 sm:h-32 rounded-2xl overflow-hidden mb-3 bg-white shadow-inner">
                   <img
-                    src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=400&q=80"
+                    src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=500&q=80"
                     alt="Restaurantes"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
                 </div>
                 <div>
-                  <h3 className="font-black text-sm sm:text-base text-slate-900 group-hover:text-[#10B981] transition-colors">
+                  <h3 className="font-extrabold text-base sm:text-lg text-slate-900 group-hover:text-[#0D7B46] transition-colors leading-tight">
                     Restaurantes
                   </h3>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                    La comida que te gusta
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Hamburguesas, broaster y platos
                   </p>
                 </div>
               </div>
 
-              {/* Tarjeta 2: TropiTaxi (Viajes en Moto y Torito estilo Yango) */}
+              {/* Card 2: TropiGO Market (Fondo Menta Suave #E6F7ED) */}
               <div
-                onClick={() => setActiveTab("mototaxi")}
-                className="group cursor-pointer bg-white rounded-3xl p-4 shadow-sm hover:shadow-md border border-slate-100 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5"
+                onClick={() => setActiveTab("mercados")}
+                className="group cursor-pointer bg-[#E6F7ED] hover:bg-[#d8f2e2] rounded-3xl p-4 shadow-sm hover:shadow-md border border-emerald-200/60 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5"
               >
-                <div className="w-full h-24 sm:h-28 rounded-2xl overflow-hidden mb-3 bg-emerald-50">
+                <div className="w-full h-28 sm:h-32 rounded-2xl overflow-hidden mb-3 bg-white shadow-inner relative">
                   <img
-                    src="https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80"
-                    alt="TropiTaxi"
+                    src="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=500&q=80"
+                    alt="TropiGO Market"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                  <span className="absolute top-2 left-2 bg-[#0D7B46] text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-xs">
+                    T Market
+                  </span>
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base sm:text-lg text-[#074423] transition-colors leading-tight">
+                    TropiGO Market
+                  </h3>
+                  <p className="text-[11px] text-emerald-800/80 mt-0.5">
+                    Supermercado, Coca-Cola y despensa
+                  </p>
+                </div>
+              </div>
+
+              {/* Card 3: Tiendas */}
+              <div
+                onClick={() => {
+                  setActiveTab("delivery");
+                  setSelectedCategory("Tiendas");
+                }}
+                className="group cursor-pointer bg-[#F3F4F6] hover:bg-white rounded-3xl p-4 shadow-sm hover:shadow-md border border-slate-200/60 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5"
+              >
+                <div className="w-full h-28 sm:h-32 rounded-2xl overflow-hidden mb-3 bg-white shadow-inner">
+                  <img
+                    src="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=500&q=80"
+                    alt="Tiendas"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
                 </div>
                 <div>
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="font-black text-sm sm:text-base text-slate-900 group-hover:text-[#10B981] transition-colors">
-                      TropiTaxi
-                    </h3>
-                    <span className="text-[9px] bg-emerald-100 text-[#059669] font-black px-1.5 py-0.5 rounded-md">
-                      10 Bs.
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                    Moto Flash & Toritos al instante
+                  <h3 className="font-extrabold text-base sm:text-lg text-slate-900 group-hover:text-[#0D7B46] transition-colors leading-tight">
+                    Tiendas
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Regalos, bazar, librería y hogar
                   </p>
                 </div>
               </div>
 
-              {/* Tarjeta 3: Súper & Mercado */}
+              {/* Card 4: Carnicerías */}
               <div
                 onClick={() => {
                   setActiveTab("delivery");
-                  setSelectedCategory("TODOS");
-                  setSearchQuery("mercado");
+                  setSelectedCategory("Carnicerías");
                 }}
-                className="group cursor-pointer bg-white rounded-3xl p-3.5 shadow-sm hover:shadow-md border border-slate-100 flex items-center gap-3 transition-all"
+                className="group cursor-pointer bg-[#F3F4F6] hover:bg-white rounded-3xl p-4 shadow-sm hover:shadow-md border border-slate-200/60 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5"
               >
-                <div className="w-14 h-14 rounded-2xl overflow-hidden bg-rose-50 shrink-0">
+                <div className="w-full h-28 sm:h-32 rounded-2xl overflow-hidden mb-3 bg-white shadow-inner">
                   <img
-                    src="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80"
-                    alt="Súper"
-                    className="w-full h-full object-cover"
+                    src="https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&w=500&q=80"
+                    alt="Carnicerías"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
                 </div>
-                <div className="min-w-0">
-                  <h4 className="font-black text-xs sm:text-sm text-slate-900">Súper & Mercado</h4>
-                  <p className="text-[10px] text-slate-500 truncate">Tus compras desde casa</p>
+                <div>
+                  <h3 className="font-extrabold text-base sm:text-lg text-slate-900 group-hover:text-[#0D7B46] transition-colors leading-tight">
+                    Carnicerías
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Cortes frescos de res, pollo y cerdo
+                  </p>
                 </div>
               </div>
+            </div>
 
-              {/* Tarjeta 4: Mandados & Encomiendas */}
-              <div
-                onClick={() => {
-                  setActiveTab("delivery");
-                  setSelectedCategory("Mandados");
-                }}
-                className="group cursor-pointer bg-white rounded-3xl p-3.5 shadow-sm hover:shadow-md border border-slate-100 flex items-center gap-3 transition-all"
-              >
-                <div className="w-14 h-14 rounded-2xl overflow-hidden bg-purple-50 shrink-0">
-                  <img
-                    src="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=200&q=80"
-                    alt="Mandados"
-                    className="w-full h-full object-cover"
-                  />
+            {/* BANNER TROPITAXI (Yango Style) */}
+            <div
+              onClick={() => setActiveTab("mototaxi")}
+              className="cursor-pointer bg-gradient-to-r from-[#074423] to-[#0D7B46] text-white rounded-3xl p-4 shadow-lg flex items-center justify-between gap-4 transition-all hover:scale-[1.01]"
+            >
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="bg-[#F5C22B] text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full uppercase">
+                    Yango Moto
+                  </span>
+                  <span className="text-xs font-bold text-emerald-200">Tarifa fija 10 Bs.</span>
                 </div>
-                <div className="min-w-0">
-                  <h4 className="font-black text-xs sm:text-sm text-slate-900">Mandados</h4>
-                  <p className="text-[10px] text-slate-500 truncate">Llevamos lo que sea</p>
-                </div>
+                <h3 className="font-black text-base sm:text-lg text-white">
+                  TropiTaxi: Moto Flash & Torito
+                </h3>
+                <p className="text-[11px] text-emerald-100">
+                  Llega a tu destino en 3 min o envía paquetes sin moverte
+                </p>
+              </div>
+              <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
+                <Bike className="w-8 h-8 text-[#F5C22B]" />
               </div>
             </div>
 
@@ -1181,72 +1515,636 @@ export function PedirClient({
         )}
 
         {/* ========================================================== */}
-        {/* VISTA 4: RASTREO DE PEDIDO O VIAJE */}
+        {/* VISTA 4: RASTREO EN VIVO (ESTILO PDF PÁGINA 8) */}
         {/* ========================================================== */}
         {activeTab === "rastreo" && (
-          <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm space-y-5">
-            <div className="text-center space-y-1">
-              <div className="w-12 h-12 rounded-2xl bg-[#180A2B] text-[#10B981] flex items-center justify-center mx-auto mb-2 shadow-md">
-                <Clock className="w-6 h-6" />
+          <div className="space-y-4">
+            {/* Mapa simulado con ruta y puntos de entrega */}
+            <div className="relative h-64 sm:h-72 w-full rounded-3xl overflow-hidden bg-slate-100 border border-slate-200 shadow-sm flex items-center justify-center">
+              {/* Cuadrícula de calles simulada */}
+              <div className="absolute inset-0 opacity-40 bg-[radial-gradient(#94a3b8_1px,transparent_1px)] [background-size:24px_24px]" />
+              
+              {/* Calles SVG */}
+              <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
+                <line x1="20%" y1="0%" x2="20%" y2="100%" stroke="#e2e8f0" strokeWidth="8" />
+                <line x1="50%" y1="0%" x2="50%" y2="100%" stroke="#e2e8f0" strokeWidth="10" />
+                <line x1="80%" y1="0%" x2="80%" y2="100%" stroke="#e2e8f0" strokeWidth="8" />
+                <line x1="0%" y1="30%" x2="100%" y2="30%" stroke="#e2e8f0" strokeWidth="8" />
+                <line x1="0%" y1="65%" x2="100%" y2="65%" stroke="#e2e8f0" strokeWidth="12" />
+                
+                {/* Ruta de entrega punteada */}
+                <path
+                  d="M 120 220 L 120 120 L 280 120 L 280 40"
+                  fill="none"
+                  stroke="#1F0E1C"
+                  strokeWidth="4"
+                  strokeDasharray="6 6"
+                />
+              </svg>
+
+              {/* Punto de origen (Local / Restaurante) */}
+              <div className="absolute left-[108px] top-[208px] flex items-center justify-center">
+                <div className="w-6 h-6 rounded-full bg-[#0D7B46] border-2 border-white shadow-md flex items-center justify-center text-[10px] text-white font-bold">
+                  ●
+                </div>
               </div>
-              <h2 className="text-lg font-black text-slate-900">Rastrear Pedido o Carrera</h2>
-              <p className="text-xs text-slate-500">
-                Ingresa tu código (ej: <strong>TRP-1041</strong> o <strong>VIAJE-2001</strong>).
-              </p>
+
+              {/* Moto en camino (animada) */}
+              <div className="absolute left-[180px] top-[106px] -translate-x-1/2 -translate-y-1/2 bg-[#0D7B46] text-white p-2 rounded-full shadow-lg border-2 border-white animate-pulse">
+                <Bike className="w-5 h-5" />
+              </div>
+
+              {/* Punto de destino (Casa del cliente) */}
+              <div className="absolute left-[268px] top-[28px] flex items-center justify-center">
+                <div className="w-6 h-6 rounded-full bg-[#1F0E1C] border-2 border-white shadow-md flex items-center justify-center text-[10px] text-white font-bold">
+                  ●
+                </div>
+              </div>
+
+              {/* Botón Volver */}
+              <button
+                onClick={() => setActiveTab("inicio")}
+                className="absolute top-3 left-3 w-10 h-10 rounded-full bg-white/90 hover:bg-white text-slate-800 shadow-md flex items-center justify-center z-10 transition-transform active:scale-95"
+              >
+                <ChevronDown className="w-5 h-5 rotate-90" />
+              </button>
             </div>
 
-            <form onSubmit={handleSearchTracking} className="flex gap-2">
-              <input
-                id="trackingCodeInput"
-                name="trackingCodeInput"
-                type="text"
-                required
-                placeholder="Código TRP-XXXX"
-                value={trackingCode}
-                onChange={(e) => setTrackingCode(e.target.value.toUpperCase())}
-                className="flex-1 px-4 py-2.5 text-xs font-mono uppercase bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#10B981] focus:outline-none"
-              />
-              <button
-                type="submit"
-                disabled={isTrackingLoading}
-                className="bg-[#180A2B] hover:bg-[#2B104F] text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-colors"
-              >
-                {isTrackingLoading ? "..." : "Consultar"}
-              </button>
-            </form>
-
-            {trackingError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl text-center">
-                {trackingError}
+            {/* Tarjeta de Estado del Pedido estilo PDF Pág 8 */}
+            <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-black text-slate-900">
+                    Llega en 18 min
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Destino: {deliveryAddress}
+                  </p>
+                </div>
+                <span className="bg-emerald-100 text-[#059669] text-xs font-black px-3 py-1 rounded-full">
+                  En tiempo
+                </span>
               </div>
-            )}
 
-            {trackingResult && (
-              <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-2 text-xs">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                  <span className="font-mono font-bold text-slate-900">{trackingResult.code}</span>
-                  <span className="px-2.5 py-0.5 rounded-full font-bold bg-emerald-100 text-[#059669]">
-                    {trackingResult.statusLabel}
+              {/* Pasos del pedido con checks */}
+              <div className="space-y-3.5 pt-2">
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-[#0D7B46] text-white flex items-center justify-center shadow-xs">
+                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  </div>
+                  <span className="text-xs sm:text-sm font-bold text-slate-900">
+                    Pedido confirmado
                   </span>
                 </div>
-                <p>
-                  <strong>Servicio:</strong> {trackingResult.type}
-                </p>
-                {trackingResult.destination && (
-                  <p>
-                    <strong>Destino:</strong> {trackingResult.destination}
-                  </p>
-                )}
-                {typeof trackingResult.totalAmount === "number" && (
-                  <p>
-                    <strong>Total:</strong>{" "}
-                    <span className="font-bold text-[#059669]">
-                      {trackingResult.totalAmount.toFixed(2)} Bs.
-                    </span>
-                  </p>
-                )}
+
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-[#0D7B46] text-white flex items-center justify-center shadow-xs">
+                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  </div>
+                  <span className="text-xs sm:text-sm font-bold text-slate-900">
+                    Preparando tu pedido
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-slate-400" />
+                  </div>
+                  <span className="text-xs sm:text-sm font-semibold text-slate-500">
+                    En camino a tu dirección
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-slate-400" />
+                  </div>
+                  <span className="text-xs sm:text-sm font-semibold text-slate-400">
+                    Entregado
+                  </span>
+                </div>
               </div>
-            )}
+
+              {/* Tarjeta del Repartidor estilo PDF Pág 8 */}
+              <div className="pt-2">
+                <div className="bg-[#F4EEF2] rounded-2xl p-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-white overflow-hidden shadow-xs border border-white">
+                      <img
+                        src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80"
+                        alt="Repartidor"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-900">
+                        Carlos Mendoza
+                      </h4>
+                      <p className="text-[11px] text-slate-600">Tu repartidor TropiGO (Moto)</p>
+                    </div>
+                  </div>
+
+                  <Link
+                    href="https://wa.me/59157770679?text=Hola%20Carlos%2C%20sobre%20mi%20pedido%20TropiGO"
+                    target="_blank"
+                    className="w-10 h-10 rounded-full bg-[#0D7B46] hover:bg-[#074423] text-white flex items-center justify-center shadow-md transition-transform active:scale-95"
+                    title="Llamar o escribir al repartidor"
+                  >
+                    <Phone className="w-4 h-4" />
+                  </Link>
+                </div>
+              </div>
+
+              {/* Buscador de otro código */}
+              <div className="pt-2 border-t border-slate-100">
+                <form onSubmit={handleSearchTracking} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Consultar otro código TRP-XXXX"
+                    value={trackingCode}
+                    onChange={(e) => setTrackingCode(e.target.value.toUpperCase())}
+                    className="flex-1 px-4 py-2.5 text-xs font-mono uppercase bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#0D7B46] focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isTrackingLoading}
+                    className="bg-[#1F0E1C] hover:bg-black text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-colors"
+                  >
+                    {isTrackingLoading ? "..." : "Buscar"}
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================== */}
+        {/* VISTA 5: TROPIGO MARKET / MERCADOS (ESTILO PDF PÁGINA 4) */}
+        {/* ========================================================== */}
+        {activeTab === "mercados" && (
+          <div className="space-y-5">
+            {/* Buscador de mercado estilo PDF Pág 4 */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="¿Qué estás buscando?"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-white text-slate-800 placeholder-slate-400 text-xs sm:text-sm font-semibold py-3.5 pl-11 pr-4 rounded-full shadow-md border border-slate-200/80 focus:outline-none focus:ring-2 focus:ring-[#0D7B46]"
+              />
+              <Search className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+            </div>
+
+            {/* 4 Categorías Cuadradas estilo PDF Pág 4 */}
+            <div className="grid grid-cols-4 gap-2.5">
+              {[
+                {
+                  label: "Supermercados",
+                  img: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=300&q=80",
+                  cat: "Abarrotes",
+                },
+                {
+                  label: "Bebidas",
+                  img: "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=300&q=80",
+                  cat: "Bebidas",
+                },
+                {
+                  label: "Minimarkets",
+                  img: "https://images.unsplash.com/photo-1578916171728-46686eac8d58?auto=format&fit=crop&w=300&q=80",
+                  cat: "Minimarket",
+                },
+                {
+                  label: "Carnes",
+                  img: "https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&w=300&q=80",
+                  cat: "Carnes",
+                },
+              ].map((item, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setSearchQuery(item.cat)}
+                  className="flex flex-col items-center gap-1.5 group text-center"
+                >
+                  <div className="w-full aspect-square rounded-2xl bg-[#F4EEF2] overflow-hidden p-1.5 border border-slate-200/70 group-hover:border-[#0D7B46] shadow-xs transition-all group-active:scale-95">
+                    <img
+                      src={item.img}
+                      alt={item.label}
+                      className="w-full h-full object-cover rounded-xl"
+                    />
+                  </div>
+                  <span className="text-[10px] sm:text-[11px] font-extrabold text-slate-800 leading-tight">
+                    {item.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Chip de % Promociones */}
+            <div className="flex items-center gap-2">
+              <span className="bg-[#F4EEF2] text-[#1F0E1C] font-extrabold text-xs px-3.5 py-1.5 rounded-full shadow-xs flex items-center gap-1">
+                <Percent className="w-3.5 h-3.5 text-[#0D7B46]" />
+                <span>Promociones</span>
+              </span>
+            </div>
+
+            {/* Banner Amarillo Envíos Gratis estilo PDF Pág 4 */}
+            <div className="bg-[#F5C22B] text-slate-950 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-2.5">
+                <Sparkles className="w-5 h-5 text-slate-900 shrink-0" />
+                <p className="text-xs sm:text-sm font-black leading-snug">
+                  Tienes 4 envíos sin costo, ¡aprovecha y pide!
+                </p>
+              </div>
+              <button
+                onClick={(e) => {
+                  const target = e.currentTarget.parentElement;
+                  if (target) target.style.display = "none";
+                }}
+                className="w-6 h-6 rounded-full hover:bg-black/10 flex items-center justify-center shrink-0"
+              >
+                <X className="w-4 h-4 text-slate-900" />
+              </button>
+            </div>
+
+            {/* Contenedor Verde Pastel TropiGO Market estilo PDF Pág 4 */}
+            <div className="bg-[#E6F4D7] rounded-3xl p-4 sm:p-5 border border-emerald-200/80 shadow-sm space-y-4">
+              <div>
+                <span className="text-[11px] font-black text-[#0D7B46] uppercase tracking-wider">
+                  TropiGO Market
+                </span>
+                <h3 className="text-base sm:text-lg font-black text-[#1F0E1C] leading-tight">
+                  Ofertas del día con envío gratis
+                </h3>
+              </div>
+
+              {/* Grid de Productos Reales de Supermercado con botón "+" */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {MARKET_PRODUCTS.map((prod) => (
+                  <div
+                    key={prod.id}
+                    className="bg-white rounded-2xl p-3 border border-emerald-100 shadow-xs flex flex-col justify-between group hover:shadow-md transition-shadow relative"
+                  >
+                    <div>
+                      {/* Foto del Producto con badge de descuento */}
+                      <div className="relative aspect-square rounded-xl overflow-hidden bg-slate-50 mb-2.5">
+                        <img
+                          src={prod.image}
+                          alt={prod.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <span className="absolute top-1.5 left-1.5 bg-[#F5C22B] text-slate-950 font-black text-[9px] px-1.5 py-0.5 rounded-md shadow-xs">
+                          {prod.discount}
+                        </span>
+                      </div>
+
+                      <h4 className="font-extrabold text-xs text-slate-900 line-clamp-1">
+                        {prod.name}
+                      </h4>
+                      <p className="text-[10px] text-slate-500 font-medium">{prod.unit}</p>
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-between">
+                      <div>
+                        <div className="font-black text-xs sm:text-sm text-slate-900">
+                          Bs {prod.price.toFixed(2)}
+                        </div>
+                        <div className="text-[10px] text-slate-400 line-through">
+                          Bs {prod.originalPrice.toFixed(2)}
+                        </div>
+                      </div>
+
+                      {/* Botón "+" para agregar al carrito al instante */}
+                      <button
+                        onClick={() => addToCartQuick(prod, "TropiGO Market")}
+                        className="w-8 h-8 rounded-full bg-[#0D7B46] hover:bg-[#074423] text-white flex items-center justify-center shadow-md transition-transform active:scale-90"
+                        title="Agregar al carrito"
+                      >
+                        <Plus className="w-4 h-4 stroke-[3]" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================== */}
+        {/* VISTA 6: PROMOCIONES (ESTILO PDF PÁGINA 5) */}
+        {/* ========================================================== */}
+        {activeTab === "promos" && (
+          <div className="space-y-5">
+            {/* Banner Amarillo Envíos Gratis estilo PDF Pág 5 */}
+            <div className="bg-[#F5C22B] text-slate-950 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-2.5">
+                <Sparkles className="w-5 h-5 text-slate-900 shrink-0" />
+                <p className="text-xs sm:text-sm font-black leading-snug">
+                  Tienes 4 envíos sin costo, ¡aprovecha y pide!
+                </p>
+              </div>
+              <button
+                onClick={(e) => {
+                  const target = e.currentTarget.parentElement;
+                  if (target) target.style.display = "none";
+                }}
+                className="w-6 h-6 rounded-full hover:bg-black/10 flex items-center justify-center shrink-0"
+              >
+                <X className="w-4 h-4 text-slate-900" />
+              </button>
+            </div>
+
+            {/* Sección Productos Destacados estilo PDF Pág 5 */}
+            <div className="space-y-3">
+              <h2 className="text-lg sm:text-xl font-black text-[#1F0E1C]">
+                Productos destacados
+              </h2>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {PROMO_PRODUCTS.map((item) => (
+                  <div
+                    key={item.id}
+                    className="bg-white rounded-3xl border border-slate-100 p-3.5 shadow-sm hover:shadow-md transition-shadow flex gap-3.5 items-center justify-between"
+                  >
+                    <div className="flex gap-3 items-center min-w-0">
+                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-slate-100 shrink-0 relative">
+                        <img
+                          src={item.image}
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                        />
+                        <span className="absolute top-1 left-1 bg-[#F5C22B] text-slate-950 font-black text-[9px] px-1.5 py-0.5 rounded-md shadow-xs">
+                          {item.discount}
+                        </span>
+                      </div>
+
+                      <div className="min-w-0 space-y-0.5">
+                        <span className="text-[10px] font-bold text-[#0D7B46] uppercase">
+                          {item.restaurant}
+                        </span>
+                        <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 line-clamp-2">
+                          {item.name}
+                        </h4>
+                        <div className="flex items-center gap-2 pt-0.5">
+                          <span className="font-black text-xs sm:text-sm text-slate-900">
+                            Bs {item.price.toFixed(2)}
+                          </span>
+                          <span className="text-[11px] text-slate-400 line-through">
+                            Bs {item.originalPrice.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => addToCartQuick(item, item.restaurant)}
+                      className="w-9 h-9 rounded-full bg-[#0D7B46] hover:bg-[#074423] text-white flex items-center justify-center shrink-0 shadow-md transition-transform active:scale-95"
+                      title="Agregar al carrito"
+                    >
+                      <Plus className="w-4 h-4 stroke-[3]" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Sección Descubre las promos más buscadas estilo PDF Pág 5 */}
+            <div className="space-y-3 pt-2">
+              <h2 className="text-lg sm:text-xl font-black text-[#1F0E1C]">
+                Descubre las promos más buscadas
+              </h2>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div
+                  onClick={() => {
+                    setActiveTab("delivery");
+                    setSelectedCategory("Restaurante");
+                  }}
+                  className="cursor-pointer bg-gradient-to-tr from-[#1F0E1C] to-[#3a1b35] text-white rounded-3xl p-4 shadow-md flex flex-col justify-between h-36"
+                >
+                  <span className="bg-[#F5C22B] text-slate-950 font-black text-[9px] px-2 py-0.5 rounded-full w-fit">
+                    Almuerzos
+                  </span>
+                  <div>
+                    <h3 className="font-black text-sm">Almuerzos Ejecutivos</h3>
+                    <p className="text-[10px] text-slate-300">Desde 15 Bs. con sopa y segundo</p>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setActiveTab("mercados")}
+                  className="cursor-pointer bg-gradient-to-tr from-[#0D7B46] to-[#074423] text-white rounded-3xl p-4 shadow-md flex flex-col justify-between h-36"
+                >
+                  <span className="bg-[#F5C22B] text-slate-950 font-black text-[9px] px-2 py-0.5 rounded-full w-fit">
+                    Mercado
+                  </span>
+                  <div>
+                    <h3 className="font-black text-sm">Combos Despensa</h3>
+                    <p className="text-[10px] text-emerald-100">Arroz, aceite, leche y gaseosa</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================== */}
+        {/* VISTA 7: MIS PEDIDOS (ESTILO PDF PÁGINA 9) */}
+        {/* ========================================================== */}
+        {activeTab === "pedidos" && (
+          <div className="space-y-5">
+            {/* Header del módulo */}
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl sm:text-2xl font-black text-[#1F0E1C]">
+                Mis pedidos
+              </h2>
+              <button
+                onClick={() => setIsCartOpen(true)}
+                className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-700"
+              >
+                <ShoppingCart className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Toggle de Filtro: Entregados vs Cancelados estilo PDF Pág 9 */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setOrdersFilter("ENTREGADOS")}
+                className={`px-5 py-2 rounded-full text-xs font-black transition-all ${
+                  ordersFilter === "ENTREGADOS"
+                    ? "bg-[#1F0E1C] text-white shadow-sm"
+                    : "bg-[#F4EEF2] text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Entregados
+              </button>
+              <button
+                onClick={() => setOrdersFilter("CANCELADOS")}
+                className={`px-5 py-2 rounded-full text-xs font-black transition-all ${
+                  ordersFilter === "CANCELADOS"
+                    ? "bg-[#1F0E1C] text-white shadow-sm"
+                    : "bg-[#F4EEF2] text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Cancelados
+              </button>
+            </div>
+
+            {/* Listado de Pedidos por Mes */}
+            <div className="space-y-3">
+              <h3 className="font-extrabold text-sm text-slate-500 uppercase tracking-wider">
+                Noviembre 2026
+              </h3>
+
+              {ordersFilter === "ENTREGADOS" ? (
+                ORDER_HISTORY_MOCK.map((order) => (
+                  <div
+                    key={order.id}
+                    className="bg-white rounded-3xl border border-slate-100 p-4 sm:p-5 shadow-sm space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <span className="text-[11px] font-bold text-[#0D7B46]">
+                          Entregado {order.date}
+                        </span>
+                        <h4 className="font-black text-sm sm:text-base text-slate-900 leading-tight">
+                          {order.store}
+                        </h4>
+                      </div>
+                      <span className="font-black text-sm sm:text-base text-slate-900">
+                        Bs {order.total}
+                      </span>
+                    </div>
+
+                    {/* Fila de miniaturas de fotos reales estilo PDF Pág 9 */}
+                    <div className="flex items-center gap-2.5">
+                      {order.items.map((it, idx) => (
+                        <div
+                          key={idx}
+                          className="w-16 h-16 rounded-2xl bg-[#F4EEF2] overflow-hidden p-1 border border-slate-100"
+                        >
+                          <img
+                            src={it.img}
+                            alt={it.name}
+                            className="w-full h-full object-cover rounded-xl"
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Botón Píldora Ancha "Repetir" estilo PDF Pág 9 */}
+                    <button
+                      onClick={() => handleRepeatOrder(order)}
+                      className="w-full bg-[#F4EEF2] hover:bg-[#e9dfe6] text-[#1F0E1C] font-black text-xs sm:text-sm py-3 rounded-full flex items-center justify-center gap-2 transition-colors active:scale-98"
+                    >
+                      <RotateCcw className="w-4 h-4 text-[#0D7B46]" />
+                      <span>Repetir</span>
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="bg-white rounded-3xl border border-dashed border-slate-200 p-8 text-center text-xs text-slate-500">
+                  No tienes pedidos cancelados.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================== */}
+        {/* VISTA 8: MI PERFIL (ESTILO PDF PÁGINA 10) */}
+        {/* ========================================================== */}
+        {activeTab === "perfil" && (
+          <div className="space-y-5">
+            <h2 className="text-xl sm:text-2xl font-black text-[#1F0E1C]">
+              Mi perfil
+            </h2>
+
+            {/* Tarjeta de Usuario estilo PDF Pág 10 */}
+            <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-sm flex items-center gap-4">
+              <div className="w-16 h-16 rounded-full bg-[#F4EEF2] text-[#0D7B46] font-black text-xl flex items-center justify-center shrink-0 border border-slate-200">
+                JC
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-extrabold text-base sm:text-lg text-[#1F0E1C] leading-tight">
+                  Jhosep Carrasco
+                </h3>
+                <p className="text-xs text-slate-500 font-medium truncate">
+                  jhosep@tropigo.bo • +591 77769199
+                </p>
+                <span className="inline-block mt-1 bg-emerald-100 text-[#074423] font-bold text-[10px] px-2.5 py-0.5 rounded-full">
+                  Cliente TropiGO 🌴
+                </span>
+              </div>
+            </div>
+
+            {/* Lista de Opciones de Menú estilo PDF Pág 10 */}
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm divide-y divide-slate-100 overflow-hidden">
+              <button
+                onClick={() => setIsAddressModalOpen(true)}
+                className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 transition-colors"
+              >
+                <div className="flex items-center gap-3.5">
+                  <MapPin className="w-5 h-5 text-[#0D7B46]" />
+                  <div>
+                    <h4 className="font-bold text-xs sm:text-sm text-slate-900">
+                      Mis direcciones
+                    </h4>
+                    <p className="text-[11px] text-slate-500">{deliveryAddress}</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </button>
+
+              <button
+                onClick={() => setIsCheckoutOpen(true)}
+                className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 transition-colors"
+              >
+                <div className="flex items-center gap-3.5">
+                  <CreditCard className="w-5 h-5 text-[#0D7B46]" />
+                  <div>
+                    <h4 className="font-bold text-xs sm:text-sm text-slate-900">
+                      Métodos de pago
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      {paymentMethod === "EFECTIVO" ? "Efectivo al recibir" : "QR Simple Bancario"}
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </button>
+
+              <button
+                onClick={() => setActiveTab("promos")}
+                className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 transition-colors"
+              >
+                <div className="flex items-center gap-3.5">
+                  <Tag className="w-5 h-5 text-[#0D7B46]" />
+                  <div>
+                    <h4 className="font-bold text-xs sm:text-sm text-slate-900">
+                      Cupones
+                    </h4>
+                    <p className="text-[11px] text-slate-500">Tus descuentos disponibles</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </button>
+
+              <Link
+                href="https://wa.me/59157770679?text=Hola%20TropiBot%2C%20necesito%20ayuda%20con%20mi%20cuenta"
+                target="_blank"
+                className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 transition-colors"
+              >
+                <div className="flex items-center gap-3.5">
+                  <HelpCircle className="w-5 h-5 text-[#0D7B46]" />
+                  <div>
+                    <h4 className="font-bold text-xs sm:text-sm text-slate-900">
+                      Ayuda y soporte WhatsApp
+                    </h4>
+                    <p className="text-[11px] text-slate-500">Atención oficial con IA (+591 57770679)</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </Link>
+            </div>
           </div>
         )}
       </main>
@@ -1658,15 +2556,15 @@ export function PedirClient({
       )}
 
       {/* ============================================================== */}
-      {/* 8. BARRA DE NAVEGACIÓN INFERIOR (BOTTOM APP BAR ESTILO PEDIDOSYA) */}
+      {/* 8. BARRA DE NAVEGACIÓN INFERIOR (5 PESTAÑAS EXACTAS AL PDF) */}
       {/* ============================================================== */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200/80 z-40 px-3 py-2 shadow-lg">
         <div className="max-w-md mx-auto flex items-center justify-around">
-          {/* 1. Inicio */}
+          {/* 1. Inicio (PDF Pág 2) */}
           <button
             onClick={() => setActiveTab("inicio")}
             className={`flex flex-col items-center gap-0.5 py-1 px-3 transition-colors ${
-              activeTab === "inicio" ? "text-[#059669] font-black" : "text-slate-400 font-medium"
+              activeTab === "inicio" ? "text-[#0D7B46] font-black" : "text-slate-400 font-medium"
             }`}
           >
             <div
@@ -1679,68 +2577,73 @@ export function PedirClient({
             <span className="text-[10px]">Inicio</span>
           </button>
 
-          {/* 2. Restaurantes */}
+          {/* 2. Mercados (PDF Pág 4) */}
           <button
-            onClick={() => setActiveTab("delivery")}
+            onClick={() => setActiveTab("mercados")}
             className={`flex flex-col items-center gap-0.5 py-1 px-3 transition-colors ${
-              activeTab === "delivery" ? "text-[#059669] font-black" : "text-slate-400 font-medium"
+              activeTab === "mercados" ? "text-[#0D7B46] font-black" : "text-slate-400 font-medium"
             }`}
           >
             <div
               className={`p-1 rounded-xl transition-colors ${
-                activeTab === "delivery" ? "bg-emerald-50" : ""
+                activeTab === "mercados" ? "bg-emerald-50" : ""
               }`}
             >
-              <UtensilsCrossed className="w-5 h-5" />
+              <ShoppingBag className="w-5 h-5" />
             </div>
-            <span className="text-[10px]">Comida</span>
+            <span className="text-[10px]">Mercados</span>
           </button>
 
-          {/* 3. TropiTaxi (Viajes) */}
+          {/* 3. Promos (PDF Pág 5) */}
           <button
-            onClick={() => setActiveTab("mototaxi")}
+            onClick={() => setActiveTab("promos")}
             className={`flex flex-col items-center gap-0.5 py-1 px-3 transition-colors ${
-              activeTab === "mototaxi" ? "text-[#059669] font-black" : "text-slate-400 font-medium"
+              activeTab === "promos" ? "text-[#0D7B46] font-black" : "text-slate-400 font-medium"
             }`}
           >
             <div
               className={`p-1 rounded-xl transition-colors ${
-                activeTab === "mototaxi" ? "bg-emerald-50" : ""
+                activeTab === "promos" ? "bg-emerald-50" : ""
               }`}
             >
-              <Navigation className="w-5 h-5" />
+              <Percent className="w-5 h-5" />
             </div>
-            <span className="text-[10px]">TropiTaxi</span>
+            <span className="text-[10px]">Promos</span>
           </button>
 
-          {/* 4. Rastreo */}
+          {/* 4. Pedidos (PDF Pág 9) */}
           <button
-            onClick={() => setActiveTab("rastreo")}
+            onClick={() => setActiveTab("pedidos")}
             className={`flex flex-col items-center gap-0.5 py-1 px-3 transition-colors ${
-              activeTab === "rastreo" ? "text-[#059669] font-black" : "text-slate-400 font-medium"
+              activeTab === "pedidos" ? "text-[#0D7B46] font-black" : "text-slate-400 font-medium"
             }`}
           >
             <div
               className={`p-1 rounded-xl transition-colors ${
-                activeTab === "rastreo" ? "bg-emerald-50" : ""
+                activeTab === "pedidos" ? "bg-emerald-50" : ""
               }`}
             >
-              <Clock className="w-5 h-5" />
+              <Receipt className="w-5 h-5" />
             </div>
-            <span className="text-[10px]">Rastreo</span>
+            <span className="text-[10px]">Pedidos</span>
           </button>
 
-          {/* 5. TropiBot (WhatsApp) */}
-          <Link
-            href="https://wa.me/59157770679"
-            target="_blank"
-            className="flex flex-col items-center gap-0.5 py-1 px-3 text-slate-400 hover:text-[#059669] transition-colors"
+          {/* 5. Perfil (PDF Pág 10) */}
+          <button
+            onClick={() => setActiveTab("perfil")}
+            className={`flex flex-col items-center gap-0.5 py-1 px-3 transition-colors ${
+              activeTab === "perfil" ? "text-[#0D7B46] font-black" : "text-slate-400 font-medium"
+            }`}
           >
-            <div className="p-1 rounded-xl">
-              <MessageCircle className="w-5 h-5 text-[#10B981]" />
+            <div
+              className={`p-1 rounded-xl transition-colors ${
+                activeTab === "perfil" ? "bg-emerald-50" : ""
+              }`}
+            >
+              <User className="w-5 h-5" />
             </div>
-            <span className="text-[10px]">TropiBot</span>
-          </Link>
+            <span className="text-[10px]">Perfil</span>
+          </button>
         </div>
       </nav>
     </div>

@@ -4,10 +4,29 @@ import { PedirClient } from "./pedir-client";
 
 export const dynamic = "force-dynamic";
 
-type PortalTab = "delivery" | "mototaxi" | "rastreo";
+type PortalTab =
+  | "inicio"
+  | "delivery"
+  | "mototaxi"
+  | "rastreo"
+  | "mercados"
+  | "promos"
+  | "pedidos"
+  | "perfil";
 
 function normalizeTab(value?: string): PortalTab {
-  return value === "mototaxi" || value === "rastreo" ? value : "delivery";
+  if (
+    value === "delivery" ||
+    value === "mototaxi" ||
+    value === "rastreo" ||
+    value === "mercados" ||
+    value === "promos" ||
+    value === "pedidos" ||
+    value === "perfil"
+  ) {
+    return value;
+  }
+  return "inicio";
 }
 
 export default async function PedirPage({
