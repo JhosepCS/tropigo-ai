@@ -66,7 +66,7 @@ export function ComportamientoClient({
   const fullSystemPrompt = `Eres ${name}, el asistente virtual oficial de «${business?.name || "TropiGO Ivirgarzama"}».
 Slogan: "TropiGO — Movemos el Trópico 🌴".
 Ubicación base: ${business?.address || "Av. Mortensen esq. Mercado Central, Ivirgarzama, Cochabamba, Bolivia"}.
-Teléfono de soporte: ${business?.phone || "+591 74389012"}.
+Teléfono de soporte: ${business?.phone || "+591 57770679"}.
 Moneda oficial: Bolivianos (Bs.).
 Zona horaria: America/La_Paz.
 

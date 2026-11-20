@@ -407,7 +407,7 @@ export function OrderBoard({
             <div className="text-center border-b border-dashed border-[#EAECF0] pb-3">
               <h3 className="font-black text-base tracking-tight">TROPIGO DELIVERY</h3>
               <p className="text-[11px] text-[#667085]">Ivirgarzama — Cochabamba, Bolivia</p>
-              <p className="text-[11px] text-[#667085]">Central WhatsApp: +591 74389012</p>
+              <p className="text-[11px] text-[#667085]">Central WhatsApp: +591 57770679</p>
               <p className="font-black text-sm mt-1 text-emerald-800">
                 ORDEN: {selectedOrderForPrint.orderNumber}
               </p>

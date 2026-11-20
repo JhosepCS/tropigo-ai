@@ -122,7 +122,7 @@ export default async function HomePage() {
       getSession(),
     ]);
 
-  const phone = business?.phone || "+59174389012";
+  const phone = business?.phone || "+59157770679";
   const whatsapp = `https://wa.me/${phone.replace(/[^0-9]/g, "")}`;
   const currency = business?.currencySymbol || "Bs.";
   const deliveryFee = business?.baseDeliveryFee ?? 5;

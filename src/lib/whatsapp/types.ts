@@ -23,7 +23,7 @@ export interface IncomingLocation {
 
 export interface IncomingWhatsAppMessage {
   id: string;
-  from: string; // Número de teléfono en formato E.164 (ej: 59174389012)
+  from: string; // Número de teléfono en formato E.164 (ej: 59157770679)
   senderProfileName?: string; // Nombre del perfil de WhatsApp proporcionado por Meta
   timestamp: number;
   type: "text" | "audio" | "image" | "location" | "document" | "interactive" | "other";

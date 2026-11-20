@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     if (business && !business.assistantEnabled) {
       return NextResponse.json({
         reply:
-          "TropiBot se encuentra temporalmente en pausa. Por favor llámanos directamente al +591 74389012.",
+          "TropiBot se encuentra temporalmente en pausa. Por favor llámanos directamente al +591 57770679.",
       });
     }
 

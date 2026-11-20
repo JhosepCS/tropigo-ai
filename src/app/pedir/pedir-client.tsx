@@ -346,7 +346,7 @@ export function PedirClient({
       `¡Hola TropiBot! Por favor confirma mi pedido y asígname un repartidor.`;
 
     const encoded = encodeURIComponent(message);
-    const waUrl = `https://wa.me/59174389012?text=${encoded}`;
+    const waUrl = `https://wa.me/59157770679?text=${encoded}`;
     window.open(waUrl, "_blank");
     setIsCheckoutOpen(false);
   };
@@ -447,7 +447,7 @@ export function PedirClient({
             {/* Acciones derecha: Campanita y Carrito */}
             <div className="flex items-center gap-2">
               <Link
-                href="https://wa.me/59174389012?text=Hola%20TropiBot%20necesito%20ayuda"
+                href="https://wa.me/59157770679?text=Hola%20TropiBot%20necesito%20ayuda"
                 target="_blank"
                 className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white border border-white/10 transition-colors"
                 title="Atención al cliente"
@@ -980,7 +980,7 @@ export function PedirClient({
                 </p>
                 <div className="pt-2 flex flex-col sm:flex-row justify-center gap-2">
                   <Link
-                    href={`https://wa.me/59174389012?text=Hola,%20acabo%20de%20pedir%20el%20viaje%20${createdRideCode}%20en%20TropiGO`}
+                    href={`https://wa.me/59157770679?text=Hola,%20acabo%20de%20pedir%20el%20viaje%20${createdRideCode}%20en%20TropiGO`}
                     target="_blank"
                     className="text-xs bg-[#10B981] text-white font-bold px-4 py-2.5 rounded-xl hover:bg-[#059669] flex items-center justify-center gap-2 shadow-sm"
                   >
@@ -1151,7 +1151,7 @@ export function PedirClient({
                       name="ridePassengerPhone"
                       type="tel"
                       required
-                      placeholder="Ej: 74389012"
+                      placeholder="Ej: 57770679"
                       value={ridePassengerPhone}
                       onChange={(e) => setRidePassengerPhone(e.target.value)}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#10B981] focus:bg-white focus:outline-none"
@@ -1537,7 +1537,7 @@ export function PedirClient({
                   name="customerPhone"
                   type="tel"
                   required
-                  placeholder="Ej: 74389012"
+                  placeholder="Ej: 57770679"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#10B981] focus:bg-white focus:outline-none"
@@ -1732,7 +1732,7 @@ export function PedirClient({
 
           {/* 5. TropiBot (WhatsApp) */}
           <Link
-            href="https://wa.me/59174389012"
+            href="https://wa.me/59157770679"
             target="_blank"
             className="flex flex-col items-center gap-0.5 py-1 px-3 text-slate-400 hover:text-[#059669] transition-colors"
           >

@@ -365,7 +365,7 @@ export default function DesignSystemPage() {
 
               <Input
                 label="Teléfono de WhatsApp"
-                placeholder="+591 74389012"
+                placeholder="+591 57770679"
                 defaultValue="+591 78901234"
                 leftIcon={<Phone className="w-4 h-4" />}
               />

@@ -504,7 +504,7 @@ async function processBatch(
       await sock.sendMessage(jid, {
         text:
           "Disculpa, tuve un problema técnico al procesar tu mensaje. " +
-          "Intenta nuevamente en unos segundos o escribe a la operadora al +591 74389012.",
+          "Intenta nuevamente en unos segundos o escribe a la operadora al +591 57770679.",
       });
     } catch {}
   }
@@ -650,7 +650,7 @@ async function connectBaileys() {
 
   const sock = makeWASocket({
     auth: state,
-    printQRInTerminal: false,
+    printQRInTerminal: true,
     logger: pino({ level: "silent" }) as any,
     browser: ["TropiGO AI", "Chrome", "1.0.0"],
     markOnlineOnConnect: true,
@@ -666,7 +666,7 @@ async function connectBaileys() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      console.log("📲 Nuevo código QR de WhatsApp. Escanéalo desde el panel CRM.");
+      console.log("📲 Nuevo código QR de WhatsApp. Escanéalo desde el panel CRM o Escritorio.");
       try {
         const qrDataUrl = await QRCode.toDataURL(qr, { width: 420, margin: 2 });
         await prisma.channel.upsert({
@@ -674,6 +674,14 @@ async function connectBaileys() {
           update: { qrCode: qrDataUrl, status: "scanning_qr" },
           create: { type: "whatsapp", qrCode: qrDataUrl, status: "scanning_qr" },
         });
+
+        try {
+          fs.writeFileSync(
+            "C:\\Users\\CARRASCO\\Desktop\\ESCANEAR-WHATSAPP-TROPIGO.html",
+            `<!DOCTYPE html><html><head><title>Escanear WhatsApp TropiGO</title><meta charset="utf-8"><meta http-equiv="refresh" content="10"></head><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:system-ui,sans-serif;background:#180A2B;color:white;margin:0;padding:20px;box-sizing:border-box;"><div style="background:#240E3E;padding:30px;border-radius:28px;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.1);max-width:480px;"><h1 style="color:#10B981;margin:0 0 10px 0;font-size:24px;">Vincula TropiBot AI</h1><p style="color:#E2E8F0;font-size:14px;line-height:1.5;margin:0 0 20px 0;">1. Abre WhatsApp en tu celular con el chip <strong>76470538</strong><br>2. Toca los 3 puntitos &gt; <strong>Dispositivos vinculados</strong><br>3. Toca <strong>Vincular un dispositivo</strong> y apunta tu c&aacute;mara aqu&iacute;:</p><img src="${qrDataUrl}" style="border:10px solid white;border-radius:20px;max-width:320px;width:100%;box-shadow:0 10px 25px rgba(0,0,0,0.4);" /><p style="color:#A7F3D0;font-size:12px;margin:20px 0 0 0;font-weight:bold;">⚡ Actualizado en tiempo real</p></div></body></html>`,
+            "utf8"
+          );
+        } catch {}
       } catch (error) {
         console.error("[Worker] No se pudo guardar el QR en la base de datos:", error);
       }
