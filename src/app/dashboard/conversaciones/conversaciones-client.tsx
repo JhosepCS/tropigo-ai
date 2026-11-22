@@ -576,8 +576,80 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
 
   return (
     <div className="space-y-4">
+      {/* ================================================================= */}
+      {/* BARRA PRINCIPAL DE ESTADO GLOBAL DE TROPIGOT IA & CONTROL HUMANO */}
+      {/* ================================================================= */}
+      <div className="bg-gradient-to-r from-emerald-950 via-[#074423] to-[#0D7B46] text-white p-4 rounded-3xl shadow-lg border border-emerald-600/40 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/20 shadow-inner">
+            <Bot className="w-6 h-6 text-emerald-300" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="font-black text-sm sm:text-base text-white tracking-tight">
+                TropiBot Asistente IA WhatsApp
+              </h3>
+              <span className="inline-flex items-center gap-1.5 bg-emerald-400/20 text-emerald-300 border border-emerald-400/40 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                +591 57770679 ACTIVO
+              </span>
+            </div>
+            <p className="text-xs text-emerald-100/90 font-medium">
+              {activeConversation && (activeConversation.status || "").toLowerCase().includes("takeover") ? (
+                <span className="text-amber-300 font-bold">
+                  🟠 Chat seleccionado: CONTROL HUMANO (TropiBot en pausa para responder manualmente).
+                </span>
+              ) : (
+                <span className="text-emerald-200">
+                  🟢 TropiBot respondiendo automáticamente cada pedido, menú y carrera en Ivirgarzama.
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+
+        {/* Acciones Rápidas del Operador Humano */}
+        <div className="flex items-center gap-2">
+          {activeConversation && (
+            <button
+              onClick={handleToggleTakeover}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black shadow-md transition-all active:scale-95 ${
+                (activeConversation.status || "").toLowerCase().includes("takeover")
+                  ? "bg-emerald-400 hover:bg-emerald-300 text-slate-950"
+                  : "bg-amber-400 hover:bg-amber-300 text-slate-950"
+              }`}
+              title="Cambiar entre IA y Operador para la conversación seleccionada"
+            >
+              {(activeConversation.status || "").toLowerCase().includes("takeover") ? (
+                <>
+                  <Bot className="w-4 h-4" />
+                  <span>Reanudar IA para este cliente</span>
+                </>
+              ) : (
+                <>
+                  <UserCheck className="w-4 h-4" />
+                  <span>Tomar Control Humano</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {activeConversation && (
+            <button
+              onClick={handleTriggerAi}
+              disabled={isTriggeringAi}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black bg-white hover:bg-emerald-50 text-[#074423] shadow-md transition-all active:scale-95 disabled:opacity-50"
+              title="Forzar a TropiBot a redactar y enviar una respuesta IA por WhatsApp"
+            >
+              <Sparkles className="w-4 h-4 text-emerald-600" />
+              <span>{isTriggeringAi ? "Generando..." : "⚡ Forzar Respuesta IA"}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Barra de Modo de Demostración & Sincronización en Vivo */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-[#EAECF0] text-xs shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-[#EAECF0] text-xs shadow-xs">
         <div className="flex flex-wrap items-center gap-2">
           {useDemoMode ? (
             <span className="font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-full text-[11px] flex items-center gap-1.5">
@@ -588,7 +660,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
             <div className="flex items-center gap-2">
               <span className="font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-full text-[11px] flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>WhatsApp Cloud API En Vivo</span>
+                <span>WhatsApp Cloud API & Baileys En Vivo</span>
               </span>
               <span className="text-[11px] text-[#667085] hidden md:inline">
                 Sincronizado a las {lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
@@ -614,7 +686,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
       </div>
 
       {/* Contenedor del Chat en Vivo estilo WhatsApp Web */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 h-[720px] bg-white rounded-3xl border border-[#EAECF0] shadow-sm overflow-hidden">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 h-[640px] max-h-[75vh] min-h-[480px] bg-white rounded-3xl border border-[#EAECF0] shadow-sm overflow-hidden">
         {/* Columna Izquierda: Lista de Conversaciones (Oculta en móviles si hay un chat abierto) */}
         <div
           className={`lg:col-span-4 border-r border-[#EAECF0] flex flex-col h-full bg-[#FAFAFA] ${
@@ -754,8 +826,9 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
             }`}
           >
             {/* Header de la Conversación */}
-            <div className="p-3.5 border-b border-[#EAECF0] flex flex-wrap items-center justify-between gap-3 bg-white">
-              <div className="flex items-center gap-2.5 min-w-0">
+            <div className="border-b border-[#EAECF0] bg-white sticky top-0 z-10 shrink-0">
+              {/* Fila 1: Nombre y teléfono del cliente */}
+              <div className="px-3.5 pt-3 pb-2 flex items-center gap-2.5">
                 {/* Botón Volver en Móvil */}
                 <button
                   onClick={() => setSelectedId("")}
@@ -768,13 +841,13 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
                 <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-xs">
                   {(activeConversation.customer || activeConversation.contact)?.name?.[0] || "C"}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <h4 className="font-bold text-xs sm:text-sm text-[#101828] truncate">
                       {(activeConversation.customer || activeConversation.contact)?.name || "Cliente WhatsApp"}
                     </h4>
                     {activeConversation.isDemo && (
-                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded">
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded">
                         [DEMO]
                       </span>
                     )}
@@ -793,8 +866,8 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
                 </div>
               </div>
 
-              {/* Controles de Estado de IA y Operador Humano */}
-              <div className="flex items-center gap-2 shrink-0">
+              {/* Fila 2: Controles de IA — SIEMPRE VISIBLE */}
+              <div className="px-3.5 pb-2.5 flex flex-wrap items-center gap-2">
                 {/* Badge de Estado Actual */}
                 {(activeConversation.status || "").toLowerCase().includes("takeover") ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-900 border border-amber-300 shadow-2xs">
@@ -839,7 +912,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
                   title="Pedir a TropiBot IA que genere y envíe una respuesta ahora mismo por WhatsApp"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
-                  <span>{isTriggeringAi ? "IA Generando..." : "Forzar Respuesta IA"}</span>
+                  <span>{isTriggeringAi ? "IA Generando..." : "⚡ Forzar Respuesta IA"}</span>
                 </button>
               </div>
             </div>
@@ -1003,7 +1076,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
             </div>
 
             {/* Input de Respuesta de Operador Humano y Botones Rápidos */}
-            <div className="p-3 border-t border-[#EAECF0] bg-white space-y-2.5">
+            <div className="p-3 border-t border-[#EAECF0] bg-white space-y-2.5 sticky bottom-0 z-10 shrink-0">
               {/* Barra de Botones Rápidos Interactivos */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">

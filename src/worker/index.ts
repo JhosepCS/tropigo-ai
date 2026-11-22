@@ -853,11 +853,14 @@ async function connectBaileys() {
 
   const sock = makeWASocket({
     auth: state,
-    printQRInTerminal: true,
+    printQRInTerminal: false,
     logger: pino({ level: "silent" }) as any,
     browser: ["TropiGO AI", "Chrome", "1.0.0"],
     markOnlineOnConnect: true,
     syncFullHistory: false,
+    getMessage: async (key: any) => {
+      return { conversation: "TropiGO AI" };
+    },
   });
 
   sock.ev.on("creds.update", async () => {
@@ -963,7 +966,7 @@ async function connectBaileys() {
   });
 
   sock.ev.on("messages.upsert", async ({ messages, type }: any) => {
-    if (type !== "notify") return;
+    if (type !== "notify" && type !== "append") return;
 
     for (const message of messages) {
       if (!message?.message || message.key?.fromMe) continue;
@@ -987,7 +990,7 @@ async function connectBaileys() {
       };
 
       console.log(
-        `📥 WhatsApp de ${phone}: ${parsed.type}${parsed.text ? ` - ${parsed.text}` : ""}`
+        `📥 [WhatsApp En Vivo] De ${phone} (${profileName || "Sin Nombre"}): ${parsed.type}${parsed.text ? ` - "${parsed.text}"` : ""}`
       );
 
       const existing = messageBuffer[phone];
