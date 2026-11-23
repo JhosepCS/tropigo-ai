@@ -92,6 +92,8 @@ function readAuthFiles(): Record<string, string> {
   for (const name of fs.readdirSync(sessionDir)) {
     if (!name.endsWith(".json")) continue;
     if (!/^[A-Za-z0-9._-]+$/.test(name)) continue;
+    // No persistir ratchets efímeros de chats individuales para evitar 'Bad MAC' por desincronización
+    if (name.startsWith("session-")) continue;
 
     const fullPath = path.join(sessionDir, name);
     try {
@@ -128,6 +130,8 @@ async function restoreBaileysSession() {
     for (const [name, content] of Object.entries(files)) {
       if (typeof content !== "string") continue;
       if (!/^[A-Za-z0-9._-]+$/.test(name) || !name.endsWith(".json")) continue;
+      // No restaurar sesiones de contacto individuales (ratchets) para evitar 'Bad MAC' por desincronización
+      if (name.startsWith("session-")) continue;
       fs.writeFileSync(path.join(sessionDir, name), content, "utf8");
       restored++;
     }
