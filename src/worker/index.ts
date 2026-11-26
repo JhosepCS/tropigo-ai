@@ -1093,6 +1093,119 @@ async function resumeAbandonedTakeovers() {
   }
 }
 
+function parseRawPayload(raw: string | null): Record<string, any> {
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Cola de salida del CRM.
+ *
+ * El panel guarda el mensaje del operador en la base de datos aunque no pueda
+ * alcanzar al worker (por ejemplo, si el worker corre en una PC sin URL
+ * pública). Este barrido lo envía por WhatsApp y actualiza el estado.
+ */
+async function flushOperatorOutbox() {
+  if (!activeSock) return;
+
+  const since = new Date(Date.now() - 10 * 60 * 1000);
+  const readyBefore = new Date(Date.now() - 4_000);
+
+  const candidates = await prisma.message.findMany({
+    where: {
+      sender: { in: ["OPERATOR", "ASSISTANT"] },
+      createdAt: { gte: since, lte: readyBefore },
+      OR: [
+        { rawPayload: { contains: '"deliveryStatus":"FAILED"' } },
+        { rawPayload: { contains: '"deliveryStatus":"PENDING_WORKER"' } },
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+    take: 25,
+    include: { conversation: { include: { customer: true } } },
+  });
+
+  for (const msg of candidates) {
+    const payload = parseRawPayload(msg.rawPayload);
+    const status = payload.deliveryStatus;
+    if (status !== "FAILED" && status !== "PENDING_WORKER") continue;
+
+    const attempts = Number(payload.attempts || 0);
+    if (attempts >= 5) continue;
+
+    const phone = msg.conversation.customer?.phone;
+    const digits = (phone || "").replace(/\D/g, "");
+    if (!digits) continue;
+
+    // Reclamo atómico para que dos instancias no envíen el mismo mensaje.
+    const claim = await prisma.message.updateMany({
+      where: { id: msg.id, rawPayload: msg.rawPayload },
+      data: {
+        rawPayload: JSON.stringify({
+          ...payload,
+          deliveryStatus: "SENDING",
+          attempts: attempts + 1,
+          claimedAt: new Date().toISOString(),
+        }),
+      },
+    });
+    if (claim.count === 0) continue;
+
+    try {
+      const sent = await activeSock.sendMessage(`${digits}@s.whatsapp.net`, {
+        text: msg.content,
+      });
+      await prisma.message.update({
+        where: { id: msg.id },
+        data: {
+          rawPayload: JSON.stringify({
+            ...payload,
+            deliveryStatus: "SENT",
+            wamid: sent?.key?.id || null,
+            sentAt: new Date().toISOString(),
+            source: "worker-outbox",
+            attempts: attempts + 1,
+          }),
+        },
+      });
+      await prisma.conversation.update({
+        where: { id: msg.conversationId },
+        data: { lastMessageAt: new Date() },
+      });
+    } catch (error: any) {
+      console.error(
+        "[Worker] No se pudo enviar el mensaje del CRM:",
+        error?.message || error
+      );
+      await prisma.message.update({
+        where: { id: msg.id },
+        data: {
+          rawPayload: JSON.stringify({
+            ...payload,
+            deliveryStatus: "FAILED",
+            error: error?.message || String(error),
+            attempts: attempts + 1,
+            retriedAt: new Date().toISOString(),
+          }),
+        },
+      });
+    }
+  }
+}
+
+async function heartbeatChannel() {
+  if (!activeSock) return;
+  try {
+    await prisma.channel.updateMany({
+      where: { type: "whatsapp" },
+      data: { status: "connected" },
+    });
+  } catch {}
+}
+
 function startBackgroundJobs() {
   if (backgroundJobsStarted) return;
   backgroundJobsStarted = true;
@@ -1101,6 +1214,18 @@ function startBackgroundJobs() {
   setInterval(() => {
     resumeAbandonedTakeovers().catch(() => {});
   }, 5_000);
+
+  // Cola de salida: mensajes del CRM guardados en la base de datos.
+  setInterval(() => {
+    flushOperatorOutbox().catch(() => {});
+  }, 3_000);
+
+  // Latido para que el CRM sepa que el worker sigue vivo aunque no tenga URL
+  // pública (por ejemplo, cuando corre en una PC local).
+  setInterval(() => {
+    heartbeatChannel().catch(() => {});
+  }, 30_000);
+  heartbeatChannel().catch(() => {});
 
   // Vigilante de conexión: si el socket se cayó, reintentar sin esperar.
   setInterval(() => {

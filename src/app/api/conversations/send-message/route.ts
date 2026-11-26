@@ -101,6 +101,38 @@ export async function POST(req: NextRequest) {
     });
 
     if (sendError) {
+      // Si el worker está vivo (aunque no tenga URL pública), el mensaje queda
+      // en cola y el worker lo envía en los próximos segundos.
+      const channel = await prisma.channel.findFirst({
+        where: { type: "whatsapp" },
+        select: { status: true, updatedAt: true },
+      });
+      const workerAlive =
+        channel?.status === "connected" &&
+        Date.now() - channel.updatedAt.getTime() < 120_000;
+
+      if (workerAlive) {
+        const queued = await prisma.message.update({
+          where: { id: saved.id },
+          data: {
+            rawPayload: JSON.stringify({
+              wamid,
+              deliveryStatus: "PENDING_WORKER",
+              sentAt: new Date().toISOString(),
+              error: sendError,
+              direction: "outbound",
+            }),
+          },
+        });
+
+        return NextResponse.json({
+          success: true,
+          message: queued,
+          queued: true,
+          note: "El worker de WhatsApp enviará el mensaje en unos segundos.",
+        });
+      }
+
       return NextResponse.json({
         success: false,
         message: saved,

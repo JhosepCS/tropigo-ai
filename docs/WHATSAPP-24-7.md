@@ -45,6 +45,22 @@ plan mensual.
 > La PC debe permanecer encendida, conectada a internet y sin suspensión.
 > Si se apaga, el bot deja de responder hasta que vuelva a arrancar.
 
+### CRM en Vercel + worker en la PC
+
+No hace falta abrir puertos ni pagar un túnel. El CRM y el worker se comunican
+por la base de datos:
+
+- El worker escribe un **latido** en `Channel` cada 30 s. El CRM lo usa para
+  mostrar “conectado” aunque Vercel no pueda alcanzar la PC.
+- Si el CRM no logra enviar un mensaje por HTTP, lo guarda como
+  `PENDING_WORKER`. El worker lo detecta en ~3 s, lo envía por WhatsApp y lo
+  marca como `SENT`.
+- Si el worker está apagado más de 2 minutos, el CRM muestra “Worker
+  desconectado” y el mensaje queda como fallido (no se pierde).
+
+Así el operador puede responder desde el CRM en Vercel mientras el worker corre
+en la PC del local.
+
 ## 3. Opción B — Render free + keep-alive
 
 El `render.yaml` ya define el servicio `tropigo-whatsapp-worker` con
