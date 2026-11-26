@@ -569,6 +569,26 @@ async function buildUserContent(sock: any, items: BatchItem[]) {
   };
 }
 
+/**
+ * Construye el JID correcto para responder. Los LID de WhatsApp tienen 14-15
+ * dígitos; los teléfonos internacionales, hasta 13.
+ */
+function buildJidForPhone(phone: string): string {
+  const digits = (phone || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return digits.length >= 14 ? `${digits}@lid` : `${digits}@s.whatsapp.net`;
+}
+
+function extractJidFromPayload(raw: string | null): string | null {
+  try {
+    const parsed = raw ? JSON.parse(raw) : {};
+    const jid = typeof parsed?.jid === "string" ? parsed.jid : "";
+    return jid.includes("@") ? jid : null;
+  } catch {
+    return null;
+  }
+}
+
 async function processBatch(
   sock: any,
   jid: string,
@@ -603,6 +623,7 @@ async function processBatch(
               : "text",
             rawPayload: JSON.stringify({
               source: "baileys",
+              jid,
               messageIds: items
                 .map((item) => item.raw?.key?.id)
                 .filter(Boolean),
@@ -653,6 +674,7 @@ async function processBatch(
             : "text",
           rawPayload: JSON.stringify({
             source: "baileys",
+            jid,
             messageIds: items
               .map((item) => item.raw?.key?.id)
               .filter(Boolean),
@@ -788,6 +810,7 @@ async function processBatch(
           longitude: location?.longitude ?? null,
           rawPayload: JSON.stringify({
             source: "baileys",
+            jid,
             messageIds: items.map((item) => item.raw?.key?.id).filter(Boolean),
           }),
         },
@@ -1046,6 +1069,13 @@ async function resumeAbandonedTakeovers() {
     });
     if (!lastMessage || lastMessage.sender !== "CUSTOMER") continue;
     if (!lastMessage.content || lastMessage.content.length > 800) continue;
+    // Solo si el mensaje ya superó la ventana de auto-reanudación.
+    if (
+      Date.now() - lastMessage.createdAt.getTime() <
+      AI_AUTO_RESUME_SECONDS * 1000
+    ) {
+      continue;
+    }
 
     const operatorReply = await prisma.message.findFirst({
       where: {
@@ -1076,16 +1106,97 @@ async function resumeAbandonedTakeovers() {
 
       const digits = customer.phone.replace(/\D/g, "");
       if (!digits) continue;
-      const jid = `${digits}@s.whatsapp.net`;
+      const targetJid =
+        extractJidFromPayload(lastMessage.rawPayload) ||
+        buildJidForPhone(customer.phone);
+      if (!targetJid) continue;
 
       await processBatch(
         activeSock,
-        jid,
+        targetJid,
         digits,
         [{ kind: "text", text: lastMessage.content, raw: {} }],
         { skipCustomerPersist: true, autoResumed: true }
       ).catch((error) =>
         console.error("[Worker] Error al retomar chat abandonado:", error)
+      );
+    } finally {
+      autoResumeInFlight.delete(conversation.id);
+    }
+  }
+}
+
+/**
+ * Recupera mensajes de clientes que quedaron sin respuesta por un corte del
+ * worker (reinicio, caída de red o conflicto de sesión). Solo actúa sobre
+ * mensajes con más de 90 s para no duplicar una respuesta en curso.
+ */
+async function resumeUnansweredCustomers() {
+  if (!activeSock) return;
+
+  const business = await prisma.businessProfile.findFirst({
+    select: { assistantEnabled: true },
+  });
+  if (business && !business.assistantEnabled) return;
+
+  const now = Date.now();
+  const cutoff = new Date(now - 90_000);
+  const floor = new Date(now - 15 * 60_000);
+
+  const candidates = await prisma.conversation.findMany({
+    where: {
+      status: { not: "HUMAN_TAKEOVER" },
+      lastMessageAt: { lt: cutoff, gt: floor },
+    },
+    orderBy: { lastMessageAt: "asc" },
+    take: 10,
+    include: { customer: true },
+  });
+
+  for (const conversation of candidates) {
+    const customer = conversation.customer;
+    if (!customer) continue;
+    if (autoResumeInFlight.has(conversation.id)) continue;
+
+    const lastMessage = await prisma.message.findFirst({
+      where: { conversationId: conversation.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!lastMessage || lastMessage.sender !== "CUSTOMER") continue;
+    if (!lastMessage.content || lastMessage.content.length > 800) continue;
+    // Solo mensajes con más de 90 s: evita duplicar una respuesta en curso.
+    if (Date.now() - lastMessage.createdAt.getTime() < 90_000) continue;
+
+    const reply = await prisma.message.findFirst({
+      where: {
+        conversationId: conversation.id,
+        sender: { in: ["ASSISTANT", "OPERATOR"] },
+        createdAt: { gte: lastMessage.createdAt },
+      },
+      select: { id: true },
+    });
+    if (reply) continue;
+
+    const digits = customer.phone.replace(/\D/g, "");
+    if (!digits) continue;
+    const targetJid =
+      extractJidFromPayload(lastMessage.rawPayload) ||
+      buildJidForPhone(customer.phone);
+    if (!targetJid) continue;
+
+    autoResumeInFlight.add(conversation.id);
+    try {
+      await processBatch(
+        activeSock,
+        targetJid,
+        digits,
+        [{ kind: "text", text: lastMessage.content, raw: {} }],
+        { skipCustomerPersist: true, autoResumed: true }
+      );
+    } catch (error: any) {
+      console.error(
+        "[Worker] No se pudo responder un mensaje pendiente:",
+        error?.message || error
       );
     } finally {
       autoResumeInFlight.delete(conversation.id);
@@ -1136,9 +1247,19 @@ async function flushOperatorOutbox() {
     const attempts = Number(payload.attempts || 0);
     if (attempts >= 5) continue;
 
-    const phone = msg.conversation.customer?.phone;
-    const digits = (phone || "").replace(/\D/g, "");
+    const phone = msg.conversation.customer?.phone || "";
+    const digits = phone.replace(/\D/g, "");
     if (!digits) continue;
+
+    const lastInbound = await prisma.message.findFirst({
+      where: { conversationId: msg.conversationId, sender: "CUSTOMER" },
+      orderBy: { createdAt: "desc" },
+      select: { rawPayload: true },
+    });
+    const targetJid =
+      extractJidFromPayload(lastInbound?.rawPayload || null) ||
+      buildJidForPhone(phone);
+    if (!targetJid) continue;
 
     // Reclamo atómico para que dos instancias no envíen el mismo mensaje.
     const claim = await prisma.message.updateMany({
@@ -1155,7 +1276,7 @@ async function flushOperatorOutbox() {
     if (claim.count === 0) continue;
 
     try {
-      const sent = await activeSock.sendMessage(`${digits}@s.whatsapp.net`, {
+      const sent = await activeSock.sendMessage(targetJid, {
         text: msg.content,
       });
       await prisma.message.update({
@@ -1214,6 +1335,11 @@ function startBackgroundJobs() {
   setInterval(() => {
     resumeAbandonedTakeovers().catch(() => {});
   }, 5_000);
+
+  // Mensajes de clientes que quedaron sin respuesta por un corte.
+  setInterval(() => {
+    resumeUnansweredCustomers().catch(() => {});
+  }, 10_000);
 
   // Cola de salida: mensajes del CRM guardados en la base de datos.
   setInterval(() => {
