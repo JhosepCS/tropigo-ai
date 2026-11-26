@@ -31,7 +31,9 @@ services:
       - key: WHATSAPP_SESSION_DIR
         value: ./data/whatsapp_session
       - key: WHATSAPP_BATCH_DELAY_MS
-        value: "6000"
+        value: "2500"
+      - key: AI_AUTO_RESUME_SECONDS
+        value: "17"
       - key: DATABASE_URL
         sync: false
       - key: DIRECT_URL

@@ -492,6 +492,13 @@ export function buildSystemPrompt(
     `• ATENCIÓN DE RECLAMOS Y TRANSFERENCIA HUMANA: Si el cliente manifiesta reclamos, quejas airadas, disconformidad o solicita hablar con una persona (motivos: ${handoffKeywords}), ejecuta la herramienta 'pasar_a_humano' o indica cordialmente que estás pausando la atención automática para que una operadora de despacho en Ivirgarzama tome el control de inmediato.${customHandoff}\n\n` +
     `[PROHIBICIONES ESTRICTAS DE SEGURIDAD]\n` +
     `${config.prohibitedActions}\n\n` +
+    `[ESTILO DE RESPUESTA OBLIGATORIO — MUY IMPORTANTE]\n` +
+    `  • Responde como en WhatsApp: máximo 3 o 4 líneas cortas (≤ 350 caracteres) para consultas normales.\n` +
+    `  • Una sola idea y UNA sola pregunta por mensaje. No repitas el saludo, el menú ni el resumen si ya se enviaron en esta conversación.\n` +
+    `  • Usa como máximo 2 emojis por mensaje. No uses párrafos largos ni listas enormes.\n` +
+    `  • Si piden el menú, muestra solo 3 a 5 opciones destacadas con su precio; no pegues todo el catálogo.\n` +
+    `  • No repitas lo que el cliente acaba de escribir ni agregues relleno, disculpas largas o explicaciones técnicas.\n` +
+    `  • La ÚNICA excepción es el resumen oficial de pedido: ahí sí puedes usar varias líneas, pero sin repetir datos.\n\n` +
     `[SALUDO Y DESPEDIDA]\n` +
     `• Saludo inicial configurado: "${config.welcomeMessage}"\n` +
     `• Despedida al concluir la atención: "${config.goodbyeMessage}"` +

@@ -1,18 +1,23 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole, UnauthorizedError, ForbiddenError } from "@/lib/auth/rbac";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    await requireRole(["SUPERADMIN", "ADMIN", "OPERATOR"]);
+
     const rawConversations = await prisma.conversation.findMany({
       include: {
         customer: true,
         messages: {
-          orderBy: { createdAt: "asc" },
+          orderBy: { createdAt: "desc" },
+          take: 200,
         },
       },
       orderBy: { lastMessageAt: "desc" },
+      take: 100,
     });
 
     // Enriquecer cada mensaje con su estado de entrega de Meta
@@ -30,7 +35,7 @@ export async function GET() {
             zone: c.customer.referencePoint || "",
           }
         : null,
-      messages: c.messages.map((m) => {
+      messages: [...c.messages].reverse().map((m) => {
         let deliveryStatus = "SENT";
         let wamid: string | undefined;
         try {
@@ -45,9 +50,19 @@ export async function GET() {
           id: m.id,
           sender: m.sender.toUpperCase(),
           content: m.content,
+          type: m.mediaType || "text",
           mediaType: m.mediaType || "text",
           latitude: m.latitude,
           longitude: m.longitude,
+          ...(m.latitude != null && m.longitude != null
+            ? {
+                locationData: {
+                  name: "Ubicación GPS",
+                  address: m.content,
+                  zone: "",
+                },
+              }
+            : {}),
           transcription: m.transcription,
           toolCallsJson: m.toolCallsJson,
           providerModel: m.providerModel,
@@ -65,6 +80,9 @@ export async function GET() {
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
+    if (error instanceof UnauthorizedError || error instanceof ForbiddenError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     console.error("[API Conversations] Error al obtener conversaciones:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

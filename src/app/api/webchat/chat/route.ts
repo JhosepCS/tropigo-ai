@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { runAgentChat } from "@/lib/ai/agent";
+import { sanitizeAssistantReply } from "@/lib/ai/response-format";
 import { analyzeImage, transcribeAudio, analyzePaymentReceipt, ReceiptAnalysis } from "@/lib/ai/multimodal";
 import { getAssistantConfig, buildSystemPrompt } from "@/lib/ai/config-manager";
 import { getRealDataContextPrompt } from "@/lib/ai/tools";
@@ -270,7 +271,7 @@ export async function POST(req: NextRequest) {
     });
 
     const reply =
-      aiResponse.content?.trim() ||
+      sanitizeAssistantReply(aiResponse.content?.trim() || "") ||
       "¡Gracias por escribir a TropiGO! ¿En qué puedo ayudarte hoy?";
 
     await prisma.message.create({

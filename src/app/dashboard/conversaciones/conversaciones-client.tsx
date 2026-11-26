@@ -261,16 +261,19 @@ const DEMO_CONVERSATIONS: ConversationItem[] = [
 ];
 
 export function ConversacionesClient({ initialConversations }: ConversacionesClientProps) {
-  // Si no hay conversaciones reales en BD, inicializamos con las de demostración
+  // El modo demo solo se activa manualmente. El CRM siempre escucha datos reales
+  // para que los chats nuevos aparezcan solos, aunque al inicio la BD esté vacía.
   const hasRealData = initialConversations && initialConversations.length > 0;
-  const [useDemoMode, setUseDemoMode] = useState<boolean>(!hasRealData);
+  const [useDemoMode, setUseDemoMode] = useState<boolean>(false);
   const [conversations, setConversations] = useState<ConversationItem[]>(
-    hasRealData ? initialConversations : DEMO_CONVERSATIONS
+    hasRealData ? initialConversations : []
   );
   const [selectedId, setSelectedId] = useState<string>(
-    hasRealData ? initialConversations[0]?.id : DEMO_CONVERSATIONS[0].id
+    hasRealData ? initialConversations[0]?.id || "" : ""
   );
-  const [filter, setFilter] = useState<"ALL" | "ATTENTION" | "WHATSAPP">("ALL");
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [workerOnline, setWorkerOnline] = useState<boolean | null>(null);
+  const [filter, setFilter] = useState<"ALL" | "ACTIVE" | "ATTENTION" | "CLOSED">("ALL");
   const [search, setSearch] = useState("");
   const [replyText, setReplyText] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -285,27 +288,27 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
   const quickActions = [
     {
       label: "🍔 Menú y Precios",
-      text: "🌴 ¡Hola! Nuestro menú de hoy incluye:\n1. Pollo Broaster Familiar (18 Bs.)\n2. Hamburguesa Doble Queso (25 Bs.)\n3. Silpancho Especial (20 Bs.)\n¿Cuál te gustaría pedir hoy?",
+      text: "🍔 Menú de hoy: Broaster 18 Bs, Hamburguesa 25 Bs, Silpancho 20 Bs, Pique macho 45 Bs. ¿Cuál quieres?",
     },
     {
       label: "🛒 TropiGO Market",
-      text: "🛒 En TropiGO Market tenemos abarrotes, gaseosas y despensa fresca. Revisa nuestro catálogo con fotos y ofertas en: https://tropigo-ai.vercel.app/pedir",
+      text: "🛒 TropiGO Market: abarrotes, bebidas, lácteos y carnes frescas. Catálogo: https://tropigo-ai.vercel.app/pedir",
     },
     {
       label: "🛵 Pedir TropiTaxi (10 Bs.)",
-      text: "🛵 ¡Servicio de TropiTaxi disponible! Tarifa plana en Ivirgarzama desde 10 Bs. ¿Desde dónde y hacia dónde necesitas tu viaje?",
+      text: "🛵 TropiTaxi: Moto 10 Bs · Torito 15 Bs. ¿Desde dónde y hacia dónde vas?",
     },
     {
       label: "📍 Pedir Ubicación GPS",
-      text: "📍 Por favor compártenos tu ubicación por WhatsApp (toca el clip 📎 > Ubicación > Enviar mi ubicación actual) para calcular tu entrega al instante.",
+      text: "📍 Abre el clip 📎 o el (+), elige Ubicación y toca Enviar mi ubicación actual. Así te encontramos rápido.",
     },
     {
       label: "💳 QR de Pago",
-      text: "💳 Puedes pagar en Efectivo contra entrega o por QR Simple Bancario a nuestra cuenta oficial TropiGO. ¿Qué método prefieres?",
+      text: "💳 Puedes pagar en efectivo contra entrega o por QR Simple. ¿Cuál prefieres?",
     },
     {
       label: "📦 Rastrear Pedido",
-      text: "📦 Puedes ver la ruta de tu pedido en vivo con mapa en tiempo real ingresando tu código en: https://tropigo-ai.vercel.app/pedir",
+      text: "📦 Sigue tu pedido en vivo con tu código en: https://tropigo-ai.vercel.app/seguimiento",
     },
   ];
 
@@ -316,20 +319,23 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeConversation?.messages?.length, selectedId]);
 
-  // Polling en tiempo real cada 3 segundos si estamos en Modo Real (Supabase / WhatsApp Cloud API)
+  // Polling en tiempo real. Siempre activo en modo real para que cada chat
+  // nuevo de WhatsApp aparezca solo, aunque al inicio no hubiera datos.
   useEffect(() => {
     if (useDemoMode || !isLiveSyncing) return;
 
     let isMounted = true;
     const fetchLatest = async () => {
       try {
-        const res = await fetch("/api/conversations");
+        const res = await fetch("/api/conversations", { cache: "no-store" });
         if (res.ok && isMounted) {
           const data = await res.json();
           if (data.conversations && Array.isArray(data.conversations)) {
-            setConversations((prev) => {
-              // Si no había selección previa o la conversación se mantiene, preservar ID
-              return data.conversations;
+            const nextConversations: ConversationItem[] = data.conversations;
+            setConversations(nextConversations);
+            setSelectedId((prev) => {
+              if (prev && nextConversations.some((c) => c.id === prev)) return prev;
+              return nextConversations[0]?.id || "";
             });
             setLastSync(new Date());
           }
@@ -339,21 +345,47 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
       }
     };
 
-    const interval = setInterval(fetchLatest, 3000);
+    fetchLatest();
+    const interval = setInterval(fetchLatest, 2000);
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
   }, [useDemoMode, isLiveSyncing]);
 
+  // Estado real del worker de WhatsApp (Baileys) para el banner del CRM.
+  useEffect(() => {
+    let isMounted = true;
+    const fetchWorkerStatus = async () => {
+      try {
+        const res = await fetch("/api/channels/whatsapp/worker-status", {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (isMounted) setWorkerOnline(Boolean(data.connected));
+      } catch {
+        if (isMounted) setWorkerOnline(false);
+      }
+    };
+
+    fetchWorkerStatus();
+    const interval = setInterval(fetchWorkerStatus, 10000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   const handleToggleDemoMode = async (enabled: boolean) => {
     setUseDemoMode(enabled);
+    setMobileChatOpen(false);
     if (enabled) {
       setConversations(DEMO_CONVERSATIONS);
       setSelectedId(DEMO_CONVERSATIONS[0].id);
     } else {
       try {
-        const res = await fetch("/api/conversations");
+        const res = await fetch("/api/conversations", { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
           if (data.conversations && data.conversations.length > 0) {
@@ -363,16 +395,19 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
           }
         }
       } catch {}
-      setConversations(initialConversations);
-      setSelectedId(initialConversations[0]?.id || "");
+      setConversations(initialConversations || []);
+      setSelectedId(initialConversations?.[0]?.id || "");
     }
   };
 
   // Filtrado de conversaciones
   const filtered = conversations.filter((c) => {
-    const isTakeover = (c.status || "").toLowerCase().includes("takeover");
+    const status = (c.status || "").toLowerCase();
+    const isTakeover = status.includes("takeover");
+    const isClosed = status.includes("closed") || status.includes("cerrad");
     if (filter === "ATTENTION" && !isTakeover) return false;
-    if (filter === "WHATSAPP" && (c.channel || "").toLowerCase() !== "whatsapp") return false;
+    if (filter === "ACTIVE" && (isTakeover || isClosed)) return false;
+    if (filter === "CLOSED" && !isClosed) return false;
 
     if (search) {
       const q = search.toLowerCase();
@@ -407,8 +442,87 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
     }
   };
 
-  const handleQuickText = (text: string) => {
-    setReplyText(text);
+  // Envía un mensaje del operador. Se usa tanto desde el formulario como desde
+  // los botones rápidos (envío inmediato en un clic).
+  const sendOperatorMessage = async (rawText: string) => {
+    const textToSend = rawText.trim();
+    if (!textToSend || !activeConversation || isSending) return;
+
+    setIsSending(true);
+    setSendError(null);
+
+    const tempId = `temp-${Date.now()}`;
+    const newMsg: MessageItem = {
+      id: tempId,
+      sender: "OPERATOR",
+      content: textToSend,
+      createdAt: new Date().toISOString(),
+      type: "text",
+      deliveryStatus: "SENT",
+      isDemo: activeConversation.isDemo,
+    };
+
+    const targetStatus = keepAiActive ? "ai_active" : "human_takeover";
+
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === activeConversation.id
+          ? {
+              ...c,
+              status: targetStatus,
+              messages: [...c.messages, newMsg],
+              lastMessageAt: new Date().toISOString(),
+            }
+          : c
+      )
+    );
+
+    if (activeConversation.isDemo) {
+      setIsSending(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/conversations/send-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: activeConversation.id,
+          recipientPhone: (activeConversation.customer || activeConversation.contact)?.phone,
+          content: textToSend,
+          keepAiActive,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setSendError(data.error || "No se pudo entregar a WhatsApp.");
+      } else if (data.warning) {
+        setSendError(data.warning);
+      } else if (data.message) {
+        // Reemplazar mensaje temporal con el real de BD
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === activeConversation.id
+              ? {
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === tempId ? { ...m, ...data.message, deliveryStatus: "SENT" } : m
+                  ),
+                }
+              : c
+          )
+        );
+      }
+    } catch (e: any) {
+      setSendError(e.message || "Error al conectar con el servidor.");
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleQuickSend = async (text: string) => {
+    await sendOperatorMessage(text);
   };
 
   const handleTriggerAi = async () => {
@@ -435,6 +549,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
               : c
           )
         );
+        if (data.warning) setSendError(data.warning);
       } else if (data.error) {
         setSendError(data.error);
       }
@@ -447,82 +562,10 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
 
   const handleSendHumanReply = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!replyText.trim() || !activeConversation || isSending) return;
-
-    setIsSending(true);
-    setSendError(null);
-
-    const textToSend = replyText.trim();
-    const tempId = `temp-${Date.now()}`;
-
-    const newMsg: MessageItem = {
-      id: tempId,
-      sender: "OPERATOR",
-      content: textToSend,
-      createdAt: new Date().toISOString(),
-      type: "text",
-      deliveryStatus: "SENT",
-      isDemo: activeConversation.isDemo,
-    };
-
-    const targetStatus = keepAiActive ? "ai_active" : "human_takeover";
-
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === activeConversation.id
-          ? {
-              ...c,
-              status: targetStatus,
-              messages: [...c.messages, newMsg],
-              lastMessageAt: new Date().toISOString(),
-            }
-          : c
-      )
-    );
-
+    if (!replyText.trim()) return;
+    const text = replyText;
     setReplyText("");
-
-    if (!activeConversation.isDemo) {
-      try {
-        const res = await fetch("/api/conversations/send-message", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversationId: activeConversation.id,
-            recipientPhone: (activeConversation.customer || activeConversation.contact)?.phone,
-            content: textToSend,
-            keepAiActive,
-          }),
-        });
-
-        const data = await res.json();
-        if (!res.ok || data.error) {
-          setSendError(data.error || "No se pudo entregar a WhatsApp.");
-        } else if (data.warning) {
-          setSendError(data.warning);
-        } else if (data.message) {
-          // Reemplazar mensaje temporal con el real de BD
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.id === activeConversation.id
-                ? {
-                    ...c,
-                    messages: c.messages.map((m) =>
-                      m.id === tempId ? { ...m, ...data.message, deliveryStatus: "SENT" } : m
-                    ),
-                  }
-                : c
-            )
-          );
-        }
-      } catch (e: any) {
-        setSendError(e.message || "Error al conectar con el servidor.");
-      } finally {
-        setIsSending(false);
-      }
-    } else {
-      setIsSending(false);
-    }
+    await sendOperatorMessage(text);
   };
 
   const toggleTools = (msgId: string) => {
@@ -589,19 +632,37 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
               <h3 className="font-black text-sm sm:text-base text-white tracking-tight">
                 TropiBot Asistente IA WhatsApp
               </h3>
-              <span className="inline-flex items-center gap-1.5 bg-emerald-400/20 text-emerald-300 border border-emerald-400/40 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                +591 57770679 ACTIVO
+              <span
+                className={`inline-flex items-center gap-1.5 border px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                  workerOnline === false
+                    ? "bg-amber-400/20 text-amber-200 border-amber-400/40"
+                    : "bg-emerald-400/20 text-emerald-300 border-emerald-400/40"
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full animate-pulse ${
+                    workerOnline === false ? "bg-amber-400" : "bg-emerald-400"
+                  }`}
+                />
+                {workerOnline === null
+                  ? "Verificando WhatsApp..."
+                  : workerOnline
+                  ? "+591 57770679 conectado"
+                  : "Worker desconectado"}
               </span>
             </div>
             <p className="text-xs text-emerald-100/90 font-medium">
-              {activeConversation && (activeConversation.status || "").toLowerCase().includes("takeover") ? (
+              {workerOnline === false ? (
+                <span className="text-amber-200 font-bold">
+                  ⚠️ El worker de WhatsApp no responde. Enciéndelo para recibir y enviar mensajes.
+                </span>
+              ) : activeConversation && (activeConversation.status || "").toLowerCase().includes("takeover") ? (
                 <span className="text-amber-300 font-bold">
-                  🟠 Chat seleccionado: CONTROL HUMANO (TropiBot en pausa para responder manualmente).
+                  🟠 Control humano. Si no respondes en 17 s, TropiBot retoma el chat.
                 </span>
               ) : (
                 <span className="text-emerald-200">
-                  🟢 TropiBot respondiendo automáticamente cada pedido, menú y carrera en Ivirgarzama.
+                  🟢 TropiBot respondiendo automáticamente. Cada chat se actualiza en vivo.
                 </span>
               )}
             </p>
@@ -660,8 +721,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
             <div className="flex items-center gap-2">
               <span className="font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-full text-[11px] flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>WhatsApp Cloud API & Baileys En Vivo</span>
-              </span>
+                <span>WhatsApp en vivo · {conversations.length} chats</span>              </span>
               <span className="text-[11px] text-[#667085] hidden md:inline">
                 Sincronizado a las {lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </span>
@@ -686,11 +746,11 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
       </div>
 
       {/* Contenedor del Chat en Vivo estilo WhatsApp Web */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 h-[640px] max-h-[75vh] min-h-[480px] bg-white rounded-3xl border border-[#EAECF0] shadow-sm overflow-hidden">
-        {/* Columna Izquierda: Lista de Conversaciones (Oculta en móviles si hay un chat abierto) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 h-[calc(100dvh-230px)] min-h-[560px] bg-white rounded-3xl border border-[#EAECF0] shadow-sm overflow-hidden">
+        {/* Columna Izquierda: Lista de Conversaciones */}
         <div
-          className={`lg:col-span-4 border-r border-[#EAECF0] flex flex-col h-full bg-[#FAFAFA] ${
-            selectedId ? "hidden lg:flex" : "flex"
+          className={`lg:col-span-4 border-r border-[#EAECF0] flex-col h-full bg-[#FAFAFA] ${
+            mobileChatOpen ? "hidden lg:flex" : "flex"
           }`}
         >
           {/* Buscador y Filtros */}
@@ -708,9 +768,10 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
 
             <div className="flex gap-1.5 text-xs">
               {[
-                { id: "ALL", label: "Todas" },
-                { id: "ATTENTION", label: "Pausadas / Humano" },
-                { id: "WHATSAPP", label: "WhatsApp" },
+                { id: "ALL", label: `Todas (${conversations.length})` },
+                { id: "ACTIVE", label: "IA activa" },
+                { id: "ATTENTION", label: "Humano" },
+                { id: "CLOSED", label: "Cerradas" },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -736,19 +797,24 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
                 <p className="text-[11px] text-slate-400">
                   {useDemoMode
                     ? "No se encontraron coincidencias en el simulador."
-                    : "Los mensajes entrantes de WhatsApp Cloud API aparecerán aquí en vivo."}
+                    : "Aún no hay chats. Escribe al +591 57770679 y aparecerán aquí en ~2 segundos. Si no llegan, revisa que el worker esté conectado."}
                 </p>
               </div>
             ) : (
               filtered.map((c) => {
                 const isSelected = c.id === activeConversation?.id;
                 const lastMsg = c.messages?.[c.messages.length - 1];
-                const isTakeover = (c.status || "").toLowerCase().includes("takeover");
+                const statusLower = (c.status || "").toLowerCase();
+                const isTakeover = statusLower.includes("takeover");
+                const isClosed = statusLower.includes("closed") || statusLower.includes("cerrad");
 
                 return (
                   <div
                     key={c.id}
-                    onClick={() => setSelectedId(c.id)}
+                    onClick={() => {
+                      setSelectedId(c.id);
+                      setMobileChatOpen(true);
+                    }}
                     className={`p-3.5 cursor-pointer transition-colors flex items-start gap-3 ${
                       isSelected
                         ? "bg-emerald-50/70 border-l-4 border-l-emerald-600"
@@ -801,7 +867,11 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
                           : lastMsg?.content || "Sin mensajes"}
                       </p>
 
-                      {isTakeover ? (
+                      {isClosed ? (
+                        <span className="inline-block mt-1 text-[9px] bg-slate-100 text-slate-600 border border-slate-300 px-1.5 py-0.5 rounded font-bold">
+                          📁 Chat cerrado
+                        </span>
+                      ) : isTakeover ? (
                         <span className="inline-block mt-1 text-[9px] bg-amber-50 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-bold">
                           ⚠️ Operador al mando (IA en pausa)
                         </span>
@@ -821,8 +891,8 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
         {/* Columna Derecha: Hilo de Conversación (Oculta en móviles si no hay selección) */}
         {activeConversation ? (
           <div
-            className={`lg:col-span-8 flex flex-col h-full bg-[#F0F2F5] ${
-              !selectedId ? "hidden lg:flex" : "flex"
+            className={`lg:col-span-8 flex-col h-full bg-[#F0F2F5] ${
+              mobileChatOpen ? "flex" : "hidden lg:flex"
             }`}
           >
             {/* Header de la Conversación */}
@@ -831,7 +901,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
               <div className="px-3.5 pt-3 pb-2 flex items-center gap-2.5">
                 {/* Botón Volver en Móvil */}
                 <button
-                  onClick={() => setSelectedId("")}
+                  onClick={() => setMobileChatOpen(false)}
                   className="lg:hidden p-1.5 -ml-1 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 transition-colors"
                   title="Volver a la lista de chats"
                 >
@@ -914,6 +984,10 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
                   <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
                   <span>{isTriggeringAi ? "IA Generando..." : "⚡ Forzar Respuesta IA"}</span>
                 </button>
+
+                <span className="text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">
+                  ⏱️ Si no respondes en 17 s, TropiBot retoma
+                </span>
               </div>
             </div>
 
@@ -952,12 +1026,12 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
                     <div className="space-y-1 max-w-full">
                       {/* Burbuja Principal */}
                       <div
-                        className={`p-3.5 rounded-2xl text-xs leading-relaxed shadow-xs ${
+                        className={`p-3.5 rounded-2xl text-xs leading-relaxed shadow-xs whitespace-pre-wrap break-words ${
                           isCustomer
                             ? "bg-white text-slate-900 border border-slate-200 rounded-tl-none"
                             : isHuman
                             ? "bg-amber-100 text-amber-950 border border-amber-300 rounded-tr-none font-medium"
-                            : "bg-[#DCF8C6] text-slate-900 border border-emerald-200 rounded-tr-none whitespace-pre-wrap"
+                            : "bg-[#DCF8C6] text-slate-900 border border-emerald-200 rounded-tr-none"
                         }`}
                       >
                         {/* Mensaje de tipo Audio */}
@@ -1087,8 +1161,10 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
                   <button
                     key={idx}
                     type="button"
-                    onClick={() => handleQuickText(qa.text)}
-                    className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#F4EEF2] hover:bg-[#E6F4D7] text-[#1F0E1C] hover:text-[#074423] border border-slate-200 transition-colors shadow-2xs"
+                    onClick={() => handleQuickSend(qa.text)}
+                    disabled={isSending}
+                    title="Enviar este mensaje ahora por WhatsApp"
+                    className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#F4EEF2] hover:bg-[#E6F4D7] text-[#1F0E1C] hover:text-[#074423] border border-slate-200 transition-colors shadow-2xs disabled:opacity-50"
                   >
                     {qa.label}
                   </button>

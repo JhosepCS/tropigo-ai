@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAssistantConfig, buildSystemPrompt } from "@/lib/ai/config-manager";
 import { runAgentChat } from "@/lib/ai/agent";
 import { getRealDataContextPrompt } from "@/lib/ai/tools";
+import { sanitizeAssistantReply } from "@/lib/ai/response-format";
 import { buildCustomerMemoryPrompt } from "@/lib/memory/customer-memory";
 import { buildCustomerLoyaltyPrompt } from "@/lib/loyalty/prompt";
 import { buildCustomerLocationPrompt } from "@/lib/geo/delivery-center";
@@ -70,16 +71,18 @@ export async function POST(req: NextRequest) {
     });
 
     const reply =
-      aiResponse.content?.trim() ||
-      "¡Hola! Soy TropiBot de TropiGO. ¿En qué puedo ayudarte hoy?";
+      sanitizeAssistantReply(aiResponse.content?.trim() || "") ||
+      "¿En qué te ayudo? Escribe *menú* para ver las opciones.";
 
     // Enviar a WhatsApp
     let wamid = "local_sent";
+    let sendError: string | null = null;
     try {
       const adapter = await WhatsAppAdapterFactory.getAdapter();
       wamid = await adapter.sendMessage(customer.phone, reply);
     } catch (e: any) {
       console.error("[Trigger AI] Error enviando a WhatsApp:", e);
+      sendError = e?.message || "No se pudo enviar el mensaje por WhatsApp.";
     }
 
     // Guardar en BD
@@ -94,7 +97,11 @@ export async function POST(req: NextRequest) {
         providerModel: `${aiResponse.provider}/${aiResponse.model}`,
         tokensUsed: aiResponse.tokensUsed || null,
         latencyMs: aiResponse.latencyMs || null,
-        rawPayload: JSON.stringify({ wamid }),
+        rawPayload: JSON.stringify({
+          wamid,
+          deliveryStatus: sendError ? "FAILED" : "SENT",
+          error: sendError,
+        }),
       },
     });
 
@@ -111,6 +118,11 @@ export async function POST(req: NextRequest) {
       success: true,
       message: savedMessage,
       status: "AI_ACTIVE",
+      ...(sendError
+        ? {
+            warning: `La IA generó la respuesta pero no se pudo enviar a WhatsApp: ${sendError}`,
+          }
+        : {}),
     });
   } catch (error: any) {
     console.error("[Trigger AI] Error:", error);

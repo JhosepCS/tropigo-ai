@@ -1,5 +1,6 @@
 import { IWhatsAppProvider } from "./types";
 import { getActiveMetaAdapter } from "./meta-manager";
+import { getWorkerBaseUrl } from "./worker-url";
 
 export class WhatsAppAdapterFactory {
   /**
@@ -15,16 +16,21 @@ export class WhatsAppAdapterFactory {
       return metaAdapter;
     }
 
-    const workerPort = process.env.WORKER_PORT || 3001;
-    const workerUrl = `http://127.0.0.1:${workerPort}/send-message`;
+    const workerBase = getWorkerBaseUrl();
+    const workerUrl = `${workerBase}/send-message`;
 
     const sendViaWorker = async (to: string, text: string, buttons?: any[]): Promise<string> => {
       try {
         const res = await fetch(workerUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(process.env.WORKER_SECRET
+              ? { "x-worker-secret": process.env.WORKER_SECRET }
+              : {}),
+          },
           body: JSON.stringify({ phone: to, text, buttons }),
-          signal: AbortSignal.timeout(6000),
+          signal: AbortSignal.timeout(10_000),
         });
         if (res.ok) {
           const data = await res.json();
@@ -32,13 +38,18 @@ export class WhatsAppAdapterFactory {
             return data.id || "baileys_sent";
           }
         }
-      } catch {}
+      } catch (error: any) {
+        console.warn(
+          `[WhatsAppAdapterFactory] Falló el envío a ${to} por ${workerUrl}:`,
+          error?.message || error
+        );
+      }
 
       console.warn(
-        `[WhatsAppAdapterFactory] No se pudo enviar mensaje a ${to}. Ni Meta Cloud API ni el worker Baileys respondieron.`
+        `[WhatsAppAdapterFactory] No se pudo enviar mensaje a ${to}. Ni Meta Cloud API ni el worker Baileys (${workerBase}) respondieron.`
       );
       throw new Error(
-        "WhatsApp no está activo en este momento. Verifica que el servicio de WhatsApp esté encendido."
+        `WhatsApp no está activo en este momento. Verifica que el worker esté encendido y que WORKER_URL apunte a él (${workerBase}).`
       );
     };
 

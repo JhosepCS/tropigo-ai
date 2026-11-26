@@ -19,6 +19,9 @@ import {
 import { extractLoyaltyCode } from "../lib/loyalty/code";
 import { BaileysAdapter } from "../lib/whatsapp/baileys-adapter";
 import { MediaDownloader } from "../lib/whatsapp/media-downloader";
+import { isSafeExplicitConfirmation } from "../lib/orders/confirmation";
+import { confirmAndCreateOrder } from "../lib/orders/order-service";
+import { sanitizeAssistantReply } from "../lib/ai/response-format";
 import QRCode from "qrcode";
 import fs from "fs";
 import path from "path";
@@ -26,7 +29,11 @@ import http from "http";
 import pino from "pino";
 
 const sessionDir = process.env.WHATSAPP_SESSION_DIR || "./data/whatsapp_session";
-const BATCH_DELAY_MS = Number(process.env.WHATSAPP_BATCH_DELAY_MS || 6000);
+const BATCH_DELAY_MS = Number(process.env.WHATSAPP_BATCH_DELAY_MS || 2500);
+const AI_AUTO_RESUME_SECONDS = Math.max(
+  5,
+  Number(process.env.AI_AUTO_RESUME_SECONDS || 17)
+);
 const PERSIST_SESSION =
   process.env.WHATSAPP_SESSION_PERSIST === "true" ||
   process.env.NODE_ENV === "production";
@@ -48,9 +55,31 @@ type MessageBuffer = {
 
 const messageBuffer: Record<string, MessageBuffer> = {};
 const processedIds = new Map<string, number>();
+const autoResumeAttempts = new Map<string, { count: number; firstAt: number }>();
+
+// Evita que el temporizador de 17 s y el barrido cada 5 s respondan dos veces
+// el mismo chat al mismo tiempo.
+const autoResumeInFlight = new Set<string>();
+
+/**
+ * Evita bucles: si la IA vuelve a pedir un humano, no se reanuda más de dos
+ * veces en 10 minutos para el mismo chat.
+ */
+function registerAutoResume(conversationId: string): boolean {
+  const now = Date.now();
+  const entry = autoResumeAttempts.get(conversationId);
+  if (!entry || now - entry.firstAt > 10 * 60 * 1000) {
+    autoResumeAttempts.set(conversationId, { count: 1, firstAt: now });
+    return true;
+  }
+  if (entry.count >= 2) return false;
+  entry.count += 1;
+  return true;
+}
 
 let backgroundJobsStarted = false;
 let reconnectTimer: NodeJS.Timeout | null = null;
+let connectInProgress = false;
 let activeSock: any = null;
 
 function scheduleReconnect(delayMs = 5000) {
@@ -58,6 +87,7 @@ function scheduleReconnect(delayMs = 5000) {
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     connectBaileys().catch((error) => {
+      connectInProgress = false;
       console.error("[Worker] Fallo al reconectar:", error);
       scheduleReconnect(10_000);
     });
@@ -194,6 +224,211 @@ function extractSenderPhone(message: any): string {
   const digits = phoneJid.split("@")[0].replace(/\D/g, "");
   if (digits) return digits;
   return remoteJid.split("@")[0] || "desconocido";
+}
+
+type QuickIntent = "menu" | "market" | "taxi" | "gps" | "human";
+
+/**
+ * Normaliza el texto del cliente para reconocer atajos aunque escriba con
+ * emojis, acentos, mayúsculas o "opción 1". Así el mismo mensaje se asocia
+ * siempre a su chat y a la acción correcta.
+ */
+function normalizeIntentText(text: string): string {
+  return String(text || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/([0-9])\ufe0f?\u20e3/g, "$1")
+    .replace(/[^a-z0-9#]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function detectQuickIntent(text: string): QuickIntent | null {
+  const normalized = normalizeIntentText(text);
+  if (!normalized) return null;
+
+  const cleaned = normalized
+    .replace(/^(opcion|el|la|numero|nro|inciso)\s+/, "")
+    .trim();
+
+  const byNumber: Record<string, QuickIntent> = {
+    "1": "menu",
+    "2": "market",
+    "3": "taxi",
+    "4": "gps",
+    "5": "human",
+  };
+  if (byNumber[cleaned]) return byNumber[cleaned];
+  if (byNumber[normalized]) return byNumber[normalized];
+
+  const first = cleaned.split(" ")[0];
+  const aliases: Record<string, QuickIntent> = {
+    menu: "menu",
+    carta: "menu",
+    precios: "menu",
+    comida: "menu",
+    restaurante: "menu",
+    restaurantes: "menu",
+    market: "market",
+    mercado: "market",
+    tienda: "market",
+    abarrotes: "market",
+    super: "market",
+    supermercado: "market",
+    taxi: "taxi",
+    mototaxi: "taxi",
+    moto: "taxi",
+    torito: "taxi",
+    carrera: "taxi",
+    viaje: "taxi",
+    ubicacion: "gps",
+    gps: "gps",
+    humano: "human",
+    operador: "human",
+    operadora: "human",
+    persona: "human",
+    reclamo: "human",
+  };
+
+  return aliases[first] || null;
+}
+
+function isPureGreeting(text: string): boolean {
+  const normalized = normalizeIntentText(text);
+  if (!normalized) return false;
+  const words = normalized.split(" ");
+  if (words.length > 3) return false;
+
+  return /^(hola+|buenas|buenos|buen dia|buenos dias|buenas tardes|buenas noches|hey|saludos|inicio|empezar|ayuda|info|informacion|tropibot|tropigo)$/.test(
+    normalized
+  ) || /^(hola|buenas)\s+(tropibot|tropigo|amigo|buenas)$/.test(normalized);
+}
+
+function buildQuickMenu(): string {
+  return (
+    "🌴 *TropiGO*\n" +
+    "1️⃣ Menú y precios 🍔\n" +
+    "2️⃣ Market 🛒\n" +
+    "3️⃣ TropiTaxi 🛵\n" +
+    "4️⃣ Enviar ubicación 📍\n" +
+    "5️⃣ Hablar con operador 👤\n\n" +
+    "_Responde con el número de tu opción._"
+  );
+}
+
+function buildQuickReply(intent: QuickIntent): {
+  text: string;
+  handoff: boolean;
+} {
+  switch (intent) {
+    case "menu":
+      return {
+        handoff: false,
+        text:
+          "🍔 *Menú de hoy*\n" +
+          "• Broaster 18 Bs\n" +
+          "• Hamburguesa 25 Bs\n" +
+          "• Silpancho 20 Bs\n" +
+          "• Pique macho 45 Bs\n\n" +
+          "¿Cuál quieres? Fotos: https://tropigo-ai.vercel.app/pedir",
+      };
+    case "market":
+      return {
+        handoff: false,
+        text:
+          "🛒 *TropiGO Market*\n" +
+          "Abarrotes, bebidas, lácteos y carnes frescas.\n" +
+          "Catálogo: https://tropigo-ai.vercel.app/pedir\n\n" +
+          "¿Qué necesitas?",
+      };
+    case "taxi":
+      return {
+        handoff: false,
+        text:
+          "🛵 *TropiTaxi*\n" +
+          "Moto 10 Bs · Torito 15 Bs.\n\n" +
+          "Dime: ¿desde dónde y hacia dónde vas?",
+      };
+    case "gps":
+      return {
+        handoff: false,
+        text:
+          "📍 *Tu ubicación*\n" +
+          "Abre el clip 📎 o el (+), elige *Ubicación* y toca *Enviar mi ubicación actual*.\n\n" +
+          "Así te encontramos rápido.",
+      };
+    case "human":
+    default:
+      return {
+        handoff: true,
+        text:
+          "👤 *Operador humano*\n" +
+          "Pausé mis respuestas y avisé al equipo de despacho.\n" +
+          "Si no responden en 17 segundos, retomo la atención automáticamente.",
+      };
+  }
+}
+
+/**
+ * Compuerta de confirmación del canal Baileys.
+ *
+ * Replica la regla del webhook de Meta: el pedido solo se crea si el cliente
+ * confirmó explícitamente, existe una cotización pendiente y el resumen ya fue
+ * mostrado. El modelo de IA no puede autorizar un pedido por sí solo.
+ */
+async function tryConfirmPendingOrder(
+  customerId: string,
+  conversationId: string
+) {
+  const pendingQuote = await prisma.orderQuote.findFirst({
+    where: {
+      customerId,
+      conversationId,
+      status: "PENDIENTE",
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!pendingQuote) return null;
+
+  const summaryShown = Boolean(
+    await prisma.message.findFirst({
+      where: {
+        conversationId,
+        sender: "ASSISTANT",
+        createdAt: { gte: pendingQuote.createdAt },
+        OR: [
+          { content: { contains: "RESUMEN DE TU PEDIDO" } },
+          { content: { contains: pendingQuote.totalAmount.toFixed(2) } },
+        ],
+      },
+      select: { id: true },
+    })
+  );
+
+  const lastAssistantMessage = await prisma.message.findFirst({
+    where: { conversationId, sender: "ASSISTANT" },
+    orderBy: { createdAt: "desc" },
+    select: { content: true },
+  });
+
+  const askedConfirmation = Boolean(
+    lastAssistantMessage && /confirm/i.test(lastAssistantMessage.content)
+  );
+
+  if (!summaryShown || !askedConfirmation) return null;
+
+  return confirmAndCreateOrder(
+    { quoteId: pendingQuote.id },
+    {
+      customerId,
+      conversationId,
+      confirmationVerified: true,
+      source: "WHATSAPP",
+    }
+  );
 }
 
 async function getOrCreateCustomer(phone: string, profileName?: string) {
@@ -338,18 +573,52 @@ async function processBatch(
   sock: any,
   jid: string,
   phone: string,
-  items: BatchItem[]
+  items: BatchItem[],
+  options: { skipCustomerPersist?: boolean; autoResumed?: boolean } = {}
 ) {
   try {
     const business = await prisma.businessProfile.findFirst();
-    if (business && !business.assistantEnabled) return;
 
     const profileName = items.find((item) => item.profileName)?.profileName;
     const customer = await getOrCreateCustomer(phone, profileName);
     const conversation = await ensureConversationSession(customer.id, "WHATSAPP");
 
+    // Aunque el asistente esté apagado, el mensaje debe guardarse para que el
+    // chat aparezca en el CRM y un operador pueda responderlo.
+    if (business && !business.assistantEnabled) {
+      if (!options.skipCustomerPersist) {
+        const rawText =
+          items
+            .map((item) => item.text?.trim())
+            .filter(Boolean)
+            .join("\n") || "[Mensaje multimedia]";
+
+        await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            sender: "CUSTOMER",
+            content: rawText,
+            mediaType: items.some((item) => item.kind !== "text")
+              ? items[0].kind
+              : "text",
+            rawPayload: JSON.stringify({
+              source: "baileys",
+              messageIds: items
+                .map((item) => item.raw?.key?.id)
+                .filter(Boolean),
+            }),
+          },
+        });
+      }
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date() },
+      });
+      return;
+    }
+
     if (conversation.status === "HUMAN_TAKEOVER") {
-      const firstText = (items[0]?.text || "").trim().toLowerCase();
+      const firstText = normalizeIntentText(items[0]?.text || "");
       if (
         firstText === "#ia" ||
         firstText === "#bot" ||
@@ -361,12 +630,105 @@ async function processBatch(
           data: { status: "AI_ACTIVE" },
         });
         await sock.sendMessage(jid, {
-          text: "🤖 *TropiBot reactivado.* ¡Hola de nuevo! Estoy listo para ayudarte con pedidos, supermercado y TropiTaxi en Ivirgarzama.",
+          text: "🤖 *TropiBot reactivado.* ¿En qué te ayudo? Escribe *menú* para ver las opciones.",
         });
         return;
       }
+
+      // Guardar el mensaje del cliente aunque el operador tenga el control.
+      // Así el CRM siempre muestra el mensaje en el chat correcto.
+      const rawText =
+        items
+          .map((item) => item.text?.trim())
+          .filter(Boolean)
+          .join("\n") || "[Mensaje multimedia]";
+
+      await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          sender: "CUSTOMER",
+          content: rawText,
+          mediaType: items.some((item) => item.kind !== "text")
+            ? items[0].kind
+            : "text",
+          rawPayload: JSON.stringify({
+            source: "baileys",
+            messageIds: items
+              .map((item) => item.raw?.key?.id)
+              .filter(Boolean),
+          }),
+        },
+      });
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date() },
+      });
+
+      // Reanudación automática: si el operador no responde en
+      // AI_AUTO_RESUME_SECONDS (17 s por defecto), TropiBot retoma el chat.
+      setTimeout(async () => {
+        if (autoResumeInFlight.has(conversation.id)) return;
+        autoResumeInFlight.add(conversation.id);
+        try {
+          const fresh = await prisma.conversation.findUnique({
+            where: { id: conversation.id },
+            select: { status: true },
+          });
+          if (!fresh || fresh.status !== "HUMAN_TAKEOVER") return;
+
+          const business = await prisma.businessProfile.findFirst({
+            select: { assistantEnabled: true },
+          });
+          if (business && !business.assistantEnabled) return;
+
+          const lastMessage = await prisma.message.findFirst({
+            where: { conversationId: conversation.id },
+            orderBy: { createdAt: "desc" },
+            select: { sender: true, createdAt: true },
+          });
+          if (!lastMessage || lastMessage.sender !== "CUSTOMER") return;
+
+          const operatorReply = await prisma.message.findFirst({
+            where: {
+              conversationId: conversation.id,
+              sender: "OPERATOR",
+              createdAt: { gte: lastMessage.createdAt },
+            },
+            select: { id: true },
+          });
+          if (operatorReply) return;
+          if (!registerAutoResume(conversation.id)) return;
+
+          await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: { status: "AI_ACTIVE" },
+          });
+          await prisma.handoffHistory
+            .create({
+              data: {
+                conversationId: conversation.id,
+                reason: `Sin respuesta del operador en ${AI_AUTO_RESUME_SECONDS} segundos. TropiBot retomó la atención.`,
+                action: "AUTO_RESUME",
+              },
+            })
+            .catch(() => {});
+
+          await processBatch(sock, jid, phone, items, {
+            skipCustomerPersist: true,
+            autoResumed: true,
+          });
+        } catch (resumeError: any) {
+          console.error(
+            "[Worker] No se pudo reanudar la IA automáticamente:",
+            resumeError?.message || resumeError
+          );
+        } finally {
+          autoResumeInFlight.delete(conversation.id);
+        }
+      }, AI_AUTO_RESUME_SECONDS * 1000);
+
       console.log(
-        `[Worker] Conversación ${conversation.id} en atención humana. El asistente no responde.`
+        `[Worker] Chat ${conversation.id} en atención humana. TropiBot retomará en ${AI_AUTO_RESUME_SECONDS}s si no hay respuesta.`
       );
       return;
     }
@@ -414,21 +776,23 @@ async function processBatch(
       }
     }
 
-    await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        sender: "CUSTOMER",
-        content,
-        mediaType,
-        transcription,
-        latitude: location?.latitude ?? null,
-        longitude: location?.longitude ?? null,
-        rawPayload: JSON.stringify({
-          source: "baileys",
-          messageIds: items.map((item) => item.raw?.key?.id).filter(Boolean),
-        }),
-      },
-    });
+    if (!options.skipCustomerPersist) {
+      await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          sender: "CUSTOMER",
+          content,
+          mediaType,
+          transcription,
+          latitude: location?.latitude ?? null,
+          longitude: location?.longitude ?? null,
+          rawPayload: JSON.stringify({
+            source: "baileys",
+            messageIds: items.map((item) => item.raw?.key?.id).filter(Boolean),
+          }),
+        },
+      });
+    }
 
     await prisma.conversation.update({
       where: { id: conversation.id },
@@ -436,102 +800,26 @@ async function processBatch(
     });
 
     // =========================================================================
-    // ATAJOS RÁPIDOS E INTERACTIVOS DE WHATSAPP (0 Tokens, Respuesta en 15ms)
+    // ATAJOS RÁPIDOS (0 tokens), SALUDO Y CONFIRMACIÓN DE PEDIDO
     // =========================================================================
-    const cleanMsg = content.trim().toLowerCase();
-    let instantQuickReply: string | null = null;
-    let triggerHandoff = false;
+    // Se evalúa solo lo que escribió el cliente, no los bloques técnicos que
+    // agrega el sistema (comprobantes, fidelidad, etc.).
+    const customerText = items
+      .map((item) => item.text?.trim())
+      .filter(Boolean)
+      .join("\n")
+      .trim();
 
-    if (
-      cleanMsg === "1" ||
-      cleanMsg === "menu" ||
-      cleanMsg === "menú" ||
-      cleanMsg === "carta" ||
-      cleanMsg === "precios" ||
-      cleanMsg === "comida"
-    ) {
-      instantQuickReply =
-        "🌴 *MENÚ Y RESTAURANTES TROPIGO* 🍔\n\n" +
-        "Platos destacados en Ivirgarzama:\n" +
-        "1️⃣ *Pollo Broaster Familiar* - 18 Bs.\n" +
-        "2️⃣ *Hamburguesa TropiDoble con Queso* - 25 Bs.\n" +
-        "3️⃣ *Silpancho Tradicional Cochabambino* - 20 Bs.\n" +
-        "4️⃣ *Pique Macho Especial* - 45 Bs.\n" +
-        "5️⃣ *Coca-Cola 2L Helada* - 12 Bs.\n\n" +
-        "🛵 *Delivery rápido:* A tu puerta en 15-25 min.\n" +
-        "📱 Para ver fotos reales, locales y armar tu pedido:\n" +
-        "👉 https://tropigo-ai.vercel.app/pedir\n\n" +
-        "¿Qué se te antoja pedir hoy? Escríbemelo aquí abajo 👇";
-    } else if (
-      cleanMsg === "2" ||
-      cleanMsg === "market" ||
-      cleanMsg === "tienda" ||
-      cleanMsg === "mercado" ||
-      cleanMsg === "compras" ||
-      cleanMsg === "abarrotes"
-    ) {
-      instantQuickReply =
-        "🛒 *TROPIGO MARKET - SUPERMERCADO A TU PUERTA*\n\n" +
-        "Tenemos abarrotes, lácteos, bebidas frías, verduras y carnes frescas sin salir de casa:\n" +
-        "🥤 Gaseosas, jugos y aguas frescas\n" +
-        "🥩 Carnicería y cortes del día\n" +
-        "🍞 Panadería y despensa completa del hogar\n\n" +
-        "📱 Explora todo el catálogo con fotos y ofertas en:\n" +
-        "👉 https://tropigo-ai.vercel.app/pedir\n\n" +
-        "¿Qué productos te llevamos hoy?";
-    } else if (
-      cleanMsg === "3" ||
-      cleanMsg === "taxi" ||
-      cleanMsg === "torito" ||
-      cleanMsg === "moto" ||
-      cleanMsg === "mototaxi" ||
-      cleanMsg === "carrera"
-    ) {
-      instantQuickReply =
-        "🛵 *TROPITAXI IVIRGARZAMA* ⚡\n\n" +
-        "¡Muévete rápido y seguro por todo el Trópico!\n" +
-        "• *Moto Flash:* Tarifa plana 10 Bs.\n" +
-        "• *Torito Cómodo:* Tarifa plana 15 Bs.\n\n" +
-        "📍 Por favor indícanos:\n" +
-        "1. ¿Dónde estás ubicado exactamente?\n" +
-        "2. ¿A qué lugar te llevamos?\n\n" +
-        "_(O pide tu carrera directa en: https://tropigo-ai.vercel.app/pedir)_";
-    } else if (
-      cleanMsg === "4" ||
-      cleanMsg === "ubicacion" ||
-      cleanMsg === "ubicación" ||
-      cleanMsg === "gps"
-    ) {
-      instantQuickReply =
-        "📍 *ENVIAR TU UBICACIÓN GPS*\n\n" +
-        "Para que el repartidor o mototaxi llegue directo a tu puerta:\n" +
-        "1. Toca el clip 📎 o el signo (+) en este chat de WhatsApp.\n" +
-        "2. Selecciona *Ubicación*.\n" +
-        "3. Toca *Enviar mi ubicación actual*.\n\n" +
-        "¡Así te ubicamos al instante en Ivirgarzama! 🛵💨";
-    } else if (
-      cleanMsg === "5" ||
-      cleanMsg === "humano" ||
-      cleanMsg === "operador" ||
-      cleanMsg === "operadora" ||
-      cleanMsg === "persona" ||
-      cleanMsg === "hablar con alguien" ||
-      cleanMsg === "reclamo"
-    ) {
-      instantQuickReply =
-        "👤 *CONTACTO CON OPERADOR HUMANO*\n\n" +
-        "He pausado mis respuestas automáticas. En este momento nuestra operadora humana de despacho TropiGO ha sido notificada para atenderte personalmente.\n\n" +
-        "📞 También puedes llamarnos o escribirnos directamente al: *+591 57770679*";
-      triggerHandoff = true;
-    }
+    const intent = detectQuickIntent(customerText);
 
-    if (instantQuickReply) {
-      await sock.sendMessage(jid, { text: instantQuickReply });
+    if (intent) {
+      const quick = buildQuickReply(intent);
+      await sock.sendMessage(jid, { text: quick.text });
       await prisma.message.create({
         data: {
           conversationId: conversation.id,
           sender: "ASSISTANT",
-          content: instantQuickReply,
+          content: quick.text,
           providerModel: "quick-action/instant",
           tokensUsed: 0,
           latencyMs: 15,
@@ -541,19 +829,82 @@ async function processBatch(
         where: { id: conversation.id },
         data: {
           lastMessageAt: new Date(),
-          ...(triggerHandoff ? { status: "HUMAN_TAKEOVER" } : {}),
+          ...(quick.handoff ? { status: "HUMAN_TAKEOVER" } : {}),
         },
       });
-      if (triggerHandoff) {
-        await prisma.handoffHistory.create({
-          data: {
-            conversationId: conversation.id,
-            reason: "Cliente seleccionó opción 5 (Atención Humana) en WhatsApp.",
-            action: "TAKEOVER",
-          },
-        });
+      if (quick.handoff) {
+        await prisma.handoffHistory
+          .create({
+            data: {
+              conversationId: conversation.id,
+              reason: "Cliente seleccionó opción 5 (Atención Humana) en WhatsApp.",
+              action: "TAKEOVER",
+            },
+          })
+          .catch(() => {});
       }
       return;
+    }
+
+    // Saludo simple: menú instantáneo, sin gastar tokens ni esperar al modelo.
+    if (isPureGreeting(customerText)) {
+      const menu = buildQuickMenu();
+      await sock.sendMessage(jid, { text: menu });
+      await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          sender: "ASSISTANT",
+          content: menu,
+          providerModel: "quick-action/greeting",
+          tokensUsed: 0,
+          latencyMs: 5,
+        },
+      });
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date() },
+      });
+      return;
+    }
+
+    // Confirmación explícita: el pedido se crea en el servidor, no por el
+    // modelo. Esta es la pieza que faltaba en el canal Baileys.
+    if (isSafeExplicitConfirmation(customerText)) {
+      const creation = await tryConfirmPendingOrder(customer.id, conversation.id);
+      if (creation) {
+        const confirmationReply = creation.exitoso
+          ? creation.mensajeConfirmacion ||
+            `Tu pedido ${creation.orderNumber} fue registrado correctamente.`
+          : `No pude registrar el pedido: ${
+              creation.error ||
+              "intenta nuevamente o solicita ayuda a un operador."
+            }`;
+
+        const safeReply = sanitizeAssistantReply(confirmationReply, {
+          allowLong: true,
+        });
+
+        await sock.sendMessage(jid, { text: safeReply });
+        await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            sender: "ASSISTANT",
+            content: safeReply,
+            toolCallsJson: JSON.stringify([
+              {
+                tool: "registrar_pedido",
+                args: { quoteId: "confirmacion-canal" },
+                result: creation,
+              },
+            ]),
+          },
+        });
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { lastMessageAt: new Date() },
+        });
+        return;
+      }
     }
 
     try {
@@ -602,25 +953,13 @@ async function processBatch(
       maxToolRounds: 2,
     });
 
-    let reply =
+    const rawReply =
       aiResponse.content?.trim() ||
-      "¡Hola! Soy TropiBot de TropiGO. ¿En qué puedo ayudarte hoy?";
+      "¿En qué te ayudo? Escribe *menú* para ver las opciones.";
 
-    // Si es saludo o mensaje informativo inicial, adjuntar opciones rápidas
-    const isGreeting =
-      recentMessages.length <= 2 ||
-      /hola|buenos|buenas|inicio|empezar|ayuda|opciones|qué haces|que haces/i.test(content);
-    if (isGreeting && !reply.includes("1️⃣") && !reply.includes("Opciones Rápidas")) {
-      reply +=
-        "\n\n────────────────────\n" +
-        "*Opciones Rápidas:*\n" +
-        "1️⃣ Ver Menú y Precios 🍔\n" +
-        "2️⃣ TropiGO Market (Abarrotes) 🛒\n" +
-        "3️⃣ Pedir TropiTaxi (10 Bs.) 🛵\n" +
-        "4️⃣ Enviar mi Ubicación GPS 📍\n" +
-        "5️⃣ Hablar con Operador Humano 👤\n" +
-        "_(Responde con el número de tu opción)_";
-    }
+    // Respuesta breve y sin líneas repetidas. Los resúmenes de pedido se
+    // conservan completos; las conversaciones normales se recortan.
+    const reply = sanitizeAssistantReply(rawReply) || buildQuickMenu();
 
     await sock.sendMessage(jid, { text: reply });
 
@@ -661,16 +1000,115 @@ async function processBatch(
     try {
       await sock.sendMessage(jid, {
         text:
-          "Disculpa, tuve un problema técnico al procesar tu mensaje. " +
-          "Intenta nuevamente en unos segundos o escribe a la operadora al +591 57770679.",
+          "Ups, no pude procesar tu mensaje. Escribe *menú* para ver las opciones " +
+          "o intenta de nuevo en unos segundos.",
       });
     } catch {}
+  }
+}
+
+/**
+ * Barrido de seguridad: si el worker se reinició o un chat quedó en atención
+ * humana con un mensaje del cliente sin responder, TropiBot retoma la atención
+ * después de AI_AUTO_RESUME_SECONDS. Solo actúa sobre mensajes recientes para
+ * no responder conversaciones viejas.
+ */
+async function resumeAbandonedTakeovers() {
+  if (!activeSock) return;
+
+  // Si el asistente está apagado desde Ajustes, no se reanuda nada.
+  const business = await prisma.businessProfile.findFirst({
+    select: { assistantEnabled: true },
+  });
+  if (business && !business.assistantEnabled) return;
+
+  const cutoff = new Date(Date.now() - AI_AUTO_RESUME_SECONDS * 1000);
+  const floor = new Date(Date.now() - 5 * 60 * 1000);
+
+  const candidates = await prisma.conversation.findMany({
+    where: {
+      status: "HUMAN_TAKEOVER",
+      lastMessageAt: { lt: cutoff, gt: floor },
+    },
+    orderBy: { lastMessageAt: "asc" },
+    take: 10,
+    include: { customer: true },
+  });
+
+  for (const conversation of candidates) {
+    const customer = conversation.customer;
+    if (!customer) continue;
+    if (autoResumeInFlight.has(conversation.id)) continue;
+
+    const lastMessage = await prisma.message.findFirst({
+      where: { conversationId: conversation.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!lastMessage || lastMessage.sender !== "CUSTOMER") continue;
+    if (!lastMessage.content || lastMessage.content.length > 800) continue;
+
+    const operatorReply = await prisma.message.findFirst({
+      where: {
+        conversationId: conversation.id,
+        sender: "OPERATOR",
+        createdAt: { gte: lastMessage.createdAt },
+      },
+      select: { id: true },
+    });
+    if (operatorReply) continue;
+    if (!registerAutoResume(conversation.id)) continue;
+
+    autoResumeInFlight.add(conversation.id);
+    try {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { status: "AI_ACTIVE" },
+      });
+      await prisma.handoffHistory
+        .create({
+          data: {
+            conversationId: conversation.id,
+            reason: `Sin respuesta del operador en ${AI_AUTO_RESUME_SECONDS} segundos. TropiBot retomó la atención.`,
+            action: "AUTO_RESUME",
+          },
+        })
+        .catch(() => {});
+
+      const digits = customer.phone.replace(/\D/g, "");
+      if (!digits) continue;
+      const jid = `${digits}@s.whatsapp.net`;
+
+      await processBatch(
+        activeSock,
+        jid,
+        digits,
+        [{ kind: "text", text: lastMessage.content, raw: {} }],
+        { skipCustomerPersist: true, autoResumed: true }
+      ).catch((error) =>
+        console.error("[Worker] Error al retomar chat abandonado:", error)
+      );
+    } finally {
+      autoResumeInFlight.delete(conversation.id);
+    }
   }
 }
 
 function startBackgroundJobs() {
   if (backgroundJobsStarted) return;
   backgroundJobsStarted = true;
+
+  // Reanudación automática de chats en atención humana.
+  setInterval(() => {
+    resumeAbandonedTakeovers().catch(() => {});
+  }, 5_000);
+
+  // Vigilante de conexión: si el socket se cayó, reintentar sin esperar.
+  setInterval(() => {
+    if (!activeSock && !connectInProgress) {
+      console.warn("[Worker] Socket de WhatsApp caído. Reintentando conexión...");
+      scheduleReconnect(1_000);
+    }
+  }, 30_000);
 
   // Recordatorios de citas y resumen diario.
   setInterval(async () => {
@@ -767,6 +1205,13 @@ function startHealthServer() {
   const server = http.createServer((req, res) => {
     // Endpoint para enviar mensajes WhatsApp desde la web/CRM vía Baileys
     if (req.method === "POST" && (req.url === "/send-message" || req.url === "/api/send")) {
+      const workerSecret = process.env.WORKER_SECRET;
+      if (workerSecret && req.headers["x-worker-secret"] !== workerSecret) {
+        res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ success: false, error: "No autorizado." }));
+        return;
+      }
+
       let body = "";
       req.on("data", (chunk: any) => {
         body += chunk;
@@ -820,6 +1265,8 @@ function startHealthServer() {
           status: "ok",
           service: "tropigo-whatsapp-worker",
           baileysConnected: Boolean(activeSock),
+          queuedChats: Object.keys(messageBuffer).length,
+          autoResumeSeconds: AI_AUTO_RESUME_SECONDS,
           uptimeSeconds: Math.round(process.uptime()),
           timestamp: new Date().toISOString(),
         })
@@ -843,6 +1290,12 @@ function startHealthServer() {
 }
 
 async function connectBaileys() {
+  if (connectInProgress) {
+    console.warn("[Worker] Ya hay una conexión de WhatsApp en curso; se omite el reintento.");
+    return;
+  }
+  connectInProgress = true;
+
   const baileys: any = await import("@whiskeysockets/baileys");
   const makeWASocket = baileys.default || baileys.makeWASocket;
   const { useMultiFileAuthState, DisconnectReason } = baileys;
@@ -898,6 +1351,7 @@ async function connectBaileys() {
     }
 
     if (connection === "open") {
+      connectInProgress = false;
       activeSock = sock;
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
@@ -931,6 +1385,7 @@ async function connectBaileys() {
     }
 
     if (connection === "close") {
+      connectInProgress = false;
       activeSock = null;
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
@@ -975,10 +1430,23 @@ async function connectBaileys() {
     for (const message of messages) {
       if (!message?.message || message.key?.fromMe) continue;
 
-      const jid = message.key?.remoteJid || "";
+      const remoteJid = message.key?.remoteJid || "";
+      const altJid = message.key?.remoteJidAlt || "";
+      // Si WhatsApp entrega un LID, se prefiere el JID real del teléfono para
+      // que la respuesta llegue al chat correcto.
+      const jid = altJid.endsWith("@s.whatsapp.net") ? altJid : remoteJid;
       if (!jid || jid.includes("@g.us") || jid === "status@broadcast") continue;
 
       if (isDuplicate(message.key?.id || "")) continue;
+
+      // Evita reprocesar mensajes históricos después de un reinicio del worker.
+      if (message.key?.id) {
+        const alreadyStored = await prisma.message.findFirst({
+          where: { rawPayload: { contains: message.key.id } },
+          select: { id: true },
+        });
+        if (alreadyStored) continue;
+      }
 
       const parsed = BaileysAdapter.parseBaileysMessage(message);
       if (!parsed) continue;
@@ -1062,7 +1530,17 @@ process.on("SIGTERM", async () => {
   process.exit(0);
 });
 
+// El worker debe sobrevivir a errores aislados para mantenerse 24/7.
+process.on("unhandledRejection", (reason) => {
+  console.error("[Worker] Promesa rechazada no manejada:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("[Worker] Excepción no capturada:", error);
+});
+
 startWorker().catch((error) => {
-  console.error("[Worker] Error fatal al iniciar:", error);
-  process.exit(1);
+  connectInProgress = false;
+  console.error("[Worker] Error fatal al iniciar. Reintentando en 10s:", error);
+  scheduleReconnect(10_000);
 });

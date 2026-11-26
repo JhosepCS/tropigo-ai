@@ -5,6 +5,7 @@ import { runAgentChat } from "@/lib/ai/agent";
 import { analyzeImage, transcribeAudio, analyzePaymentReceipt, ReceiptAnalysis } from "@/lib/ai/multimodal";
 import { getAssistantConfig, buildSystemPrompt } from "@/lib/ai/config-manager";
 import { getRealDataContextPrompt } from "@/lib/ai/tools";
+import { sanitizeAssistantReply } from "@/lib/ai/response-format";
 import { prisma } from "@/lib/prisma";
 import { IncomingWhatsAppMessage, IncomingWhatsAppStatus } from "@/lib/whatsapp/types";
 import { confirmAndCreateOrder } from "@/lib/orders/order-service";
@@ -757,8 +758,8 @@ export async function POST(req: NextRequest) {
         }
 
         const replyText =
-          aiResponse.content?.trim() ||
-          "¡Hola! He recibido tu mensaje en TropiGO Ivirgarzama. En un momento te atendemos.";
+          sanitizeAssistantReply(aiResponse.content?.trim() || "") ||
+          "¿En qué te ayudo? Escribe *menú* para ver las opciones.";
 
         // -------------------------------------------------------------
         // ENVÍO DE RESPUESTA INTERACTIVA O MULTIMODAL SEGÚN HERRAMIENTAS

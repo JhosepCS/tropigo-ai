@@ -1,0 +1,23 @@
+name: Keep WhatsApp Worker Awake
+
+# El plan free de Render duerme el servicio tras ~15 minutos sin tráfico.
+# Este ping gratuito cada 5 minutos mantiene el worker despierto para que
+# TropiBot responda 24/7 sin pagar un plan mensual.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping worker health endpoint
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+        run: |
+          URL="${WORKER_URL:-https://tropigo-whatsapp-worker.onrender.com}"
+          URL="${URL%/}/health"
+          echo "Ping a $URL"
+          # Un fallo de red no debe marcar el workflow como rojo.
+          curl -fsS --max-time 45 "$URL" || echo "El worker no respondió en este intento."

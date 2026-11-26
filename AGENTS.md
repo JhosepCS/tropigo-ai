@@ -75,6 +75,16 @@ con QR personal.
 - El pedido confirmado avisa por WhatsApp al comercio; al asignar repartidor se
   avisa al rider y al cliente. El cliente sigue el pedido en `/seguimiento/[id]`.
 - Worker de Render opcional para el modo QR no oficial.
+- CRM de conversaciones en vivo: polling cada 2 s, filtros (todas / IA activa /
+  humano / cerradas), envío en un clic y layout móvil lista↔chat.
+- Auto-reanudación: si un operador toma el control y no responde en
+  `AI_AUTO_RESUME_SECONDS` (17 s por defecto), TropiBot retoma el chat. También
+  hay un barrido cada 5 s que recupera chats abandonados tras un reinicio.
+- Respuestas breves: máximo ~650 caracteres y 8 líneas, sin líneas repetidas;
+  los resúmenes de pedido y las URLs se conservan completos.
+- Keep-alive gratuito del worker: `.github/workflows/keep-worker-awake.yml`
+  hace ping a `/health` cada 5 minutos para que Render free no duerma.
+  Guía completa en `docs/WHATSAPP-24-7.md`.
 - Cierre de caja y liquidaciones de repartidores en `/dashboard/liquidaciones`:
   auditoría en tiempo real de entregas y carreras de mototaxi, cruce automático de
   efectivo vs digital (QR Simple/transferencias), conciliación de subtotales de
@@ -140,6 +150,11 @@ src/app/api/repartidor/acceso/[token]/action/   Acciones de 1 toque del rider
 src/app/api/comercio/acceso/[token]/action/     Acciones de 1 toque del comercio
 src/lib/app-url.ts                              URL pública para enlaces
 src/lib/ai/config-manager.ts                    System prompt
+src/lib/ai/response-format.ts                   Respuestas breves, sin repeticiones, URLs intactas
+src/lib/whatsapp/worker-url.ts                  URL del worker (local / Render)
+src/app/api/channels/whatsapp/worker-status/    Estado del worker para el CRM
+scripts/worker-forever.bat                      Worker 24/7 en PC con reinicio automático
+docs/WHATSAPP-24-7.md                           Guía de disponibilidad 24/7
 src/lib/loyalty/service.ts                      Sellos, premios, QR, canje
 src/lib/loyalty/code.ts                         Normalización TGO-XXXXXXXX
 src/lib/loyalty/qr-decode.ts                    Lectura de QR con jsqr + sharp
@@ -212,6 +227,11 @@ Git. Las variables principales:
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `OPERATOR_PASSWORD`.
 - `GEMINI_API_KEY`, `GEMINI_MULTIMODAL_MODEL`.
 - `WHATSAPP_PROVIDER` (`META_CLOUD_API` recomendado; `BAILEYS_QR` solo pruebas).
+- `WORKER_URL` (URL pública del worker Baileys; en local se usa
+  `http://127.0.0.1:3001`).
+- `WORKER_SECRET` (opcional; header `x-worker-secret` entre CRM y worker).
+- `AI_AUTO_RESUME_SECONDS` (17 por defecto).
+- `WHATSAPP_BATCH_DELAY_MS` (2500 por defecto).
 - `META_PHONE_NUMBER_ID`, `META_WABA_ID`, `META_SYSTEM_TOKEN`,
   `META_WEBHOOK_VERIFY_TOKEN`, `META_APP_SECRET`.
 - `GOOGLE_MAPS_API_KEY` (opcional; distancia real por carretera con Google Maps).
