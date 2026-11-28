@@ -305,16 +305,131 @@ function isPureGreeting(text: string): boolean {
   ) || /^(hola|buenas)\s+(tropibot|tropigo|amigo|buenas)$/.test(normalized);
 }
 
-function buildQuickMenu(): string {
+function buildQuickMenu(
+  quickReplies?: Array<{ label: string; message: string; enabled?: boolean }>
+): string {
+  const active = (quickReplies || [])
+    .filter((q) => q && q.enabled !== false && q.label?.trim() && q.message?.trim())
+    .slice(0, 3);
+
+  const keycaps = ["1️⃣", "2️⃣", "3️⃣"];
+  const lines =
+    active.length > 0
+      ? active.map((q, idx) => `${keycaps[idx]} ${q.label.trim().slice(0, 20)}`)
+      : [
+          "1️⃣ 🍕 Pedir comida",
+          "2️⃣ 🛵 Mototaxi",
+          "3️⃣ 🎁 Mi Fidelidad",
+        ];
+
   return (
-    "🌴 *TropiGO*\n" +
-    "1️⃣ Menú y precios 🍔\n" +
-    "2️⃣ Market 🛒\n" +
-    "3️⃣ TropiTaxi 🛵\n" +
-    "4️⃣ Enviar ubicación 📍\n" +
-    "5️⃣ Hablar con operador 👤\n\n" +
-    "_Responde con el número de tu opción._"
+    "🌴 *TropiGO* — ¿Qué deseas hoy?\n" +
+    lines.join("\n") +
+    "\n\n_Responde con el número (1-3) o escribe tu pedido._"
   );
+}
+
+function resolveWhatsAppImagePayload(
+  urlOrPath: string
+): { url: string } | Buffer | null {
+  const value = (urlOrPath || "").trim();
+  if (!value) return null;
+
+  if (value.startsWith("data:image/")) {
+    const base64 = value.split(",")[1];
+    return base64 ? Buffer.from(base64, "base64") : null;
+  }
+
+  if (value.startsWith("/")) {
+    const localPath = path.join(process.cwd(), "public", value.replace(/^\/+/, ""));
+    if (fs.existsSync(localPath)) {
+      try {
+        return fs.readFileSync(localPath);
+      } catch {
+        return null;
+      }
+    }
+    const appUrl = (process.env.APP_URL || "https://tropigo-ai.vercel.app").replace(/\/+$/, "");
+    return { url: `${appUrl}${value}` };
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return { url: value };
+  }
+
+  return null;
+}
+
+async function sendVisualCatalogItems(
+  sock: any,
+  jid: string,
+  items: Array<{
+    nombre: string;
+    precio: string;
+    descripcion?: string;
+    comercio?: string;
+    fotoUrl?: string | null;
+  }>
+): Promise<number> {
+  let sentPhotos = 0;
+  for (const item of items.slice(0, 4)) {
+    if (!item.fotoUrl) continue;
+    const imagePayload = resolveWhatsAppImagePayload(item.fotoUrl);
+    if (!imagePayload) continue;
+    const caption =
+      `🍽️ *${item.nombre}* — *${item.precio}*\n` +
+      (item.comercio ? `🏪 _${item.comercio}_\n` : "") +
+      (item.descripcion ? `${item.descripcion.slice(0, 90)}\n` : "") +
+      `👉 _Escribe el nombre para pedirlo._`;
+    try {
+      await sock.sendMessage(jid, { image: imagePayload, caption: caption.trim() });
+      sentPhotos++;
+    } catch (err: any) {
+      console.warn("[Worker] No se pudo enviar foto de producto:", err?.message || err);
+    }
+  }
+  return sentPhotos;
+}
+
+async function sendLiveCatalogToWhatsApp(sock: any, jid: string): Promise<string> {
+  const products = await prisma.product.findMany({
+    where: {
+      isAvailable: true,
+      merchant: { isOpen: true },
+    },
+    include: {
+      merchant: { select: { name: true } },
+      images: { select: { imageUrl: true }, take: 1 },
+    },
+    orderBy: [{ imageUrl: "desc" }, { order: "asc" }],
+    take: 8,
+  });
+
+  const visualItems = products
+    .map((p) => ({
+      nombre: p.name.replace(/^\[DEMO\]\s*/i, ""),
+      precio: `${p.price.toFixed(0)} Bs.`,
+      descripcion: p.description || "",
+      comercio: p.merchant.name.replace(/^\[DEMO\]\s*/i, ""),
+      fotoUrl: p.images[0]?.imageUrl || p.imageUrl || null,
+    }));
+
+  const photosSent = await sendVisualCatalogItems(sock, jid, visualItems);
+
+  const listLines = visualItems
+    .slice(0, 5)
+    .map((item) => `• *${item.nombre}* (${item.comercio}) — *${item.precio}*`)
+    .join("\n");
+
+  const summaryMsg =
+    (photosSent > 0
+      ? `📸 Te envié ${photosSent} platos con foto y precio.\n`
+      : `🍔 *Menú disponible hoy:*\n${listLines}\n`) +
+    `\n🛒 Catálogo completo: https://tropigo-ai.vercel.app/pedir\n` +
+    `¿Qué plato te gustaría pedir?`;
+
+  await sock.sendMessage(jid, { text: summaryMsg });
+  return summaryMsg;
 }
 
 function buildQuickReply(intent: QuickIntent): {
@@ -833,9 +948,49 @@ async function processBatch(
       .join("\n")
       .trim();
 
+    const assistantConfig = await getAssistantConfig();
+    const activeQuickReplies = (assistantConfig.quickReplies || [])
+      .filter((q) => q && q.enabled !== false && q.label?.trim() && q.message?.trim())
+      .slice(0, 3);
+
+    // Si el cliente responde 1, 2, 3 o el título del botón configurado en el CRM
+    const normQuick = normalizeIntentText(customerText).replace(/^(opcion|el|la|numero|nro)\s+/, "").trim();
+    let matchedQuickButton =
+      /^[1-3]$/.test(normQuick) ? activeQuickReplies[Number(normQuick) - 1] : undefined;
+    if (!matchedQuickButton && normQuick) {
+      matchedQuickButton = activeQuickReplies.find(
+        (q) => normalizeIntentText(q.label) === normQuick
+      );
+    }
+
     const intent = detectQuickIntent(customerText);
 
-    if (intent) {
+    if (
+      (matchedQuickButton &&
+        /(comida|menu|menú|catalogo|catálogo|restaurante|plato)/i.test(
+          `${matchedQuickButton.label} ${matchedQuickButton.message}`
+        )) ||
+      (!matchedQuickButton && intent === "menu")
+    ) {
+      const catalogReply = await sendLiveCatalogToWhatsApp(sock, jid);
+      await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          sender: "ASSISTANT",
+          content: catalogReply,
+          providerModel: "quick-action/catalog-visual",
+          tokensUsed: 0,
+          latencyMs: 30,
+        },
+      });
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date() },
+      });
+      return;
+    }
+
+    if (!matchedQuickButton && intent) {
       const quick = buildQuickReply(intent);
       await sock.sendMessage(jid, { text: quick.text });
       await prisma.message.create({
@@ -869,9 +1024,9 @@ async function processBatch(
       return;
     }
 
-    // Saludo simple: menú instantáneo, sin gastar tokens ni esperar al modelo.
+    // Saludo simple: menú dinámico desde quickReplies del CRM (0 tokens).
     if (isPureGreeting(customerText)) {
-      const menu = buildQuickMenu();
+      const menu = buildQuickMenu(assistantConfig.quickReplies);
       await sock.sendMessage(jid, { text: menu });
       await prisma.message.create({
         data: {
@@ -888,6 +1043,19 @@ async function processBatch(
         data: { lastMessageAt: new Date() },
       });
       return;
+    }
+
+    if (matchedQuickButton) {
+      // Si el botón seleccionado era un mensaje canónico personalizado (ej. Fidelidad),
+      // actualizamos el último mensaje en memoria para que la IA reciba el mensaje canónico.
+      await prisma.message.updateMany({
+        where: {
+          conversationId: conversation.id,
+          sender: "CUSTOMER",
+          content,
+        },
+        data: { content: matchedQuickButton.message },
+      }).catch(() => {});
     }
 
     // Confirmación explícita: el pedido se crea en el servidor, no por el
@@ -934,7 +1102,6 @@ async function processBatch(
       await sock.sendPresenceUpdate("composing", jid);
     } catch {}
 
-    const assistantConfig = await getAssistantConfig();
     const [realDataContext, memoryContext, loyaltyContext, locationContext] = await Promise.all([
       getRealDataContextPrompt(),
       buildCustomerMemoryPrompt(customer.id),
@@ -991,9 +1158,28 @@ async function processBatch(
 
     // Respuesta breve y sin líneas repetidas. Los resúmenes de pedido se
     // conservan completos; las conversaciones normales se recortan.
-    const reply = sanitizeAssistantReply(rawReply) || buildQuickMenu();
+    const reply =
+      sanitizeAssistantReply(rawReply) || buildQuickMenu(assistantConfig.quickReplies);
 
     await sock.sendMessage(jid, { text: reply });
+
+    // Si la IA ejecutó 'mostrar_catalogo_visual', enviar las fotos y precios reales al chat
+    const visualCatalogCall = aiResponse.toolCalls?.find(
+      (call) => call.tool === "mostrar_catalogo_visual"
+    );
+    if (visualCatalogCall?.result?.menu) {
+      await sendVisualCatalogItems(
+        sock,
+        jid,
+        (visualCatalogCall.result.menu as any[]).map((item) => ({
+          nombre: item.nombre,
+          precio: item.precio,
+          descripcion: item.descripcion,
+          comercio: visualCatalogCall.result.comercio,
+          fotoUrl: item.fotoUrl,
+        }))
+      );
+    }
 
     await prisma.message.create({
       data: {
