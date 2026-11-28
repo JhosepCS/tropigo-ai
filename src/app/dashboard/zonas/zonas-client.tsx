@@ -22,7 +22,74 @@ import {
   ExternalLink,
   LocateFixed,
   Map as MapIcon,
+  Trash2,
+  Search,
 } from "lucide-react";
+
+const OFFICIAL_CENTER = {
+  lat: -17.035028123456595,
+  lng: -64.86009805670489,
+  title: "Plaza Principal de Ivirgarzama (Centro Oficial)",
+};
+
+const TERRAIN_BADGES: Record<string, { label: string; cls: string }> = {
+  FACIL: {
+    label: "🟢 Terreno Fácil",
+    cls: "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800",
+  },
+  MEDIA: {
+    label: "🟡 Dificultad Media",
+    cls: "bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800",
+  },
+  ALTA: {
+    label: "🔴 Dificultad Alta",
+    cls: "bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800",
+  },
+};
+
+function parseZoneGeo(zone: any): {
+  category: string;
+  latitude: number | null;
+  longitude: number | null;
+  streets: string;
+  terrainDifficulty: string;
+  terrainNote: string;
+  distanceKm: number | null;
+} {
+  if (!zone?.polygonGeoJson) {
+    return {
+      category: "GENERAL",
+      latitude: null,
+      longitude: null,
+      streets: "",
+      terrainDifficulty: "FACIL",
+      terrainNote: "",
+      distanceKm: null,
+    };
+  }
+  try {
+    const parsed = JSON.parse(zone.polygonGeoJson);
+    return {
+      category: String(parsed?.category || "GENERAL").toUpperCase(),
+      latitude: typeof parsed?.latitude === "number" ? parsed.latitude : null,
+      longitude: typeof parsed?.longitude === "number" ? parsed.longitude : null,
+      streets: String(parsed?.streets || ""),
+      terrainDifficulty: String(parsed?.terrainDifficulty || "FACIL").toUpperCase(),
+      terrainNote: String(parsed?.terrainNote || ""),
+      distanceKm: typeof parsed?.distanceKm === "number" ? parsed.distanceKm : null,
+    };
+  } catch {
+    return {
+      category: "GENERAL",
+      latitude: null,
+      longitude: null,
+      streets: "",
+      terrainDifficulty: "FACIL",
+      terrainNote: "",
+      distanceKm: null,
+    };
+  }
+}
 
 const CATEGORY_LABELS: Record<string, string> = {
   TODAS: "Todas las zonas",
@@ -56,10 +123,16 @@ export function ZonasClient({
   const router = useRouter();
   const [zones, setZones] = useState<any[]>(initialZones);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editStreets, setEditStreets] = useState("");
+  const [editDifficulty, setEditDifficulty] = useState("FACIL");
+  const [editLat, setEditLat] = useState("");
+  const [editLng, setEditLng] = useState("");
   const [deliveryCost, setDeliveryCost] = useState("");
   const [rideCost, setRideCost] = useState("");
   const [estimatedMinutes, setEstimatedMinutes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -70,32 +143,45 @@ export function ZonasClient({
   const [newCityId, setNewCityId] = useState(cities[0]?.id || "");
   const [newDeliveryCost, setNewDeliveryCost] = useState("5");
   const [newRideCost, setNewRideCost] = useState(String(minRideFare));
-  const [newMinutes, setNewMinutes] = useState("20");
+  const [newMinutes, setNewMinutes] = useState("15");
   const [newDescription, setNewDescription] = useState("");
+  const [newStreets, setNewStreets] = useState("");
+  const [newTerrainDifficulty, setNewTerrainDifficulty] = useState("FACIL");
   const [newCategory, setNewCategory] = useState("RESIDENCIAL");
-  const [newLat, setNewLat] = useState<number | "">(-17.033507);
-  const [newLng, setNewLng] = useState<number | "">(-64.857436);
+  const [newLat, setNewLat] = useState<number | "">(OFFICIAL_CENTER.lat);
+  const [newLng, setNewLng] = useState<number | "">(OFFICIAL_CENTER.lng);
   const [geoLocating, setGeoLocating] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("TODAS");
+  const [difficultyFilter, setDifficultyFilter] = useState("TODAS");
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Mapa interactivo seleccionado
   const [selectedMapCoords, setSelectedMapCoords] = useState<{
     lat: number;
     lng: number;
     title: string;
-  } | null>({
-    lat: -17.033507,
-    lng: -64.857436,
-    title: "Plaza Principal de Ivirgarzama (Centro)",
+  } | null>(OFFICIAL_CENTER);
+
+  const filteredZones = zones.filter((zone) => {
+    const geo = parseZoneGeo(zone);
+    if (categoryFilter !== "TODAS" && geo.category !== categoryFilter) return false;
+    if (difficultyFilter !== "TODAS" && geo.terrainDifficulty !== difficultyFilter) return false;
+    if (searchTerm.trim()) {
+      const q = searchTerm.trim().toLowerCase();
+      const hay = `${zone.name || ""} ${zone.description || ""} ${geo.streets || ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
   });
 
-  const filteredZones =
-    categoryFilter === "TODAS"
-      ? zones
-      : zones.filter((zone) => getZoneCategory(zone) === categoryFilter);
-
   const startEdit = (zone: any) => {
+    const geo = parseZoneGeo(zone);
     setEditingId(zone.id);
+    setEditName(String(zone.name ?? ""));
+    setEditStreets(geo.streets || "");
+    setEditDifficulty(geo.terrainDifficulty || "FACIL");
+    setEditLat(geo.latitude !== null ? String(geo.latitude) : "");
+    setEditLng(geo.longitude !== null ? String(geo.longitude) : "");
     setDeliveryCost(String(zone.baseDeliveryCost ?? ""));
     setRideCost(String(zone.baseRideCost ?? ""));
     setEstimatedMinutes(String(zone.estimatedMinutes ?? 25));
@@ -116,6 +202,11 @@ export function ZonasClient({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          name: editName,
+          streets: editStreets,
+          terrainDifficulty: editDifficulty,
+          latitude: editLat.trim() ? Number(editLat) : undefined,
+          longitude: editLng.trim() ? Number(editLng) : undefined,
           baseDeliveryCost: Number(deliveryCost),
           baseRideCost: Number(rideCost),
           estimatedMinutes: Number(estimatedMinutes),
@@ -129,13 +220,38 @@ export function ZonasClient({
         prev.map((z) => (z.id === zoneId ? { ...z, ...data.zone } : z))
       );
       setEditingId(null);
-      setSuccess("Tarifas de la zona actualizadas correctamente.");
+      setSuccess("Zona y tarifas actualizadas correctamente.");
       router.refresh();
       setTimeout(() => setSuccess(null), 3500);
     } catch (e: any) {
       setError(e.message || "No se pudieron guardar las tarifas.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteZone = async (zone: any) => {
+    if (!confirm(`¿Seguro que deseas eliminar "${zone.name}" del mapa de tarifas?`)) {
+      return;
+    }
+    setDeletingId(zone.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/zones/${zone.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "No se pudo eliminar la zona.");
+      setZones((prev) => prev.filter((z) => z.id !== zone.id));
+      setSuccess(
+        data?.deactivated
+          ? `"${zone.name}" tenía pedidos históricos y fue desactivada.`
+          : `"${zone.name}" eliminada del mapa.`
+      );
+      router.refresh();
+      setTimeout(() => setSuccess(null), 3500);
+    } catch (e: any) {
+      setError(e.message || "No se pudo eliminar la zona.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -176,6 +292,8 @@ export function ZonasClient({
           baseRideCost: Number(newRideCost),
           estimatedMinutes: Number(newMinutes),
           category: newCategory,
+          streets: newStreets,
+          terrainDifficulty: newTerrainDifficulty,
           latitude: typeof newLat === "number" ? newLat : null,
           longitude: typeof newLng === "number" ? newLng : null,
         }),
@@ -188,6 +306,7 @@ export function ZonasClient({
       setIsModalOpen(false);
       setNewZoneName("");
       setNewDescription("");
+      setNewStreets("");
       setSuccess("Nueva zona registrada exitosamente.");
       router.refresh();
       setTimeout(() => setSuccess(null), 3500);
@@ -264,13 +383,7 @@ export function ZonasClient({
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() =>
-                setSelectedMapCoords({
-                  lat: -17.033507,
-                  lng: -64.857436,
-                  title: "Plaza Principal de Ivirgarzama (Centro)",
-                })
-              }
+              onClick={() => setSelectedMapCoords(OFFICIAL_CENTER)}
               className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300"
             >
               Centrar en Plaza Principal
@@ -298,7 +411,7 @@ export function ZonasClient({
             frameBorder="0"
             scrolling="no"
             src={`https://maps.google.com/maps?q=${
-              selectedMapCoords ? `${selectedMapCoords.lat},${selectedMapCoords.lng}` : "-17.033507,-64.857436"
+              selectedMapCoords ? `${selectedMapCoords.lat},${selectedMapCoords.lng}` : `${OFFICIAL_CENTER.lat},${OFFICIAL_CENTER.lng}`
             }&z=15&output=embed`}
           />
         </div>
@@ -349,40 +462,64 @@ export function ZonasClient({
             <MapPin className="w-3.5 h-3.5 text-emerald-600" />
             <span>Zonas y Tarifas Activas ({filteredZones.length} de {zones.length} zonas)</span>
           </h3>
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          >
-            {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar calle, barrio o comercio..."
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-[11px] text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 w-52"
+              />
+            </div>
+            <select
+              value={difficultyFilter}
+              onChange={(e) => setDifficultyFilter(e.target.value)}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="TODAS">Toda dificultad</option>
+              <option value="FACIL">🟢 Terreno Fácil</option>
+              <option value="MEDIA">🟡 Dificultad Media</option>
+              <option value="ALTA">🔴 Dificultad Alta</option>
+            </select>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredZones.map((z) => {
             const isEditing = editingId === z.id;
-            const zoneCategory = getZoneCategory(z);
-            let coords: { latitude: number; longitude: number } | null = null;
-            if (z.polygonGeoJson) {
-              try {
-                const parsed = JSON.parse(z.polygonGeoJson);
-                if (parsed.latitude && parsed.longitude) {
-                  coords = { latitude: parsed.latitude, longitude: parsed.longitude };
-                }
-              } catch {}
-            }
+            const geo = parseZoneGeo(z);
+            const zoneCategory = geo.category;
+            const terrainInfo = TERRAIN_BADGES[geo.terrainDifficulty] || TERRAIN_BADGES.FACIL;
+            const coords =
+              geo.latitude !== null && geo.longitude !== null
+                ? { latitude: geo.latitude, longitude: geo.longitude }
+                : null;
 
             return (
               <Card key={z.id} className="hover:border-emerald-300 dark:hover:border-emerald-700 transition-all flex flex-col justify-between">
-                <CardHeader className="bg-slate-50/70 dark:bg-slate-800/40 pb-3 flex flex-row items-center justify-between">
+                <CardHeader className="bg-slate-50/70 dark:bg-slate-800/40 pb-3 flex flex-row items-start justify-between gap-2">
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                      {CATEGORY_LABELS[zoneCategory] || "Zona Tarifaria"}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                        {CATEGORY_LABELS[zoneCategory] || "Zona Tarifaria"}
+                      </span>
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${terrainInfo.cls}`}>
+                        {terrainInfo.label}
+                      </span>
+                    </div>
                     <CardTitle className="text-base text-slate-900 dark:text-white">{z.name}</CardTitle>
                   </div>
                   {isEditing ? (
@@ -395,20 +532,49 @@ export function ZonasClient({
                       <X className="w-4 h-4" />
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => startEdit(z)}
-                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-800 px-2 py-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-                    >
-                      <Pencil className="w-3 h-3" />
-                      Editar
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => startEdit(z)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-800 px-2 py-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteZone(z)}
+                        disabled={deletingId === z.id}
+                        className="p-1.5 rounded-lg border border-rose-200 dark:border-rose-900 bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-50"
+                        title="Eliminar ubicación"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   )}
                 </CardHeader>
 
                 <CardContent className="p-4 space-y-3 text-xs text-slate-600 dark:text-slate-300">
                   {isEditing ? (
                     <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Nombre / Ubicación</label>
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs font-bold text-slate-900 dark:text-white"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Calles / Referencias</label>
+                        <input
+                          type="text"
+                          value={editStreets}
+                          onChange={(e) => setEditStreets(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs text-slate-900 dark:text-white"
+                        />
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-emerald-800 dark:text-emerald-400 uppercase">
@@ -438,19 +604,56 @@ export function ZonasClient({
                         </div>
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">
-                          Tiempo estimado (min)
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={240}
-                          step={1}
-                          value={estimatedMinutes}
-                          onChange={(e) => setEstimatedMinutes(e.target.value)}
-                          className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm font-bold text-slate-900 dark:text-white"
-                        />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">
+                            Dificultad Terreno
+                          </label>
+                          <select
+                            value={editDifficulty}
+                            onChange={(e) => setEditDifficulty(e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs font-bold text-slate-900 dark:text-white"
+                          >
+                            <option value="FACIL">🟢 Fácil</option>
+                            <option value="MEDIA">🟡 Media</option>
+                            <option value="ALTA">🔴 Alta</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">
+                            Tiempo (min)
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={240}
+                            step={1}
+                            value={estimatedMinutes}
+                            onChange={(e) => setEstimatedMinutes(e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm font-bold text-slate-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Latitud</label>
+                          <input
+                            type="text"
+                            value={editLat}
+                            onChange={(e) => setEditLat(e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-[11px] font-mono text-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Longitud</label>
+                          <input
+                            type="text"
+                            value={editLng}
+                            onChange={(e) => setEditLng(e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-[11px] font-mono text-slate-900 dark:text-white"
+                          />
+                        </div>
                       </div>
 
                       <button
@@ -464,11 +667,16 @@ export function ZonasClient({
                         ) : (
                           <Save className="w-3.5 h-3.5" />
                         )}
-                        {saving ? "Guardando..." : "Guardar tarifas"}
+                        {saving ? "Guardando..." : "Guardar cambios"}
                       </button>
                     </div>
                   ) : (
                     <>
+                      {geo.streets && (
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                          🛣️ {geo.streets}
+                        </p>
+                      )}
                       <div className="grid grid-cols-2 gap-2 text-center">
                         <div className="p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/60">
                           <span className="text-[10px] font-bold text-emerald-800 dark:text-emerald-400 uppercase block">
@@ -492,29 +700,29 @@ export function ZonasClient({
                       <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px]">
                         <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400 font-medium">
                           <Clock className="w-3.5 h-3.5 text-slate-400" />
-                          Tiempo estimado:
+                          {geo.distanceKm !== null ? `${geo.distanceKm} km · ` : ""}~{z.estimatedMinutes || 25} min
                         </span>
-                        <span className="font-bold text-slate-800 dark:text-slate-200">
-                          ~{z.estimatedMinutes || 25} minutos
+                        <span className="text-[10px] text-slate-400 font-semibold">
+                          {geo.terrainNote || (z.city?.name || "Ivirgarzama")}
                         </span>
                       </div>
 
                       {/* Coordenadas o botón para ver en el visor */}
-                      <div className="pt-2 flex items-center justify-between">
+                      <div className="pt-1 flex items-center justify-between">
                         {coords ? (
                           <button
                             type="button"
                             onClick={() =>
                               setSelectedMapCoords({
-                                lat: coords!.latitude,
-                                lng: coords!.longitude,
+                                lat: coords.latitude,
+                                lng: coords.longitude,
                                 title: z.name,
                               })
                             }
                             className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
                           >
                             <MapPin className="w-3 h-3" />
-                            <span>Ver en mapa</span>
+                            <span>Ver en Google Maps</span>
                           </button>
                         ) : (
                           <span className="text-[10px] text-slate-400">Radio céntrico</span>
@@ -587,6 +795,30 @@ export function ZonasClient({
                 ))}
               </select>
             </div>
+
+            <div className="space-y-1">
+              <label className="font-semibold text-slate-700 dark:text-slate-200">Dificultad de Terreno *</label>
+              <select
+                value={newTerrainDifficulty}
+                onChange={(e) => setNewTerrainDifficulty(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+              >
+                <option value="FACIL">🟢 Fácil (Asfalto / Centro)</option>
+                <option value="MEDIA">🟡 Media (Ripio / Tierra / Periferia)</option>
+                <option value="ALTA">🔴 Alta (Camino rural / Desvío / Barro)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="font-semibold text-slate-700 dark:text-slate-200">Calles / Negocios de Referencia</label>
+            <input
+              type="text"
+              placeholder="Ej: Av. Mortensen, Calle La Paz, frente a Farmacia..."
+              value={newStreets}
+              onChange={(e) => setNewStreets(e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+            />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -655,7 +887,7 @@ export function ZonasClient({
                   step="any"
                   value={newLat}
                   onChange={(e) => setNewLat(e.target.value === "" ? "" : Number(e.target.value))}
-                  placeholder="-17.033507"
+                  placeholder="-17.035028"
                   className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white font-mono"
                 />
               </div>
@@ -667,7 +899,7 @@ export function ZonasClient({
                   step="any"
                   value={newLng}
                   onChange={(e) => setNewLng(e.target.value === "" ? "" : Number(e.target.value))}
-                  placeholder="-64.857436"
+                  placeholder="-64.860098"
                   className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white font-mono"
                 />
               </div>

@@ -14,9 +14,9 @@ import { getRealRoadDistanceKm } from "./maps-distance";
  */
 export const DEFAULT_DELIVERY_CENTER = {
   name: "Plaza Principal de Ivirgarzama",
-  // Coordenadas oficiales de la Plaza Principal de Ivirgarzama
-  latitude: -17.033507383798074,
-  longitude: -64.85743625167643,
+  // Coordenadas oficiales de cálculo desde el centro operativo en Ivirgarzama
+  latitude: -17.035028123456595,
+  longitude: -64.86009805670489,
 };
 
 export interface DeliveryPricingConfig {

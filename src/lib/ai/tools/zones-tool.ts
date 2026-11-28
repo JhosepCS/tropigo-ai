@@ -53,6 +53,8 @@ export const zonesTool: IAssistantTool = {
           categoria: geo?.category || "GENERAL",
           localidad: z.city?.name || "Ivirgarzama",
           descripcion: z.description,
+          calles: geo?.streets || null,
+          dificultadTerreno: geo?.terrainDifficulty || "FACIL",
           tarifaBaseDeliveryBs: z.baseDeliveryCost,
           tarifaBaseMototaxiBs: z.baseRideCost,
           tiempoEstimadoMinutos: z.estimatedMinutes,

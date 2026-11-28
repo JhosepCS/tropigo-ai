@@ -36,6 +36,9 @@ export async function POST(req: NextRequest) {
       category = "RESIDENCIAL",
       latitude,
       longitude,
+      streets,
+      terrainDifficulty = "FACIL",
+      terrainNote,
     } = body;
 
     if (!name || typeof name !== "string" || name.trim().length < 2) {
@@ -83,14 +86,23 @@ export async function POST(req: NextRequest) {
       finalCityId = defaultCity?.id || null;
     }
 
-    // GeoJson de coordenadas si se especificaron
+    // GeoJson de coordenadas, calles y dificultad de terreno
     let polygonGeoJson: string | null = null;
-    if (typeof latitude === "number" && typeof longitude === "number") {
+    if (
+      (typeof latitude === "number" && typeof longitude === "number") ||
+      streets ||
+      terrainDifficulty
+    ) {
       polygonGeoJson = JSON.stringify({
-        latitude,
-        longitude,
+        latitude: typeof latitude === "number" ? latitude : null,
+        longitude: typeof longitude === "number" ? longitude : null,
         category,
         referenceName: name.trim(),
+        streets: typeof streets === "string" ? streets.trim() : "",
+        terrainDifficulty: ["FACIL", "MEDIA", "ALTA"].includes(String(terrainDifficulty).toUpperCase())
+          ? String(terrainDifficulty).toUpperCase()
+          : "FACIL",
+        terrainNote: typeof terrainNote === "string" ? terrainNote.trim() : "",
       });
     }
 
