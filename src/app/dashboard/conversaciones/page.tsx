@@ -49,7 +49,7 @@ export default async function ConversacionesPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <h2 className="text-lg font-black text-[#101828]">
             Bandeja de Conversaciones

@@ -832,7 +832,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
       {/* =============================================================== */}
       {/* BARRA COMPACTA: estado del asistente y acciones del operador     */}
       {/* =============================================================== */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-600/30 bg-gradient-to-r from-emerald-950 via-[#074423] to-[#0D7B46] px-3 py-2.5 text-white shadow-sm">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-600/30 bg-gradient-to-r from-emerald-950 via-[#074423] to-[#0D7B46] px-3 py-2.5 text-white shadow-sm">
         <div className="flex min-w-0 items-center gap-2.5">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/10">
             <Bot className="h-5 w-5 text-emerald-300" />
@@ -932,7 +932,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
       {/* PANEL PRINCIPAL: lista de chats + conversación                   */}
       {/* =============================================================== */}
       <div
-        className="grid min-h-[420px] flex-1 overflow-hidden rounded-2xl border border-[#EAECF0] bg-white shadow-sm lg:min-h-0 lg:grid-cols-[minmax(250px,320px)_minmax(0,1fr)]"
+        className="grid min-h-0 flex-1 overflow-hidden rounded-2xl border border-[#EAECF0] bg-white shadow-sm lg:grid-cols-[minmax(250px,320px)_minmax(0,1fr)]"
       >
         {/* ---------------- Lista de conversaciones ---------------- */}
         <aside
