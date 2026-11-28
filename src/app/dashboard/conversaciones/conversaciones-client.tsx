@@ -7,21 +7,16 @@ import {
   UserCheck,
   Send,
   Sparkles,
-  Phone,
   ChevronDown,
   ChevronUp,
   ChevronLeft,
   Cpu,
   MapPin,
-  Mic,
   Image as ImageIcon,
-  CheckCircle2,
-  AlertTriangle,
   Play,
   RotateCcw,
-  Wifi,
-  Radio,
   FileText,
+  MessageSquare,
 } from "lucide-react";
 
 interface MessageItem {
@@ -58,12 +53,41 @@ interface ConversationItem {
     name?: string;
     phone?: string;
   };
-  messages: MessageItem[];
+  /** Historial completo. Solo viene en la carga inicial (SSR). */
+  messages?: MessageItem[];
+  /** Último mensaje, para la vista previa de la lista. */
+  lastMessage?: {
+    sender: string;
+    content: string;
+    mediaType?: string;
+    createdAt: string;
+  } | null;
+  messageCount?: number;
   isDemo?: boolean;
 }
 
 interface ConversacionesClientProps {
   initialConversations: any[];
+}
+
+/**
+ * Zona horaria fija: evita que el HTML del servidor y el del navegador
+ * muestren horas distintas (eso rompía la hidratación de React).
+ */
+const BOLIVIA_TIME_ZONE = "America/La_Paz";
+
+const clockFormatter = new Intl.DateTimeFormat("es-BO", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+  timeZone: BOLIVIA_TIME_ZONE,
+});
+
+function formatClock(iso?: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return clockFormatter.format(date);
 }
 
 // Conversaciones de demostración realistas para Ivirgarzama (claramente etiquetadas)
@@ -261,29 +285,49 @@ const DEMO_CONVERSATIONS: ConversationItem[] = [
 ];
 
 export function ConversacionesClient({ initialConversations }: ConversacionesClientProps) {
-  // El modo demo solo se activa manualmente. El CRM siempre escucha datos reales
-  // para que los chats nuevos aparezcan solos, aunque al inicio la BD esté vacía.
-  const hasRealData = initialConversations && initialConversations.length > 0;
+  // ---------------------------------------------------------------------
+  // Normalización de datos iniciales (SSR) para pintar el panel al instante
+  // sin esperar la primera petición al API.
+  // ---------------------------------------------------------------------
+  const normalizedInitial = (initialConversations || []).map(normalizeConversation);
+
   const [useDemoMode, setUseDemoMode] = useState<boolean>(false);
-  const [conversations, setConversations] = useState<ConversationItem[]>(
-    hasRealData ? initialConversations : []
-  );
+  const [conversations, setConversations] =
+    useState<ConversationItem[]>(normalizedInitial);
   const [selectedId, setSelectedId] = useState<string>(
-    hasRealData ? initialConversations[0]?.id || "" : ""
+    normalizedInitial[0]?.id || ""
   );
+  const [messagesByConv, setMessagesByConv] = useState<
+    Record<string, MessageItem[]>
+  >(() => buildInitialMessages(initialConversations));
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [workerOnline, setWorkerOnline] = useState<boolean | null>(null);
-  const [filter, setFilter] = useState<"ALL" | "ACTIVE" | "ATTENTION" | "CLOSED">("ALL");
+  const [filter, setFilter] = useState<"ALL" | "ACTIVE" | "ATTENTION" | "CLOSED">(
+    "ALL"
+  );
   const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<ConversationItem[] | null>(
+    null
+  );
   const [replyText, setReplyText] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
-  const [lastSync, setLastSync] = useState<Date>(new Date());
-  const [isLiveSyncing, setIsLiveSyncing] = useState<boolean>(true);
+  const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [mounted, setMounted] = useState(false);
   const [isTriggeringAi, setIsTriggeringAi] = useState(false);
   const [keepAiActive, setKeepAiActive] = useState(true);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [stickToBottom, setStickToBottom] = useState(true);
+  const [loadedChats, setLoadedChats] = useState<Record<string, boolean>>({});
+
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const quickActions = [
     {
@@ -312,121 +356,266 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
     },
   ];
 
-  const activeConversation = conversations.find((c) => c.id === selectedId) || conversations[0];
+  const activeConversation =
+    conversations.find((c) => c.id === selectedId) || conversations[0];
+  const activeMessages = activeConversation
+    ? messagesByConv[activeConversation.id] || []
+    : [];
 
-  // Auto-scroll al fondo al cambiar de conversación o recibir nuevos mensajes
+  const visibleConversations = search.trim()
+    ? searchResults || []
+    : conversations;
+
+  // ---------------------------------------------------------------------
+  // Marca de montaje: evita diferencias entre el HTML del servidor y el
+  // navegador al mostrar horas (causaban el error de hidratación de React).
+  // ---------------------------------------------------------------------
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeConversation?.messages?.length, selectedId]);
+    setMounted(true);
+  }, []);
 
-  // Polling en tiempo real. Siempre activo en modo real para que cada chat
-  // nuevo de WhatsApp aparezca solo, aunque al inicio no hubiera datos.
+  // ---------------------------------------------------------------------
+  // Lista de chats (ligera): solo metadatos y último mensaje.
+  // ---------------------------------------------------------------------
   useEffect(() => {
-    if (useDemoMode || !isLiveSyncing) return;
+    if (useDemoMode) return;
 
-    let isMounted = true;
-    const fetchLatest = async () => {
+    let alive = true;
+    const load = async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
       try {
-        const res = await fetch("/api/conversations", { cache: "no-store" });
-        if (res.ok && isMounted) {
-          const data = await res.json();
-          if (data.conversations && Array.isArray(data.conversations)) {
-            const nextConversations: ConversationItem[] = data.conversations;
-            setConversations(nextConversations);
-            setSelectedId((prev) => {
-              if (prev && nextConversations.some((c) => c.id === prev)) return prev;
-              return nextConversations[0]?.id || "";
-            });
-            setLastSync(new Date());
-          }
-        }
-      } catch (err) {
-        // Tolerancia a micro-interrupciones de red
+        const res = await fetch("/api/conversations/list?take=50", {
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error(`El servidor respondió ${res.status}`);
+        const data = await res.json();
+        if (!alive) return;
+
+        const list: ConversationItem[] = (data.conversations || []).map(
+          normalizeConversation
+        );
+        setConversations(list);
+        setHasMore(Boolean(data.hasMore));
+        setNextCursor(data.nextCursor || null);
+        setListError(null);
+        setLastSync(new Date());
+        setSelectedId((prev) => prev || list[0]?.id || "");
+      } catch (error: any) {
+        if (alive) setListError(error?.message || "Error de conexión");
       }
     };
 
-    fetchLatest();
-    const interval = setInterval(fetchLatest, 2000);
+    load();
+    const interval = window.setInterval(load, 4000);
     return () => {
-      isMounted = false;
-      clearInterval(interval);
+      alive = false;
+      window.clearInterval(interval);
     };
-  }, [useDemoMode, isLiveSyncing]);
+  }, [useDemoMode]);
 
-  // Estado real del worker de WhatsApp (Baileys) para el banner del CRM.
+  // ---------------------------------------------------------------------
+  // Mensajes del chat seleccionado (solo ese chat).
+  // ---------------------------------------------------------------------
   useEffect(() => {
-    let isMounted = true;
-    const fetchWorkerStatus = async () => {
+    if (useDemoMode || !selectedId) return;
+
+    let alive = true;
+    const load = async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      try {
+        const res = await fetch(
+          `/api/conversations/${selectedId}/messages?take=100`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) throw new Error(`El servidor respondió ${res.status}`);
+        const data = await res.json();
+        if (!alive) return;
+
+        setMessagesByConv((prev) => ({
+          ...prev,
+          [selectedId]: data.messages || [],
+        }));
+        setLoadedChats((prev) => ({ ...prev, [selectedId]: true }));
+        setMessagesError(null);
+      } catch (error: any) {
+        if (alive) setMessagesError(error?.message || "Error de conexión");
+      }
+    };
+
+    load();
+    const interval = window.setInterval(load, 3000);
+    return () => {
+      alive = false;
+      window.clearInterval(interval);
+    };
+  }, [selectedId, useDemoMode]);
+
+  // ---------------------------------------------------------------------
+  // Búsqueda en el servidor (con retardo para no saturar).
+  // ---------------------------------------------------------------------
+  useEffect(() => {
+    const q = search.trim();
+    if (!q) {
+      setSearchResults(null);
+      return;
+    }
+
+    let alive = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/conversations/list?take=50&q=${encodeURIComponent(q)}`,
+          { cache: "no-store" }
+        );
+        const data = await res.json();
+        if (alive) {
+          setSearchResults(
+            (data.conversations || []).map(normalizeConversation)
+          );
+        }
+      } catch {
+        if (alive) setSearchResults([]);
+      }
+    }, 250);
+
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [search]);
+
+  // ---------------------------------------------------------------------
+  // Estado real del worker de WhatsApp (Baileys) para el banner del CRM.
+  // ---------------------------------------------------------------------
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
       try {
         const res = await fetch("/api/channels/whatsapp/worker-status", {
           cache: "no-store",
         });
         if (!res.ok) return;
         const data = await res.json();
-        if (isMounted) setWorkerOnline(Boolean(data.connected));
+        if (alive) setWorkerOnline(Boolean(data.connected));
       } catch {
-        if (isMounted) setWorkerOnline(false);
+        if (alive) setWorkerOnline(false);
       }
     };
 
-    fetchWorkerStatus();
-    const interval = setInterval(fetchWorkerStatus, 10000);
+    load();
+    const interval = window.setInterval(load, 15000);
     return () => {
-      isMounted = false;
-      clearInterval(interval);
+      alive = false;
+      window.clearInterval(interval);
     };
   }, []);
 
-  const handleToggleDemoMode = async (enabled: boolean) => {
-    setUseDemoMode(enabled);
-    setMobileChatOpen(false);
-    if (enabled) {
-      setConversations(DEMO_CONVERSATIONS);
-      setSelectedId(DEMO_CONVERSATIONS[0].id);
-    } else {
-      try {
-        const res = await fetch("/api/conversations", { cache: "no-store" });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.conversations && data.conversations.length > 0) {
-            setConversations(data.conversations);
-            setSelectedId(data.conversations[0]?.id || "");
-            return;
-          }
-        }
-      } catch {}
-      setConversations(initialConversations || []);
-      setSelectedId(initialConversations?.[0]?.id || "");
+  // Auto-scroll solo si el operador está mirando el final del chat.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (stickToBottom) el.scrollTop = el.scrollHeight;
+  }, [activeMessages.length, selectedId, stickToBottom]);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setStickToBottom(distance < 90);
+  };
+
+  const handleSelectConversation = (id: string) => {
+    setSelectedId(id);
+    setMobileChatOpen(true);
+    setStickToBottom(true);
+    setMessagesError(null);
+  };
+
+  const handleLoadMore = async () => {
+    if (!nextCursor || loadingMore || useDemoMode) return;
+    setLoadingMore(true);
+    try {
+      const res = await fetch(
+        `/api/conversations/list?take=50&cursor=${encodeURIComponent(nextCursor)}`,
+        { cache: "no-store" }
+      );
+      const data = await res.json();
+      const extra: ConversationItem[] = (data.conversations || []).map(
+        normalizeConversation
+      );
+      setConversations((prev) => {
+        const seen = new Set(prev.map((c) => c.id));
+        return [...prev, ...extra.filter((c) => !seen.has(c.id))];
+      });
+      setHasMore(Boolean(data.hasMore));
+      setNextCursor(data.nextCursor || null);
+    } catch (error: any) {
+      setListError(error?.message || "No se pudieron cargar más chats");
+    } finally {
+      setLoadingMore(false);
     }
   };
 
-  // Filtrado de conversaciones
-  const filtered = conversations.filter((c) => {
+  const handleToggleDemoMode = (enabled: boolean) => {
+    setUseDemoMode(enabled);
+    setMobileChatOpen(false);
+    setSendError(null);
+
+    if (enabled) {
+      const demo = DEMO_CONVERSATIONS.map(normalizeConversation);
+      setConversations(demo);
+      setMessagesByConv(buildInitialMessages(DEMO_CONVERSATIONS));
+      setLoadedChats(
+        Object.fromEntries(demo.map((d) => [d.id, true])) as Record<string, boolean>
+      );
+      setSelectedId(demo[0]?.id || "");
+      setHasMore(false);
+      setNextCursor(null);
+    } else {
+      const real = (initialConversations || []).map(normalizeConversation);
+      setConversations(real);
+      setMessagesByConv(buildInitialMessages(initialConversations));
+      setLoadedChats({});
+      setSelectedId(real[0]?.id || "");
+    }
+  };
+
+  // Filtros por estado (se aplican sobre la lista ya cargada).
+  const filtered = visibleConversations.filter((c) => {
     const status = (c.status || "").toLowerCase();
     const isTakeover = status.includes("takeover");
     const isClosed = status.includes("closed") || status.includes("cerrad");
+
     if (filter === "ATTENTION" && !isTakeover) return false;
     if (filter === "ACTIVE" && (isTakeover || isClosed)) return false;
     if (filter === "CLOSED" && !isClosed) return false;
-
-    if (search) {
-      const q = search.toLowerCase();
-      const person = c.customer || c.contact;
-      const name = person?.name?.toLowerCase() || "";
-      const phone = person?.phone || "";
-      return name.includes(q) || phone.includes(q);
-    }
     return true;
   });
 
+  const counts = visibleConversations.reduce(
+    (acc, c) => {
+      const status = (c.status || "").toLowerCase();
+      if (status.includes("takeover")) acc.attention += 1;
+      else if (status.includes("closed") || status.includes("cerrad"))
+        acc.closed += 1;
+      else acc.active += 1;
+      return acc;
+    },
+    { active: 0, attention: 0, closed: 0 }
+  );
+
   const handleToggleTakeover = async () => {
     if (!activeConversation) return;
-    const currentIsTakeover = (activeConversation.status || "").toLowerCase().includes("takeover");
+    const currentIsTakeover = (activeConversation.status || "")
+      .toLowerCase()
+      .includes("takeover");
     const nextStatus = currentIsTakeover ? "AI_ACTIVE" : "HUMAN_TAKEOVER";
     const nextStatusUi = currentIsTakeover ? "ai_active" : "human_takeover";
 
     setConversations((prev) =>
-      prev.map((c) => (c.id === activeConversation.id ? { ...c, status: nextStatusUi } : c))
+      prev.map((c) =>
+        c.id === activeConversation.id ? { ...c, status: nextStatusUi } : c
+      )
     );
 
     if (!activeConversation.isDemo) {
@@ -434,7 +623,10 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
         await fetch("/api/conversations/toggle-takeover", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ conversationId: activeConversation.id, status: nextStatus }),
+          body: JSON.stringify({
+            conversationId: activeConversation.id,
+            status: nextStatus,
+          }),
         });
       } catch (e) {
         console.error(e);
@@ -442,8 +634,42 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
     }
   };
 
-  // Envía un mensaje del operador. Se usa tanto desde el formulario como desde
-  // los botones rápidos (envío inmediato en un clic).
+  const appendMessage = (conversationId: string, message: MessageItem) => {
+    setMessagesByConv((prev) => ({
+      ...prev,
+      [conversationId]: [...(prev[conversationId] || []), message],
+    }));
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === conversationId
+          ? {
+              ...c,
+              lastMessageAt: message.createdAt,
+              lastMessage: {
+                sender: message.sender,
+                content: message.content,
+                mediaType: message.mediaType || message.type || "text",
+                createdAt: message.createdAt,
+              },
+            }
+          : c
+      )
+    );
+  };
+
+  const replaceMessage = (
+    conversationId: string,
+    tempId: string,
+    message: MessageItem
+  ) => {
+    setMessagesByConv((prev) => ({
+      ...prev,
+      [conversationId]: (prev[conversationId] || []).map((m) =>
+        m.id === tempId ? { ...m, ...message } : m
+      ),
+    }));
+  };
+
   const sendOperatorMessage = async (rawText: string) => {
     const textToSend = rawText.trim();
     if (!textToSend || !activeConversation || isSending) return;
@@ -451,6 +677,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
     setIsSending(true);
     setSendError(null);
 
+    const conversationId = activeConversation.id;
     const tempId = `temp-${Date.now()}`;
     const newMsg: MessageItem = {
       id: tempId,
@@ -463,19 +690,12 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
     };
 
     const targetStatus = keepAiActive ? "ai_active" : "human_takeover";
-
     setConversations((prev) =>
       prev.map((c) =>
-        c.id === activeConversation.id
-          ? {
-              ...c,
-              status: targetStatus,
-              messages: [...c.messages, newMsg],
-              lastMessageAt: new Date().toISOString(),
-            }
-          : c
+        c.id === conversationId ? { ...c, status: targetStatus } : c
       )
     );
+    appendMessage(conversationId, newMsg);
 
     if (activeConversation.isDemo) {
       setIsSending(false);
@@ -487,8 +707,9 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          conversationId: activeConversation.id,
-          recipientPhone: (activeConversation.customer || activeConversation.contact)?.phone,
+          conversationId,
+          recipientPhone: (activeConversation.customer || activeConversation.contact)
+            ?.phone,
           content: textToSend,
           keepAiActive,
         }),
@@ -500,19 +721,10 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
       } else if (data.warning) {
         setSendError(data.warning);
       } else if (data.message) {
-        // Reemplazar mensaje temporal con el real de BD
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === activeConversation.id
-              ? {
-                  ...c,
-                  messages: c.messages.map((m) =>
-                    m.id === tempId ? { ...m, ...data.message, deliveryStatus: "SENT" } : m
-                  ),
-                }
-              : c
-          )
-        );
+        replaceMessage(conversationId, tempId, {
+          ...data.message,
+          deliveryStatus: "SENT",
+        });
       }
     } catch (e: any) {
       setSendError(e.message || "Error al conectar con el servidor.");
@@ -527,28 +739,23 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
 
   const handleTriggerAi = async () => {
     if (!activeConversation || isTriggeringAi) return;
+    const conversationId = activeConversation.id;
     setIsTriggeringAi(true);
     setSendError(null);
     try {
       const res = await fetch("/api/conversations/trigger-ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: activeConversation.id }),
+        body: JSON.stringify({ conversationId }),
       });
       const data = await res.json();
       if (data.success && data.message) {
         setConversations((prev) =>
           prev.map((c) =>
-            c.id === activeConversation.id
-              ? {
-                  ...c,
-                  status: "ai_active",
-                  messages: [...c.messages, data.message],
-                  lastMessageAt: new Date().toISOString(),
-                }
-              : c
+            c.id === conversationId ? { ...c, status: "ai_active" } : c
           )
         );
+        appendMessage(conversationId, data.message);
         if (data.warning) setSendError(data.warning);
       } else if (data.error) {
         setSendError(data.error);
@@ -597,7 +804,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
     if (s === "SENT") {
       return (
         <span
-          title="Check simple: Enviado a WhatsApp Cloud API"
+          title="Check simple: Enviado a WhatsApp"
           className="text-slate-400 font-semibold text-[11px] inline-flex items-center ml-0.5"
         >
           ✓
@@ -617,79 +824,83 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
     return null;
   }
 
+  const statusLower = (activeConversation?.status || "").toLowerCase();
+  const isTakeover = statusLower.includes("takeover");
+
   return (
-    <div className="space-y-4">
-      {/* ================================================================= */}
-      {/* BARRA PRINCIPAL DE ESTADO GLOBAL DE TROPIGOT IA & CONTROL HUMANO */}
-      {/* ================================================================= */}
-      <div className="bg-gradient-to-r from-emerald-950 via-[#074423] to-[#0D7B46] text-white p-4 rounded-3xl shadow-lg border border-emerald-600/40 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/20 shadow-inner">
-            <Bot className="w-6 h-6 text-emerald-300" />
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* =============================================================== */}
+      {/* BARRA COMPACTA: estado del asistente y acciones del operador     */}
+      {/* =============================================================== */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-600/30 bg-gradient-to-r from-emerald-950 via-[#074423] to-[#0D7B46] px-3 py-2.5 text-white shadow-sm">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/10">
+            <Bot className="h-5 w-5 text-emerald-300" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-black text-sm sm:text-base text-white tracking-tight">
-                TropiBot Asistente IA WhatsApp
-              </h3>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-black tracking-tight">TropiBot</span>
               <span
-                className={`inline-flex items-center gap-1.5 border px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
                   workerOnline === false
-                    ? "bg-amber-400/20 text-amber-200 border-amber-400/40"
-                    : "bg-emerald-400/20 text-emerald-300 border-emerald-400/40"
+                    ? "border-amber-400/40 bg-amber-400/20 text-amber-200"
+                    : "border-emerald-400/40 bg-emerald-400/20 text-emerald-300"
                 }`}
               >
                 <span
-                  className={`w-2 h-2 rounded-full animate-pulse ${
-                    workerOnline === false ? "bg-amber-400" : "bg-emerald-400"
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    workerOnline === false
+                      ? "bg-amber-400"
+                      : "bg-emerald-400 animate-pulse"
                   }`}
                 />
                 {workerOnline === null
-                  ? "Verificando WhatsApp..."
+                  ? "Verificando…"
                   : workerOnline
-                  ? "+591 57770679 conectado"
-                  : "Worker desconectado"}
+                  ? "WhatsApp conectado"
+                  : "Worker apagado"}
               </span>
-            </div>
-            <p className="text-xs text-emerald-100/90 font-medium">
-              {workerOnline === false ? (
-                <span className="text-amber-200 font-bold">
-                  ⚠️ El worker de WhatsApp no responde. Enciéndelo para recibir y enviar mensajes.
-                </span>
-              ) : activeConversation && (activeConversation.status || "").toLowerCase().includes("takeover") ? (
-                <span className="text-amber-300 font-bold">
-                  🟠 Control humano. Si no respondes en 17 s, TropiBot retoma el chat.
-                </span>
-              ) : (
-                <span className="text-emerald-200">
-                  🟢 TropiBot respondiendo automáticamente. Cada chat se actualiza en vivo.
+              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-emerald-100">
+                {useDemoMode ? "Modo demo" : `${conversations.length} chats`}
+              </span>
+              {!useDemoMode && (
+                <span className="hidden text-[10px] text-emerald-200/80 sm:inline">
+                  {mounted && lastSync
+                    ? `Actualizado ${formatClock(lastSync.toISOString())}`
+                    : "Sincronizando…"}
                 </span>
               )}
+            </div>
+            <p className="truncate text-[11px] text-emerald-100/90">
+              {workerOnline === false
+                ? "⚠️ Enciende el worker para recibir y enviar mensajes."
+                : isTakeover
+                ? "🟠 Control humano: si no respondes en 17 s, TropiBot retoma."
+                : "🟢 TropiBot respondiendo. Elige un chat para intervenir."}
             </p>
           </div>
         </div>
 
-        {/* Acciones Rápidas del Operador Humano */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           {activeConversation && (
             <button
               onClick={handleToggleTakeover}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black shadow-md transition-all active:scale-95 ${
-                (activeConversation.status || "").toLowerCase().includes("takeover")
-                  ? "bg-emerald-400 hover:bg-emerald-300 text-slate-950"
-                  : "bg-amber-400 hover:bg-amber-300 text-slate-950"
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black shadow-sm transition active:scale-95 ${
+                isTakeover
+                  ? "bg-emerald-400 text-slate-950 hover:bg-emerald-300"
+                  : "bg-amber-400 text-slate-950 hover:bg-amber-300"
               }`}
-              title="Cambiar entre IA y Operador para la conversación seleccionada"
+              title="Cambiar entre IA y operador para el chat seleccionado"
             >
-              {(activeConversation.status || "").toLowerCase().includes("takeover") ? (
+              {isTakeover ? (
                 <>
-                  <Bot className="w-4 h-4" />
-                  <span>Reanudar IA para este cliente</span>
+                  <Bot className="h-3.5 w-3.5" />
+                  <span>Reanudar IA</span>
                 </>
               ) : (
                 <>
-                  <UserCheck className="w-4 h-4" />
-                  <span>Tomar Control Humano</span>
+                  <UserCheck className="h-3.5 w-3.5" />
+                  <span>Tomar control</span>
                 </>
               )}
             </button>
@@ -699,87 +910,71 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
             <button
               onClick={handleTriggerAi}
               disabled={isTriggeringAi}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black bg-white hover:bg-emerald-50 text-[#074423] shadow-md transition-all active:scale-95 disabled:opacity-50"
-              title="Forzar a TropiBot a redactar y enviar una respuesta IA por WhatsApp"
+              className="flex items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 text-[11px] font-black text-[#074423] shadow-sm transition hover:bg-emerald-50 active:scale-95 disabled:opacity-50"
+              title="Pedir a TropiBot que responda ahora mismo"
             >
-              <Sparkles className="w-4 h-4 text-emerald-600" />
-              <span>{isTriggeringAi ? "Generando..." : "⚡ Forzar Respuesta IA"}</span>
+              <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
+              <span>{isTriggeringAi ? "Generando…" : "Forzar IA"}</span>
             </button>
           )}
-        </div>
-      </div>
 
-      {/* Barra de Modo de Demostración & Sincronización en Vivo */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-[#EAECF0] text-xs shadow-xs">
-        <div className="flex flex-wrap items-center gap-2">
-          {useDemoMode ? (
-            <span className="font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-full text-[11px] flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-              [DEMO] Vista Previa de Atención IA en Ivirgarzama
-            </span>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-full text-[11px] flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>WhatsApp en vivo · {conversations.length} chats</span>              </span>
-              <span className="text-[11px] text-[#667085] hidden md:inline">
-                Sincronizado a las {lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-              </span>
-            </div>
-          )}
-          <span className="text-[#667085] hidden lg:inline">
-            {useDemoMode
-              ? "Simulador visual de flujos de comida, carreras y audios en Ivirgarzama."
-              : `${conversations.length} conversaciones activas en Supabase.`}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
           <button
             onClick={() => handleToggleDemoMode(!useDemoMode)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold border text-xs transition-colors bg-slate-50 hover:bg-slate-100 border-slate-300 text-slate-800 shadow-xs"
+            className="flex items-center gap-1.5 rounded-xl border border-white/25 bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-white/20"
           >
-            <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
-            <span>{useDemoMode ? "Cambiar a datos reales de BD" : "Ver conversaciones [DEMO]"}</span>
+            <RotateCcw className="h-3.5 w-3.5" />
+            <span>{useDemoMode ? "Datos reales" : "Demo"}</span>
           </button>
         </div>
       </div>
 
-      {/* Contenedor del Chat en Vivo estilo WhatsApp Web */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 h-[calc(100dvh-230px)] min-h-[560px] bg-white rounded-3xl border border-[#EAECF0] shadow-sm overflow-hidden">
-        {/* Columna Izquierda: Lista de Conversaciones */}
-        <div
-          className={`lg:col-span-4 border-r border-[#EAECF0] flex-col h-full bg-[#FAFAFA] ${
+      {/* =============================================================== */}
+      {/* PANEL PRINCIPAL: lista de chats + conversación                   */}
+      {/* =============================================================== */}
+      <div
+        className="grid min-h-[420px] flex-1 overflow-hidden rounded-2xl border border-[#EAECF0] bg-white shadow-sm lg:min-h-0 lg:grid-cols-[minmax(250px,320px)_minmax(0,1fr)]"
+      >
+        {/* ---------------- Lista de conversaciones ---------------- */}
+        <aside
+          className={`min-h-0 flex-col border-r border-[#EAECF0] bg-[#FAFAFA] ${
             mobileChatOpen ? "hidden lg:flex" : "flex"
           }`}
         >
-          {/* Buscador y Filtros */}
-          <div className="p-3.5 border-b border-[#EAECF0] space-y-2.5 bg-white">
+          <div className="shrink-0 space-y-2 border-b border-[#EAECF0] bg-white p-2.5">
             <div className="relative">
-              <Search className="w-4 h-4 text-[#98A2B3] absolute left-3 top-2.5" />
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[#98A2B3]" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar cliente de Ivirgarzama o teléfono..."
-                className="w-full bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl pl-9 pr-3 py-2 text-xs text-[#101828] focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="Buscar por nombre, teléfono o mensaje…"
+                className="w-full rounded-xl border border-[#D0D5DD] bg-[#F9FAFB] py-2 pl-8 pr-8 text-xs text-[#101828] focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
+              {search && (
+                <button
+                  onClick={() => setSearch("")}
+                  className="absolute right-2 top-1.5 rounded-lg px-1.5 py-0.5 text-xs font-bold text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  title="Limpiar búsqueda"
+                >
+                  ✕
+                </button>
+              )}
             </div>
 
-            <div className="flex gap-1.5 text-xs">
+            <div className="flex gap-1 overflow-x-auto pb-0.5">
               {[
-                { id: "ALL", label: `Todas (${conversations.length})` },
-                { id: "ACTIVE", label: "IA activa" },
-                { id: "ATTENTION", label: "Humano" },
-                { id: "CLOSED", label: "Cerradas" },
+                { id: "ALL", label: `Todas (${visibleConversations.length})` },
+                { id: "ACTIVE", label: `IA (${counts.active})` },
+                { id: "ATTENTION", label: `Humano (${counts.attention})` },
+                { id: "CLOSED", label: `Cerradas (${counts.closed})` },
               ].map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setFilter(tab.id as any)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors ${
+                  className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-bold transition-colors ${
                     filter === tab.id
                       ? "bg-slate-900 text-white"
-                      : "bg-white border border-[#D0D5DD] text-[#475467] hover:bg-[#F2F4F7]"
+                      : "border border-[#D0D5DD] bg-white text-[#475467] hover:bg-[#F2F4F7]"
                   }`}
                 >
                   {tab.label}
@@ -788,374 +983,372 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
             </div>
           </div>
 
-          {/* Lista de Chats */}
-          <div className="flex-1 overflow-y-auto divide-y divide-[#EAECF0]">
+          {listError && (
+            <div className="shrink-0 border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-[10px] font-semibold text-rose-700">
+              ⚠️ {listError}. Reintentando…
+            </div>
+          )}
+
+          <div className="min-h-0 flex-1 overflow-y-auto divide-y divide-[#EAECF0]">
             {filtered.length === 0 ? (
-              <div className="p-8 text-center text-xs text-[#667085] space-y-2">
-                <Bot className="w-8 h-8 text-slate-300 mx-auto" />
-                <p className="font-semibold text-slate-700">No hay conversaciones registradas</p>
+              <div className="space-y-2 p-8 text-center text-xs text-[#667085]">
+                <Bot className="mx-auto h-8 w-8 text-slate-300" />
+                <p className="font-semibold text-slate-700">
+                  {search.trim()
+                    ? "Sin resultados"
+                    : "No hay conversaciones en este filtro"}
+                </p>
                 <p className="text-[11px] text-slate-400">
-                  {useDemoMode
-                    ? "No se encontraron coincidencias en el simulador."
-                    : "Aún no hay chats. Escribe al +591 57770679 y aparecerán aquí en ~2 segundos. Si no llegan, revisa que el worker esté conectado."}
+                  {search.trim()
+                    ? "Prueba con otro nombre o número."
+                    : "Escribe al +591 57770679 y el chat aparecerá en segundos."}
                 </p>
               </div>
             ) : (
               filtered.map((c) => {
                 const isSelected = c.id === activeConversation?.id;
-                const lastMsg = c.messages?.[c.messages.length - 1];
-                const statusLower = (c.status || "").toLowerCase();
-                const isTakeover = statusLower.includes("takeover");
-                const isClosed = statusLower.includes("closed") || statusLower.includes("cerrad");
+                const cStatus = (c.status || "").toLowerCase();
+                const cTakeover = cStatus.includes("takeover");
+                const cClosed = cStatus.includes("closed") || cStatus.includes("cerrad");
+                const last = c.lastMessage;
 
                 return (
-                  <div
+                  <button
                     key={c.id}
-                    onClick={() => {
-                      setSelectedId(c.id);
-                      setMobileChatOpen(true);
-                    }}
-                    className={`p-3.5 cursor-pointer transition-colors flex items-start gap-3 ${
+                    type="button"
+                    onClick={() => handleSelectConversation(c.id)}
+                    className={`flex w-full items-start gap-2.5 p-2.5 text-left transition-colors ${
                       isSelected
-                        ? "bg-emerald-50/70 border-l-4 border-l-emerald-600"
-                        : "hover:bg-[#F2F4F7]"
+                        ? "border-l-4 border-l-emerald-600 bg-emerald-50/70"
+                        : "border-l-4 border-l-transparent hover:bg-[#F2F4F7]"
                     }`}
                   >
                     <div
-                      className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-xs shrink-0 ${
-                        isTakeover
-                          ? "bg-amber-100 text-amber-800 border border-amber-300"
-                          : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-xs font-bold ${
+                        cTakeover
+                          ? "border-amber-300 bg-amber-100 text-amber-800"
+                          : "border-emerald-200 bg-emerald-100 text-emerald-800"
                       }`}
                     >
                       {(c.customer || c.contact)?.name?.[0] || "C"}
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <p className="font-bold text-xs text-[#101828] truncate">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="truncate text-xs font-bold text-[#101828]">
                           {(c.customer || c.contact)?.name || "Cliente WhatsApp"}
                         </p>
-                        <span className="text-[10px] text-[#98A2B3]">
-                          {c.lastMessageAt
-                            ? new Date(c.lastMessageAt).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                            : ""}
+                        <span className="shrink-0 text-[10px] text-[#98A2B3]">
+                          {formatClock(c.lastMessageAt)}
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[9px] bg-emerald-50 text-emerald-700 px-1 py-0.2 rounded font-bold border border-emerald-200">
-                          WhatsApp
-                        </span>
-                        <span className="text-[11px] text-[#667085] truncate">
-                          {(c.customer || c.contact)?.phone}
-                        </span>
-                      </div>
-
-                      <p className="text-xs text-[#475467] truncate mt-1">
-                        {lastMsg?.type === "audio" || lastMsg?.mediaType === "audio"
-                          ? "🎤 Audio / Nota de voz"
-                          : lastMsg?.type === "location" || lastMsg?.mediaType === "location"
-                          ? "📍 Ubicación compartida"
-                          : lastMsg?.type === "image" || lastMsg?.mediaType === "image"
-                          ? "📷 Foto recibida"
-                          : lastMsg?.type === "document" || lastMsg?.mediaType === "document"
-                          ? "📄 Documento recibido"
-                          : lastMsg?.content || "Sin mensajes"}
+                      <p className="truncate text-[10px] text-[#667085]">
+                        {(c.customer || c.contact)?.phone}
                       </p>
 
-                      {isClosed ? (
-                        <span className="inline-block mt-1 text-[9px] bg-slate-100 text-slate-600 border border-slate-300 px-1.5 py-0.5 rounded font-bold">
-                          📁 Chat cerrado
-                        </span>
-                      ) : isTakeover ? (
-                        <span className="inline-block mt-1 text-[9px] bg-amber-50 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-bold">
-                          ⚠️ Operador al mando (IA en pausa)
-                        </span>
-                      ) : (
-                        <span className="inline-block mt-1 text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
-                          🤖 IA Activa respondiendo
-                        </span>
-                      )}
+                      <p className="mt-0.5 truncate text-[11px] text-[#475467]">
+                        {lastPreview(last)}
+                      </p>
+
+                      <div className="mt-1 flex items-center gap-1">
+                        {cClosed ? (
+                          <span className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">
+                            📁 Cerrado
+                          </span>
+                        ) : cTakeover ? (
+                          <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-800">
+                            ⚠️ Humano
+                          </span>
+                        ) : (
+                          <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">
+                            🤖 IA
+                          </span>
+                        )}
+                        {typeof c.messageCount === "number" && (
+                          <span className="text-[9px] text-[#98A2B3]">
+                            {c.messageCount} msj
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  </button>
                 );
               })
             )}
           </div>
-        </div>
 
-        {/* Columna Derecha: Hilo de Conversación (Oculta en móviles si no hay selección) */}
+          {hasMore && !search.trim() && !useDemoMode && (
+            <button
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              className="shrink-0 border-t border-[#EAECF0] bg-white py-2 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+            >
+              {loadingMore ? "Cargando…" : "Cargar chats anteriores"}
+            </button>
+          )}
+        </aside>
+
+        {/* ---------------- Conversación abierta ---------------- */}
         {activeConversation ? (
-          <div
-            className={`lg:col-span-8 flex-col h-full bg-[#F0F2F5] ${
+          <section
+            className={`min-h-0 flex-col bg-[#F0F2F5] ${
               mobileChatOpen ? "flex" : "hidden lg:flex"
             }`}
           >
-            {/* Header de la Conversación */}
-            <div className="border-b border-[#EAECF0] bg-white sticky top-0 z-10 shrink-0">
-              {/* Fila 1: Nombre y teléfono del cliente */}
-              <div className="px-3.5 pt-3 pb-2 flex items-center gap-2.5">
-                {/* Botón Volver en Móvil */}
+            {/* Encabezado del chat */}
+            <div className="shrink-0 border-b border-[#EAECF0] bg-white px-3 py-2">
+              <div className="flex items-center gap-2.5">
                 <button
                   onClick={() => setMobileChatOpen(false)}
-                  className="lg:hidden p-1.5 -ml-1 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 transition-colors"
-                  title="Volver a la lista de chats"
+                  className="-ml-1 rounded-xl p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900 lg:hidden"
+                  title="Volver a la lista"
                 >
-                  <ChevronLeft className="w-5 h-5" />
+                  <ChevronLeft className="h-5 w-5" />
                 </button>
 
-                <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-xs">
-                  {(activeConversation.customer || activeConversation.contact)?.name?.[0] || "C"}
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-sm font-bold text-white">
+                  {(activeConversation.customer || activeConversation.contact)
+                    ?.name?.[0] || "C"}
                 </div>
+
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <h4 className="font-bold text-xs sm:text-sm text-[#101828] truncate">
-                      {(activeConversation.customer || activeConversation.contact)?.name || "Cliente WhatsApp"}
+                    <h4 className="truncate text-xs font-bold text-[#101828] sm:text-sm">
+                      {(activeConversation.customer || activeConversation.contact)
+                        ?.name || "Cliente WhatsApp"}
                     </h4>
                     {activeConversation.isDemo && (
-                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded">
+                      <span className="rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
                         [DEMO]
                       </span>
                     )}
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
+                        isTakeover
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-emerald-100 text-emerald-800"
+                      }`}
+                    >
+                      {isTakeover ? "Humano" : "IA activa"}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2 text-[11px] text-[#667085]">
-                    <span className="font-mono">{(activeConversation.customer || activeConversation.contact)?.phone}</span>
+                  <p className="truncate text-[11px] text-[#667085]">
+                    <span className="font-mono">
+                      {(activeConversation.customer || activeConversation.contact)
+                        ?.phone}
+                    </span>
                     {activeConversation.customer?.zone && (
                       <>
-                        <span>•</span>
-                        <span className="font-semibold text-emerald-800">
-                          Zona: {activeConversation.customer.zone}
+                        {" "}
+                        • <span className="font-semibold text-emerald-800">
+                          {activeConversation.customer.zone}
                         </span>
                       </>
                     )}
-                  </div>
+                  </p>
                 </div>
-              </div>
 
-              {/* Fila 2: Controles de IA — SIEMPRE VISIBLE */}
-              <div className="px-3.5 pb-2.5 flex flex-wrap items-center gap-2">
-                {/* Badge de Estado Actual */}
-                {(activeConversation.status || "").toLowerCase().includes("takeover") ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-900 border border-amber-300 shadow-2xs">
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                    <span>Control Humano (IA Pausada)</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>IA Activa (TropiBot)</span>
-                  </span>
-                )}
-
-                {/* Botón de Alternar Modo */}
                 <button
                   onClick={handleToggleTakeover}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs ${
-                    (activeConversation.status || "").toLowerCase().includes("takeover")
-                      ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                      : "bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200"
+                  className={`hidden shrink-0 rounded-xl px-3 py-1.5 text-[11px] font-bold transition sm:flex sm:items-center sm:gap-1.5 ${
+                    isTakeover
+                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                      : "border border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200"
                   }`}
-                  title="Cambiar entre IA automática y Operador Humano"
                 >
-                  {(activeConversation.status || "").toLowerCase().includes("takeover") ? (
+                  {isTakeover ? (
                     <>
-                      <Bot className="w-3.5 h-3.5" />
-                      <span>Reanudar IA</span>
+                      <Bot className="h-3.5 w-3.5" />
+                      Reanudar IA
                     </>
                   ) : (
                     <>
-                      <UserCheck className="w-3.5 h-3.5" />
-                      <span>Tomar Control</span>
+                      <UserCheck className="h-3.5 w-3.5" />
+                      Tomar control
                     </>
                   )}
                 </button>
-
-                {/* Botón Para Forzar que la IA Responda Inmediatamente */}
-                <button
-                  onClick={handleTriggerAi}
-                  disabled={isTriggeringAi}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-gradient-to-r from-[#0D7B46] to-[#074423] hover:opacity-95 text-white shadow-xs transition-transform active:scale-95 disabled:opacity-50"
-                  title="Pedir a TropiBot IA que genere y envíe una respuesta ahora mismo por WhatsApp"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
-                  <span>{isTriggeringAi ? "IA Generando..." : "⚡ Forzar Respuesta IA"}</span>
-                </button>
-
-                <span className="text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">
-                  ⏱️ Si no respondes en 17 s, TropiBot retoma
-                </span>
               </div>
             </div>
 
-            {/* Hilo de Mensajes */}
-            <div className="flex-1 p-4 overflow-y-auto space-y-3.5">
-              {activeConversation.messages.map((m) => {
-                const senderLower = (m.sender || "").toLowerCase();
-                const isCustomer = senderLower === "customer";
-                const isHuman = senderLower === "human" || senderLower === "operator";
-                const isAssistant = !isCustomer && !isHuman;
+            {messagesError && (
+              <div className="shrink-0 border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-[10px] font-semibold text-rose-700">
+                ⚠️ No se pudo actualizar el chat ({messagesError}). Reintentando…
+              </div>
+            )}
 
-                let tools: any[] = [];
-                try {
-                  if (m.toolCallsJson) tools = JSON.parse(m.toolCallsJson);
-                } catch (e) {}
+            {/* Hilo de mensajes */}
+            <div
+              ref={scrollRef}
+              onScroll={handleScroll}
+              className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 sm:p-4"
+            >
+              {activeMessages.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-[#667085]">
+                  <MessageSquare className="h-8 w-8 text-slate-300" />
+                  <p>
+                    {loadedChats[activeConversation.id]
+                      ? "Este chat todavía no tiene mensajes."
+                      : "Cargando mensajes…"}
+                  </p>
+                </div>
+              ) : (
+                activeMessages.map((m) => {
+                  const senderLower = (m.sender || "").toLowerCase();
+                  const isCustomer = senderLower === "customer";
+                  const isHuman =
+                    senderLower === "human" || senderLower === "operator";
+                  const isAssistant = !isCustomer && !isHuman;
 
-                return (
-                  <div
-                    key={m.id}
-                    className={`flex gap-2.5 max-w-[85%] ${
-                      isCustomer ? "mr-auto" : "ml-auto flex-row-reverse"
-                    }`}
-                  >
+                  let tools: any[] = [];
+                  try {
+                    if (m.toolCallsJson) tools = JSON.parse(m.toolCallsJson);
+                  } catch (e) {}
+
+                  return (
                     <div
-                      className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 text-[10px] font-bold ${
-                        isCustomer
-                          ? "bg-slate-700 text-white"
-                          : isHuman
-                          ? "bg-amber-600 text-white"
-                          : "bg-emerald-600 text-white"
+                      key={m.id}
+                      className={`flex max-w-[88%] gap-2 ${
+                        isCustomer ? "mr-auto" : "ml-auto flex-row-reverse"
                       }`}
                     >
-                      {isCustomer ? "CLI" : isHuman ? "OPER" : "IA"}
-                    </div>
-
-                    <div className="space-y-1 max-w-full">
-                      {/* Burbuja Principal */}
                       <div
-                        className={`p-3.5 rounded-2xl text-xs leading-relaxed shadow-xs whitespace-pre-wrap break-words ${
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-[10px] font-bold ${
                           isCustomer
-                            ? "bg-white text-slate-900 border border-slate-200 rounded-tl-none"
+                            ? "bg-slate-700 text-white"
                             : isHuman
-                            ? "bg-amber-100 text-amber-950 border border-amber-300 rounded-tr-none font-medium"
-                            : "bg-[#DCF8C6] text-slate-900 border border-emerald-200 rounded-tr-none"
+                            ? "bg-amber-600 text-white"
+                            : "bg-emerald-600 text-white"
                         }`}
                       >
-                        {/* Mensaje de tipo Audio */}
-                        {(m.type === "audio" || m.mediaType === "audio") && (
-                          <div className="space-y-2 mb-1.5">
-                            <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-xl border border-slate-200">
-                              <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center">
-                                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                        {isCustomer ? "CLI" : isHuman ? "OPER" : "IA"}
+                      </div>
+
+                      <div className="max-w-full space-y-1">
+                        <div
+                          className={`whitespace-pre-wrap break-words rounded-2xl p-3 text-xs leading-relaxed shadow-xs ${
+                            isCustomer
+                              ? "rounded-tl-none border border-slate-200 bg-white text-slate-900"
+                              : isHuman
+                              ? "rounded-tr-none border border-amber-300 bg-amber-100 font-medium text-amber-950"
+                              : "rounded-tr-none border border-emerald-200 bg-[#DCF8C6] text-slate-900"
+                          }`}
+                        >
+                          {(m.type === "audio" || m.mediaType === "audio") && (
+                            <div className="mb-1.5 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-100 p-2">
+                              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-white">
+                                <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />
                               </div>
                               <div className="flex-1">
-                                <div className="h-1 bg-slate-300 rounded-full w-full">
-                                  <div className="h-1 bg-emerald-600 rounded-full w-1/3"></div>
+                                <div className="h-1 w-full rounded-full bg-slate-300">
+                                  <div className="h-1 w-1/3 rounded-full bg-emerald-600" />
                                 </div>
                               </div>
-                              <span className="text-[10px] font-mono font-bold text-slate-600">
+                              <span className="font-mono text-[10px] font-bold text-slate-600">
                                 {m.audioDuration || "0:08"}
                               </span>
                             </div>
-                            {m.audioTranscript && (
-                              <div className="bg-white/90 p-2 rounded-lg border border-slate-200 text-[11px] text-slate-700">
-                                <span className="font-bold text-[10px] text-emerald-800 uppercase tracking-wide block">
-                                  Transcripción Whisper (Groq):
+                          )}
+
+                          {(m.type === "location" ||
+                            m.mediaType === "location") && (
+                            <div className="mb-1 space-y-1 rounded-xl border border-emerald-200 bg-emerald-50/70 p-2.5">
+                              <div className="flex items-center gap-1.5 font-bold text-emerald-800">
+                                <MapPin className="h-4 w-4 shrink-0 text-emerald-600" />
+                                <span>
+                                  {m.locationData?.address || m.content}
                                 </span>
-                                &ldquo;{m.audioTranscript}&rdquo;
+                              </div>
+                            </div>
+                          )}
+
+                          {(m.type === "image" || m.mediaType === "image") && (
+                            <div className="mb-1 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-100 p-2">
+                              <ImageIcon className="h-4 w-4 shrink-0 text-emerald-600" />
+                              <span className="text-[11px] font-semibold text-slate-700">
+                                Foto recibida
+                              </span>
+                            </div>
+                          )}
+
+                          {(m.type === "document" ||
+                            m.mediaType === "document") && (
+                            <div className="mb-1 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-100 p-2">
+                              <FileText className="h-4 w-4 shrink-0 text-emerald-600" />
+                              <span className="text-[11px] font-semibold text-slate-800">
+                                Documento
+                              </span>
+                            </div>
+                          )}
+
+                          {m.type !== "audio" && m.mediaType !== "audio" && m.content}
+                        </div>
+
+                        {isAssistant && tools.length > 0 && (
+                          <div>
+                            <button
+                              onClick={() => toggleTools(m.id)}
+                              className="flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800 transition-colors hover:bg-emerald-100"
+                            >
+                              <Cpu className="h-3 w-3 text-emerald-600" />
+                              <span>Herramientas ({tools.length})</span>
+                              {expandedTools[m.id] ? (
+                                <ChevronUp className="h-3 w-3" />
+                              ) : (
+                                <ChevronDown className="h-3 w-3" />
+                              )}
+                            </button>
+
+                            {expandedTools[m.id] && (
+                              <div className="mt-1 space-y-1.5 rounded-xl border border-[#EAECF0] bg-white p-2.5 text-[10px] shadow-xs">
+                                {tools.map((t, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="border-b border-slate-100 pb-1.5 last:border-none last:pb-0"
+                                  >
+                                    <span className="font-mono font-bold text-emerald-700">
+                                      {t.tool}()
+                                    </span>
+                                    <pre className="mt-0.5 overflow-x-auto rounded bg-slate-50 p-1 font-mono text-[9px] text-slate-700">
+                                      {JSON.stringify(t.args, null, 2)}
+                                    </pre>
+                                  </div>
+                                ))}
                               </div>
                             )}
                           </div>
                         )}
 
-                        {/* Mensaje de tipo Ubicación */}
-                        {(m.type === "location" || m.mediaType === "location") && (
-                          <div className="space-y-1 bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-200 mb-1">
-                            <div className="flex items-center gap-1.5 text-emerald-800 font-bold">
-                              <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
-                              <span>{m.locationData?.address || m.content}</span>
-                            </div>
-                            {m.locationData?.zone && (
-                              <p className="text-[11px] text-emerald-700">
-                                Zona detectada en Supabase: <strong>{m.locationData.zone}</strong>
-                              </p>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Mensaje de tipo Documento */}
-                        {(m.type === "document" || m.mediaType === "document") && (
-                          <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-xl border border-slate-200 mb-1">
-                            <FileText className="w-5 h-5 text-emerald-600 shrink-0" />
-                            <span className="text-xs font-semibold text-slate-800">{m.content}</span>
-                          </div>
-                        )}
-
-                        {/* Contenido en Texto */}
-                        {m.type !== "audio" && m.mediaType !== "audio" && m.content}
-                      </div>
-
-                      {/* Herramientas de IA utilizadas */}
-                      {isAssistant && tools.length > 0 && (
-                        <div>
-                          <button
-                            onClick={() => toggleTools(m.id)}
-                            className="flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md transition-colors"
-                          >
-                            <Cpu className="w-3 h-3 text-emerald-600" />
-                            <span>Herramientas Supabase ({tools.length})</span>
-                            {expandedTools[m.id] ? (
-                              <ChevronUp className="w-3 h-3" />
-                            ) : (
-                              <ChevronDown className="w-3 h-3" />
-                            )}
-                          </button>
-
-                          {expandedTools[m.id] && (
-                            <div className="mt-1 p-2.5 bg-white border border-[#EAECF0] rounded-xl space-y-1.5 text-[10px] shadow-xs">
-                              {tools.map((t, idx) => (
-                                <div key={idx} className="border-b border-slate-100 pb-1.5 last:border-none last:pb-0">
-                                  <span className="font-mono font-bold text-emerald-700">
-                                    {t.tool}()
-                                  </span>
-                                  <pre className="bg-slate-50 p-1 rounded text-[9px] text-slate-700 font-mono mt-0.5 overflow-x-auto">
-                                    {JSON.stringify(t.args, null, 2)}
-                                  </pre>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                        <div
+                          className={`flex items-center gap-1 text-[9px] text-[#98A2B3] ${
+                            isCustomer ? "justify-start" : "justify-end"
+                          }`}
+                        >
+                          <span>
+                            {isCustomer
+                              ? "Cliente"
+                              : isHuman
+                              ? "Operador"
+                              : "TropiBot"}
+                          </span>
+                          <span>•</span>
+                          <span>{formatClock(m.createdAt)}</span>
+                          {!isCustomer && renderDeliveryTicks(m.deliveryStatus)}
                         </div>
-                      )}
-
-                      <div
-                        className={`text-[9px] text-[#98A2B3] flex items-center gap-1 ${
-                          isCustomer ? "justify-start" : "justify-end"
-                        }`}
-                      >
-                        <span>
-                          {isCustomer
-                            ? "Cliente WhatsApp"
-                            : isHuman
-                            ? "Operador TropiGO"
-                            : "TropiBot IA"}
-                        </span>
-                        <span>•</span>
-                        <span>
-                          {new Date(m.createdAt).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                        {!isCustomer && renderDeliveryTicks(m.deliveryStatus)}
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-              <div ref={messagesEndRef} />
+                  );
+                })
+              )}
             </div>
 
-            {/* Input de Respuesta de Operador Humano y Botones Rápidos */}
-            <div className="p-3 border-t border-[#EAECF0] bg-white space-y-2.5 sticky bottom-0 z-10 shrink-0">
-              {/* Barra de Botones Rápidos Interactivos */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-[#0D7B46]" />
-                  <span>Botones Rápidos:</span>
+            {/* Redacción y envío */}
+            <div className="shrink-0 space-y-2 border-t border-[#EAECF0] bg-white p-2.5">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                <span className="mr-1 flex shrink-0 items-center gap-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  <Sparkles className="h-3 w-3 text-[#0D7B46]" />
+                  Rápidos
                 </span>
                 {quickActions.map((qa, idx) => (
                   <button
@@ -1164,7 +1357,7 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
                     onClick={() => handleQuickSend(qa.text)}
                     disabled={isSending}
                     title="Enviar este mensaje ahora por WhatsApp"
-                    className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#F4EEF2] hover:bg-[#E6F4D7] text-[#1F0E1C] hover:text-[#074423] border border-slate-200 transition-colors shadow-2xs disabled:opacity-50"
+                    className="shrink-0 rounded-lg border border-slate-200 bg-[#F4EEF2] px-2 py-1 text-[11px] font-bold text-[#1F0E1C] shadow-2xs transition-colors hover:bg-[#E6F4D7] hover:text-[#074423] disabled:opacity-50"
                   >
                     {qa.label}
                   </button>
@@ -1172,46 +1365,44 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
               </div>
 
               {sendError && (
-                <div className="bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-xl text-xs flex items-center justify-between">
-                  <span>⚠️ {sendError}</span>
+                <div className="flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">
+                  <span className="min-w-0 truncate">⚠️ {sendError}</span>
                   <button
                     onClick={() => setSendError(null)}
-                    className="text-rose-500 hover:text-rose-700 font-bold ml-2 text-xs"
+                    className="ml-2 font-bold text-rose-500 hover:text-rose-700"
                   >
                     ✕
                   </button>
                 </div>
               )}
 
-              {/* Formulario de Envío (SIEMPRE DISPONIBLE para el operador) */}
               <form onSubmit={handleSendHumanReply} className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
-                    placeholder="Escribe un mensaje para el cliente... (se enviará directamente a su WhatsApp)"
-                    className="flex-1 bg-[#F9FAFB] border border-[#D0D5DD] rounded-xl px-4 py-2.5 text-xs text-[#101828] focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-inner"
+                    placeholder="Escribe un mensaje para el cliente…"
+                    className="min-w-0 flex-1 rounded-xl border border-[#D0D5DD] bg-[#F9FAFB] px-3 py-2 text-xs text-[#101828] shadow-inner focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                   <button
                     type="submit"
                     disabled={!replyText.trim() || isSending}
-                    className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-[#D0D5DD] text-white px-4 py-2.5 rounded-xl transition-all shrink-0 shadow-sm flex items-center gap-1.5 text-xs font-bold active:scale-95"
+                    className="flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-emerald-700 active:scale-95 disabled:bg-[#D0D5DD]"
                   >
                     {isSending ? (
                       <span className="animate-spin text-xs">⏳</span>
                     ) : (
                       <>
-                        <Send className="w-4 h-4" />
-                        <span>Enviar a WhatsApp</span>
+                        <Send className="h-4 w-4" />
+                        <span className="hidden sm:inline">Enviar</span>
                       </>
                     )}
                   </button>
                 </div>
 
-                {/* Casilla de verificación: Mantener IA activa */}
-                <div className="flex items-center justify-between pt-0.5 text-[11px] text-[#475467]">
-                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <div className="flex items-center justify-between gap-2 text-[10px] text-[#475467]">
+                  <label className="flex cursor-pointer select-none items-center gap-1.5">
                     <input
                       type="checkbox"
                       checked={keepAiActive}
@@ -1219,20 +1410,76 @@ export function ConversacionesClient({ initialConversations }: ConversacionesCli
                       className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                     />
                     <span className="font-medium">
-                      Mantener al Asistente IA activo tras enviar este mensaje (no pausar TropiBot)
+                      Mantener la IA activa después de enviar
                     </span>
                   </label>
-                  <span className="text-[10px] text-slate-400">Canal: WhatsApp (+591 57770679)</span>
+                  <span className="hidden text-slate-400 sm:inline">
+                    WhatsApp +591 57770679
+                  </span>
                 </div>
               </form>
             </div>
-          </div>
+          </section>
         ) : (
-          <div className="lg:col-span-8 flex items-center justify-center text-xs text-[#667085]">
+          <section className="hidden min-h-0 items-center justify-center bg-[#F0F2F5] text-xs text-[#667085] lg:flex">
             Selecciona una conversación para abrir el chat
-          </div>
+          </section>
         )}
       </div>
     </div>
   );
+}
+
+// =====================================================================
+// Utilidades de normalización y formato
+// =====================================================================
+
+function normalizeConversation(raw: any): ConversationItem {
+  const messages: MessageItem[] = Array.isArray(raw?.messages)
+    ? raw.messages
+    : [];
+  const last = raw?.lastMessage || messages[messages.length - 1] || null;
+
+  return {
+    id: raw.id,
+    status: raw.status,
+    channel: raw.channel || "WHATSAPP",
+    lastMessageAt: raw.lastMessageAt,
+    customer: raw.customer || undefined,
+    contact: raw.contact || undefined,
+    isDemo: raw.isDemo,
+    messageCount: raw.messageCount ?? messages.length,
+    lastMessage: last
+      ? {
+          sender: last.sender,
+          content: last.content,
+          mediaType: last.mediaType || last.type || "text",
+          createdAt: last.createdAt,
+        }
+      : null,
+  };
+}
+
+function buildInitialMessages(rawList: any[]): Record<string, MessageItem[]> {
+  const map: Record<string, MessageItem[]> = {};
+  for (const raw of rawList || []) {
+    if (Array.isArray(raw?.messages)) map[raw.id] = raw.messages;
+  }
+  return map;
+}
+
+function lastPreview(last?: ConversationItem["lastMessage"]): string {
+  if (!last) return "Sin mensajes";
+  const type = last.mediaType || "text";
+  if (type === "audio") return "🎤 Nota de voz";
+  if (type === "image") return "📷 Foto";
+  if (type === "location") return "📍 Ubicación";
+  if (type === "document") return "📄 Documento";
+  const prefix =
+    last.sender === "CUSTOMER"
+      ? ""
+      : last.sender === "OPERATOR"
+      ? "Tú: "
+      : "IA: ";
+  return `${prefix}${(last.content || "").replace(/\s+/g, " ").trim()}`;
 }

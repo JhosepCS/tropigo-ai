@@ -17,7 +17,13 @@ export function PageGuide() {
   const [open, setOpen] = useState(false);
 
   // El panel principal y la guía completa ya explican todo por sí mismos.
-  if (!section || pathname === "/dashboard" || pathname === "/dashboard/guia") {
+  if (
+    !section ||
+    pathname === "/dashboard" ||
+    pathname === "/dashboard/guia" ||
+    // La bandeja de conversaciones necesita todo el alto disponible.
+    pathname === "/dashboard/conversaciones"
+  ) {
     return null;
   }
 

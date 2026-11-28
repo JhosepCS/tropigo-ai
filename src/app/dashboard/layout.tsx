@@ -26,7 +26,7 @@ export default async function DashboardLayout({
   const businessName = business?.name || "TropiGO Ivirgarzama";
 
   return (
-    <div className="flex min-h-screen bg-[#F7F4F9] text-[#1E1523] transition-colors duration-200 dark:bg-[#140D17] dark:text-slate-100">
+    <div className="flex h-dvh overflow-hidden bg-[#F7F4F9] text-[#1E1523] transition-colors duration-200 dark:bg-[#140D17] dark:text-slate-100">
       <Sidebar
         businessName={businessName}
         pendingOrdersCount={pendingOrders}
@@ -35,7 +35,7 @@ export default async function DashboardLayout({
         userRole={session?.role || "ADMIN"}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden">
         <Topbar
           businessName={businessName}
           isWpConnected={isWpConnected}
@@ -43,7 +43,7 @@ export default async function DashboardLayout({
           initialAssistantEnabled={business?.assistantEnabled ?? true}
         />
 
-        <main className="mx-auto w-full max-w-7xl flex-1 space-y-5 p-4 sm:p-6 lg:p-8">
+        <main className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-5 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <PageGuide />
           {children}
         </main>
