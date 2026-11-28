@@ -6,7 +6,7 @@ import {
 } from "./types";
 import { ModelRouter } from "./model-router";
 import { getAssistantConfig, AssistantIdentityConfig } from "./config-manager";
-import { executeTool, getToolDefinitions } from "./tools";
+import { executeTool, selectToolDefinitionsForContext } from "./tools";
 
 export interface AgentChatInput {
   messages: ChatMessage[];
@@ -37,19 +37,16 @@ function buildToolResultsMessage(calls: ToolCallResult[]): string {
     } catch {
       serialized = String(call.result);
     }
-    if (serialized.length > 7000) {
-      serialized = `${serialized.slice(0, 7000)}…`;
+    if (serialized.length > 2400) {
+      serialized = `${serialized.slice(0, 2400)}…`;
     }
     return `- ${call.tool}: ${serialized}`;
   });
 
   return (
-    "[RESULTADOS OFICIALES DE LAS HERRAMIENTAS EJECUTADAS]\n" +
+    "[RESULTADOS DE HERRAMIENTAS]\n" +
     blocks.join("\n") +
-    "\n\nUsa exclusivamente estos resultados como fuente de verdad. " +
-    "No inventes productos, precios, zonas, tarifas, números de pedido ni estados. " +
-    "Si una herramienta devolvió un error, explícalo con amabilidad y ofrece la alternativa correcta. " +
-    "Redacta ahora la respuesta final para el cliente, en español y con el tono configurado."
+    "\nUsa solo estos datos. Responde al cliente en máximo 3-4 líneas cortas (salvo resumen oficial de pedido) y haz una sola pregunta si falta algún dato."
   );
 }
 
@@ -73,7 +70,7 @@ function fallbackReply(calls: ToolCallResult[]): string {
 export async function runAgentChat(input: AgentChatInput): Promise<CompletionResult> {
   const config = input.config || (await getAssistantConfig());
   const messages: ChatMessage[] = [...input.messages];
-  const toolDefinitions = getToolDefinitions();
+  const toolDefinitions = selectToolDefinitionsForContext(messages);
   const allToolCalls: ToolCallResult[] = [];
   const executedKeys = new Set<string>();
   const maxRounds = Math.max(1, Math.min(input.maxToolRounds ?? 3, 5));
@@ -86,6 +83,7 @@ export async function runAgentChat(input: AgentChatInput): Promise<CompletionRes
       {
         tools: toolDefinitions,
         toolChoice: "auto",
+        maxTokens: 480,
         toolContext: input.toolContext,
       },
       config

@@ -85,6 +85,73 @@ export function getToolDefinitions(): ToolDefinitionOpenAI[] {
   }));
 }
 
+const CORE_TOOL_NAMES = new Set([
+  "consultar_catalogo",
+  "preparar_resumen_pedido",
+  "registrar_pedido",
+  "cotizar_tarifa",
+  "consultar_zonas_cobertura",
+  "solicitar_ubicacion",
+  "pasar_a_humano",
+]);
+
+/**
+ * Selecciona solo las herramientas relevantes según los últimos mensajes del chat.
+ * Reduce drásticamente los tokens enviados por ronda sin perder ninguna capacidad.
+ */
+export function selectToolDefinitionsForContext(
+  messages: Array<{ role: string; content: string }>
+): ToolDefinitionOpenAI[] {
+  const recentText = messages
+    .filter((m) => m.role !== "system")
+    .slice(-4)
+    .map((m) => m.content || "")
+    .join(" ")
+    .toLowerCase();
+
+  const selected = new Set<string>(CORE_TOOL_NAMES);
+
+  if (/(comercio|restaurante|tienda|farmacia|market|abierto|horario|cierra|abre|servicio|mandado|env[ií]o|disponib|precio)/i.test(recentText)) {
+    selected.add("consultar_comercios");
+    selected.add("consultar_precios_disponibilidad");
+    selected.add("consultar_horarios");
+    selected.add("consultar_servicios");
+  }
+
+  if (/(pedido|orden|trp-|estado|donde va|repartidor|rider|demora|llega)/i.test(recentText)) {
+    selected.add("consultar_estado_pedido");
+  }
+
+  if (/(sello|fidelidad|premio|punto|nivel|bronce|plata|oro|tgo-|tarjeta)/i.test(recentText)) {
+    selected.add("consultar_mi_fidelidad");
+    selected.add("consultar_fidelidad_por_codigo");
+  }
+
+  if (/(pago|pagar|qr|cuenta|transferencia|yape|tigo|altoke|zas|comprobante|efectivo)/i.test(recentText)) {
+    selected.add("consultar_metodos_pago");
+    selected.add("consultar_mis_pagos");
+  }
+
+  if (/(foto|imagen|visual|carta|recomienda|sugier|antes|anterior|favorit|promo|oferta|descuento)/i.test(recentText)) {
+    selected.add("mostrar_catalogo_visual");
+    selected.add("sugerir_pedido_anterior");
+    selected.add("consultar_promociones");
+  }
+
+  if (/(me llamo|soy |mi nombre|vivo en|mi direcci[oó]n|siempre sin|prefiero|recuerda)/i.test(recentText)) {
+    selected.add("guardar_memoria_cliente");
+  }
+
+  return TROPIGO_TOOLS.filter((t) => selected.has(t.name)).map((tool) => ({
+    type: "function",
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    },
+  }));
+}
+
 /**
  * Ejecutor centralizado y seguro de herramientas conectado a la base de datos
  */
@@ -183,25 +250,20 @@ export async function getRealDataContextPrompt(): Promise<string> {
     const activePromosText =
       Array.isArray(activePromos) && activePromos.length > 0
         ? (activePromos as any[])
-            .map(
-              (p: any) =>
-                `• ${p.title} (${p.discountPercent}% OFF): ${p.description || "Disponible hoy"}. Mensaje sugerido: "${p.announceMessage || ""}"`
-            )
-            .join("\n")
-        : "No hay promociones especiales programadas para este horario.";
+            .map((p: any) => `${p.title} (${p.discountPercent}% OFF)`)
+            .join(" | ")
+        : "Sin promos activas";
 
     const cleanMerchants = merchants
-      .map((m: any) => `• ${m.name.replace(/^\[DEMO\]\s*/i, "")} (${m.category}) - ${m.address}`)
-      .join("\n");
+      .map((m: any) => `${m.name.replace(/^\[DEMO\]\s*/i, "")} (${m.category})`)
+      .join(" | ");
 
     const cleanProducts = products
       .map(
         (p: any) =>
-          `• ${p.name.replace(/^\[DEMO\]\s*/i, "")} [${p.merchant.name.replace(/^\[DEMO\]\s*/i, "")}]: ${p.price.toFixed(
-            2
-          )} Bs.`
+          `${p.name.replace(/^\[DEMO\]\s*/i, "")} [${p.merchant.name.replace(/^\[DEMO\]\s*/i, "")}]: ${p.price.toFixed(0)} Bs`
       )
-      .join("\n");
+      .join(" | ");
 
     const minRideFare = Math.max(10, Number(business?.rideMinFare) || 10);
     const toritoSurcharge = Math.max(
@@ -212,99 +274,31 @@ export async function getRealDataContextPrompt(): Promise<string> {
     const cleanZones = zones
       .map(
         (z: any) =>
-          `• Zona ${z.name}: Delivery ${z.baseDeliveryCost.toFixed(2)} Bs. | Mototaxi ${Math.max(
+          `${z.name}: Envío ${z.baseDeliveryCost.toFixed(0)} Bs / Moto ${Math.max(
             z.baseRideCost,
             minRideFare
-          ).toFixed(2)} Bs. | Torito ${(
-            Math.max(z.baseRideCost, minRideFare) + toritoSurcharge
-          ).toFixed(2)} Bs. (~${z.estimatedMinutes} min)`
+          ).toFixed(0)} Bs`
       )
-      .join("\n");
+      .join(" | ");
 
     const stampsRequired = Math.max(
       2,
       Math.floor(Number(business?.loyaltyStampsRequired) || 10)
     );
-    const countRides = business?.loyaltyCountRides ?? true;
     const loyaltyBlock = business?.loyaltyEnabled
-      ? `Activo. Cada pedido entregado suma 1 sello${
-          countRides
-            ? " y cada carrera de mototaxi FINALIZADA también suma 1 sello"
-            : ". Las carreras de mototaxi se muestran como dato adicional, pero no suman sellos"
-        }. Al llegar a ${
-          stampsRequired - 1
-        } sellos, el pedido número ${stampsRequired} es gratis (${
-          business?.loyaltyRewardDescription || "10mo pedido gratis"
-        }). ${
-          business?.loyaltyRewardFreeDelivery
-            ? "El premio también cubre el envío."
-            : "El envío del pedido premio se paga aparte."
-        } Cada cliente tiene un QR personal con un código TGO-XXXXXXXX. Si el cliente envía una foto de su QR o escribe su código, usa 'consultar_fidelidad_por_codigo' o el bloque [TARJETA DE FIDELIDAD DETECTADA] para explicarle sus sellos exactos.`
-      : "El programa de fidelidad está pausado temporalmente.";
+      ? `Activo (${stampsRequired - 1} sellos -> #${stampsRequired} gratis)`
+      : "Pausado";
 
-    return `
-=== DATOS OFICIALES EN VIVO DE TROPIGO (IVIRGARZAMA, BOLIVIA) ===
-Moneda: Bolivianos (${business?.currencySymbol || "Bs."})
-
-[COMERCIOS ABIERTOS EN ESTE MOMENTO]
-${cleanMerchants || "Comercios registrados disponibles para pedidos."}
-
-[CATÁLOGO DE PLATOS Y PRECIOS DISPONIBLES EN COCINA]
-${cleanProducts || "Catálogo oficial activo en el CRM."}
-
-[TARIFARIO OFICIAL POR ZONAS EN IVIRGARZAMA]
-${cleanZones || `Tarifa base urbana: 5.00 Bs. delivery, ${minRideFare.toFixed(
-      2
-    )} Bs. mototaxi (mínimo oficial).`}
-
-[CENTRO DE DISTANCIA PARA DELIVERY]
-Centro oficial: ${
-      business?.deliveryCenterName || "Plaza Principal de Ivirgarzama"
-    } (lat ${Number(business?.deliveryCenterLatitude ?? -17.0315).toFixed(
-      4
-    )}, lng ${Number(business?.deliveryCenterLongitude ?? -64.8615).toFixed(4)}).
-Km incluidos en la tarifa de zona: ${Number(
-      business?.deliveryIncludedKm ?? 2
-    ).toFixed(1)}. Recargo por km adicional: ${Number(
-      business?.deliveryPerKmFee ?? 2
-    ).toFixed(2)} Bs. El delivery se cobra por zona + distancia desde la Plaza Principal: a mayor distancia, mayor recargo. Si no hay GPS ni zona, no inventes la distancia.
-
-[TARIFAS DE CARRERA]
-Tarifa mínima oficial: ${minRideFare.toFixed(2)} Bs. Recargo Torito/trimóvil: ${toritoSurcharge.toFixed(
-      2
-    )} Bs. La tarifa final nunca puede ser inferior a la mínima.
-
-[PROMOCIONES Y OFERTAS ACTIVAS HOY EN IVIRGARZAMA]
-${activePromosText}
-
-[PROGRAMA DE FIDELIDAD]
-${loyaltyBlock}
-
-REGLA DE INTEGRIDAD ESTRICTA Y PROTOCOLO DE PEDIDOS:
-1. NUNCA inventes productos, precios, comercios, zonas ni tarifas. Usa exclusivamente lo devuelto por las herramientas y los datos oficiales de arriba.
-2. NUNCA inventes distancias ni tarifas. El delivery se cobra por la zona configurada más el recargo por distancia desde la Plaza Principal. Si el cliente comparte GPS, pásalo a 'preparar_resumen_pedido' o 'cotizar_tarifa'; si no hay GPS, usa la zona/barrio y no inventes kilómetros.
-3. FLUJO DE PEDIDOS DE DELIVERY (OBLIGATORIO PASO A PASO):
-   a) El canal ya identifica al cliente por su WhatsApp. No le pidas teléfono ni nombre si ya están en el contexto.
-   b) Consulta productos/menús con 'consultar_catalogo' o 'consultar_precios_disponibilidad'.
-   c) Recopila cantidades, variantes, opciones y notas específicas.
-   d) Solicita la dirección de entrega, zona/barrio exacto y punto de referencia (o ubicación GPS). Si el mensaje incluye coordenadas de una ubicación compartida por WhatsApp, pásalas como latitud/longitud a 'preparar_resumen_pedido'.
-   e) Llama 'preparar_resumen_pedido'. Si devuelve requiereZona=true, NO inventes una zona ni uses una tarifa por defecto: pide al cliente que elija una de las zonasDisponibles y vuelve a llamar.
-   f) Muestra el campo resumenTexto y pide confirmación explícita: '¿Confirmas tu pedido por X Bs.? Responde Sí, confirmo'.
-   g) SOLO tras una confirmación explícita del cliente, llama 'registrar_pedido' con el quoteId devuelto por el resumen. No envíes teléfono, nombre, items, dirección ni precios: la cotización es la única fuente de verdad. El servidor verifica la confirmación real; un booleano del modelo no autoriza nada.
-   h) Si 'registrar_pedido' no devuelve exitoso=true y un orderNumber TRP-XXXX, NO afirmes que el pedido fue registrado. Informa el error y ofrece corregirlo.
-   i) Si el cliente pide modificar el pedido, prepara una NUEVA cotización con 'preparar_resumen_pedido' y pide confirmación otra vez. No reutilices una cotización anterior.
-   j) Para seguimiento, usa 'consultar_estado_pedido'. La consulta se limita al cliente de la conversación.
-4. DUPLICADOS: 'registrar_pedido' es idempotente. Si la cotización ya fue consumida, devuelve el pedido existente; no crees otra orden ni cambies el número.
-5. ESTADOS: el cliente solo consulta. Los cambios de estado los realiza el CRM/operador o el repartidor asignado; no prometas cambios de estado que no hayan sido registrados.
-6. FIDELIDAD: si el cliente pregunta por sus sellos, su premio o su QR personal, usa 'consultar_mi_fidelidad'. Si envía una foto de su QR/tarjeta o escribe un código TGO-XXXXXXXX, usa 'consultar_fidelidad_por_codigo' o los datos del bloque [TARJETA DE FIDELIDAD DETECTADA]. Explica siempre: sellos actuales, sellos faltantes, si el premio está disponible y en qué número de pedido/carrera se activa. No inventes sellos ni premios. Cuando 'preparar_resumen_pedido' devuelva premioFidelidadAplicado=true, el descuento ya está incluido en el total del resumen; no lo sumes ni lo dupliques.
-7. UBICACIÓN: si el cliente pide delivery y no hay GPS ni barrio claro, usa 'solicitar_ubicacion' para enviar el botón nativo de ubicación. Si ya compartió ubicación, el sistema la guarda en su perfil y la reutiliza; no se la pidas otra vez salvo que indique otra dirección.
-8. PAGOS Y COMPROBANTES: si el cliente envía una foto de un comprobante, el sistema la analiza y registra el pago (verificado o pendiente). Usa 'consultar_mis_pagos' para responder por el estado exacto. Nunca afirmes que un pago está verificado si el bloque [COMPROBANTE DE PAGO PROCESADO] no dice PAGO VERIFICADO. El QR personal del repartidor aparece en el enlace /pagar del pedido cuando hay rider asignado.
-9. RIDERS: no asignes repartidores manualmente. El sistema asigna automáticamente al pasar el pedido a LISTO_RECOJO si hay un rider disponible. Puedes informar el nombre del repartidor cuando 'consultar_estado_pedido' lo devuelva.
-10. PROMOCIONES DEL DÍA: si hay promociones en [PROMOCIONES Y OFERTAS ACTIVAS HOY EN IVIRGARZAMA], anúncialas amablemente cuando el cliente salude o pida sugerencias gastronómicas.
-11. CATÁLOGO VISUAL CON FOTOS: si el cliente pide ver fotos, imágenes o la carta con fotos de un restaurante, invoca 'mostrar_catalogo_visual' con el nombre del comercio para enviarle las fotos oficiales por WhatsApp.
-12. RECOMENDACIONES PERSONALIZADAS: si el cliente te pregunta qué pedir o si ya ha ordenado antes, usa 'sugerir_pedido_anterior' para recomendarle sus platos favoritos de compras pasadas.
-=================================================================
-`.trim();
+    return (
+      `[DATOS EN VIVO IVIRGARZAMA]\n` +
+      `Comercios: ${cleanMerchants || "Disponibles en catálogo"}\n` +
+      `Destacados: ${cleanProducts || "Consultar catálogo"}\n` +
+      `Zonas: ${cleanZones || `Urbana: Envío 5 Bs / Moto ${minRideFare} Bs`} (+${Number(
+        business?.deliveryPerKmFee ?? 2
+      ).toFixed(0)} Bs/km extra tras ${Number(business?.deliveryIncludedKm ?? 2).toFixed(0)} km desde Plaza Principal)\n` +
+      `Carrera mín: Moto ${minRideFare.toFixed(0)} Bs | Torito +${toritoSurcharge.toFixed(0)} Bs\n` +
+      `Promos: ${activePromosText} | Fidelidad: ${loyaltyBlock}`
+    );
   } catch (e: any) {
     console.warn("[Tools] No se pudo generar contexto de datos en tiempo real:", e.message);
     return "";

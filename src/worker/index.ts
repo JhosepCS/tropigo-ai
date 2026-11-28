@@ -954,15 +954,24 @@ async function processBatch(
       take: 6,
     });
 
-    const chatHistory = recentMessages.reverse().map((m) => ({
-      role:
-        m.sender === "CUSTOMER"
-          ? ("user" as const)
-          : m.sender === "ASSISTANT"
-          ? ("assistant" as const)
-          : ("user" as const),
-      content: m.content,
-    }));
+    const orderedMessages = recentMessages.reverse();
+    const chatHistory = orderedMessages.map((m, idx) => {
+      const isRecentTurn = idx >= orderedMessages.length - 2;
+      const rawContent = m.content || "";
+      const content =
+        !isRecentTurn && rawContent.length > 260
+          ? `${rawContent.slice(0, 260)}…`
+          : rawContent;
+      return {
+        role:
+          m.sender === "CUSTOMER"
+            ? ("user" as const)
+            : m.sender === "ASSISTANT"
+            ? ("assistant" as const)
+            : ("user" as const),
+        content,
+      };
+    });
 
     const aiResponse = await runAgentChat({
       messages: [{ role: "system", content: systemPrompt }, ...chatHistory],
@@ -1457,7 +1466,10 @@ function startHealthServer() {
     // Endpoint para enviar mensajes WhatsApp desde la web/CRM vía Baileys
     if (req.method === "POST" && (req.url === "/send-message" || req.url === "/api/send")) {
       const workerSecret = process.env.WORKER_SECRET;
-      if (workerSecret && req.headers["x-worker-secret"] !== workerSecret) {
+      // En produccion el secreto es obligatorio: evita que cualquiera con la
+      // URL publica del worker pueda enviar WhatsApps desde el numero del negocio.
+      const secretRequired = Boolean(workerSecret) || process.env.NODE_ENV === "production";
+      if (secretRequired && (!workerSecret || req.headers["x-worker-secret"] !== workerSecret)) {
         res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
         res.end(JSON.stringify({ success: false, error: "No autorizado." }));
         return;

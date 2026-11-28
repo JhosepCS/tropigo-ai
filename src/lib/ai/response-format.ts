@@ -106,8 +106,8 @@ export function sanitizeAssistantReply(
   text = removeRepeatedLines(text);
   text = collapseBlankLines(text);
 
-  const maxLines = options.maxLines ?? 8;
-  const maxChars = options.maxChars ?? 650;
+  const maxLines = options.maxLines ?? 5;
+  const maxChars = options.maxChars ?? 380;
 
   text = limitLines(text, maxLines);
   text = safeCut(text, maxChars);
